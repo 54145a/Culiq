@@ -1,0 +1,21 @@
+{
+	"name": "curio",
+	"private": true,
+	"version": "1.0.0",
+	"type": "module",
+	"description": "Curio — browser agent Chrome extension",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"check": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@crxjs/vite-plugin": "^2.0.0-beta.34",
+		"@types/chrome": "^0.0.291",
+		"typescript": "^5.7.2",
+		"vite": "^6.0.7"
+	},
+	"dependencies": {
+		"marked": "^18.0.3"
+	}
+}

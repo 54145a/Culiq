@@ -1,0 +1,83 @@
+import { BgConnection, type ConnectionState } from "./bg-connection";
+import {
+	currentSessionId,
+	isBusy,
+	loadSessionIntoChat,
+	mountChat,
+	onSessionChange,
+	startFreshSession,
+} from "./chat-view";
+import { mountSessions } from "./sessions-view";
+import { mountSettings } from "./settings-view";
+
+type ViewName = "chat" | "sessions" | "settings";
+
+const statusEl = document.getElementById("status") as HTMLSpanElement;
+const settingsRoot = document.getElementById("view-settings") as HTMLElement;
+const sessionsRoot = document.getElementById("view-sessions") as HTMLElement;
+const views: Record<ViewName, HTMLElement> = {
+	chat: document.getElementById("view-chat") as HTMLElement,
+	sessions: sessionsRoot,
+	settings: settingsRoot,
+};
+
+const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>("nav[role='tablist'] button"));
+
+let settingsMounted = false;
+
+function switchView(name: ViewName): void {
+	for (const tab of tabs) {
+		tab.setAttribute("aria-selected", String(tab.dataset.view === name));
+	}
+	for (const [key, el] of Object.entries(views) as [ViewName, HTMLElement][]) {
+		el.dataset.active = String(key === name);
+	}
+	if (name === "settings" && !settingsMounted) {
+		settingsMounted = true;
+		void mountSettings(settingsRoot);
+	}
+	if (name === "sessions") sessionsView.refresh();
+}
+
+for (const tab of tabs) {
+	tab.addEventListener("click", () => switchView(tab.dataset.view as ViewName));
+}
+
+const connection = new BgConnection();
+connection.onState((state: ConnectionState, rtt) => {
+	switch (state) {
+		case "connecting":
+			statusEl.textContent = "connecting…";
+			statusEl.dataset.state = "pending";
+			return;
+		case "connected":
+			statusEl.textContent = rtt !== undefined ? `connected · ${rtt}ms` : "connected";
+			statusEl.dataset.state = "ok";
+			return;
+		case "reconnecting":
+			statusEl.textContent = "reconnecting…";
+			statusEl.dataset.state = "pending";
+			return;
+	}
+});
+
+mountChat({
+	send: (msg) => connection.send(msg),
+	onMessage: (handler) => connection.onMessage(handler),
+});
+
+const sessionsView = mountSessions(sessionsRoot, {
+	currentId: () => currentSessionId(),
+	canSwitch: () => !isBusy(),
+	onSwitch: async (id) => {
+		await loadSessionIntoChat(id);
+		switchView("chat");
+	},
+	onNew: async () => {
+		await startFreshSession();
+	},
+});
+
+onSessionChange(() => sessionsView.refresh());
+
+connection.start();
