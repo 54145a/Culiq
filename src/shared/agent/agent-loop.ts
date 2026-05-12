@@ -3,8 +3,6 @@ import type { AssistantMessage, ToolCallContent, ToolResultMessage } from "../ai
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "./types";
 import { toolToLlmSpec } from "./types";
 
-const DEFAULT_MAX_TURNS = 20;
-
 export type AgentEventSink = (event: AgentEvent) => void;
 
 export async function runAgentLoop(
@@ -15,7 +13,7 @@ export async function runAgentLoop(
 ): Promise<void> {
 	emit({ type: "agent_start" });
 
-	const maxTurns = config.maxTurns ?? DEFAULT_MAX_TURNS;
+	const maxTurns = config.maxTurns;
 	let turnIndex = 0;
 
 	while (true) {
@@ -23,7 +21,7 @@ export async function runAgentLoop(
 			emit({ type: "agent_end", messages: context.messages, stopReason: "aborted" });
 			return;
 		}
-		if (turnIndex >= maxTurns) {
+		if (maxTurns !== undefined && turnIndex >= maxTurns) {
 			emit({ type: "agent_end", messages: context.messages, stopReason: "max_turns" });
 			return;
 		}
