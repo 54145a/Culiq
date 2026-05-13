@@ -5,8 +5,11 @@
 	"type": "module",
 	"description": "Curio — browser agent Chrome extension",
 	"scripts": {
-		"dev": "vite",
-		"build": "vite build",
+		"dev": "TARGET=chrome vite",
+		"dev:firefox": "TARGET=firefox vite",
+		"build": "npm run build:chrome && npm run build:firefox",
+		"build:chrome": "TARGET=chrome vite build",
+		"build:firefox": "TARGET=firefox vite build",
 		"check": "tsc --noEmit"
 	},
 	"devDependencies": {

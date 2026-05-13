@@ -1,6 +1,6 @@
 # Curio
 
-一个 Chrome 扩展形式的 browser agent，能够自动帮你操作浏览器，比如打开网页、读取内容、点击按钮、填写表单、执行 JavaScript，以及进行基本的逆向分析。
+一个浏览器扩展形式的 browser agent，能够自动帮你操作浏览器，比如打开网页、读取内容、点击按钮、填写表单、执行 JavaScript，以及进行基本的逆向分析。支持 Chrome、Edge 和 Firefox。
 
 ### 功能特性
 
@@ -43,11 +43,27 @@
 
 #### 1. 下载 release
 
-1. 在 [Releases](../../releases) 页面下载 `curio-vX.Y.Z.zip`
-2. 解压到任意目录
-3. 打开 `chrome://extensions`，启用右上角开发者模式
-4. 点击 **加载已解压的扩展程序**，选择解压目录
-5. 点击工具栏的 Curio 图标打开侧边栏
+在 [Releases](../../releases) 页面找到对应浏览器的产物：
+
+- Chrome / Edge：`curio-vX.Y.Z-chrome.zip`
+- Firefox（128+）：`curio-vX.Y.Z-firefox.xpi`
+
+##### Chrome / Edge
+
+1. 解压 zip 到任意目录
+2. 打开 `chrome://extensions`（Edge 是 `edge://extensions`），启用右上角开发者模式
+3. **加载已解压的扩展程序** → 选择解压目录
+4. 点击工具栏的 Curio 图标打开侧边栏
+
+##### Firefox
+
+由于当前发布的 `.xpi` **未经 Mozilla AMO 签名**。所以标准版 Firefox 还没办法直接使用，如果使用的是下面的版本，可以关闭强制签名校验（地址栏访问 `about:config`，搜索 `xpinstall.signatures.required`，把它设为 `false`）：
+
+- [Firefox Developer Edition](https://www.mozilla.org/firefox/developer/)
+- [Firefox Nightly](https://www.mozilla.org/firefox/channel/desktop/#nightly)
+- [Firefox ESR Unbranded](https://wiki.mozilla.org/Add-ons/Extension_Signing#Unbranded_Builds)
+
+然后在 `about:addons` 导入 `.xpi` 安装扩展
 
 #### 2. 从源码构建
 
@@ -55,10 +71,13 @@
 git clone https://github.com/void5tar/Curio.git
 cd Curio
 npm install
-npm run build
+npm run build           # 同时产出 dist-chrome/ 和 dist-firefox/
+# 或单独构建：
+# npm run build:chrome
+# npm run build:firefox
 ```
 
-`chrome://extensions` → 加载已解压的扩展程序 → 选择 `dist/`
+加载已解压的扩展程序，Chrome 选 `dist-chrome/`，Firefox 用 `about:debugging#/runtime/this-firefox` 选 `dist-firefox/manifest.json`。
 
 ### 配置
 

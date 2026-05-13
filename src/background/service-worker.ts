@@ -5,8 +5,19 @@ import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/pr
 import { getTools } from "./tool-registry";
 
 chrome.runtime.onInstalled.addListener(() => {
-	chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+	if (chrome.sidePanel?.setPanelBehavior) {
+		chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+	}
 });
+
+// Firefox: clicking the toolbar action toggles the sidebar.
+// On Chrome this never fires because setPanelBehavior intercepts the click.
+const sidebarAction = (chrome as unknown as { sidebarAction?: { toggle?: () => Promise<void> } }).sidebarAction;
+if (sidebarAction?.toggle) {
+	chrome.action.onClicked.addListener(() => {
+		sidebarAction.toggle?.()?.catch(() => {});
+	});
+}
 
 self.addEventListener("error", (e: ErrorEvent) => {
 	console.error("[curio sw] uncaught error:", e.message, e.error);

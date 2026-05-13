@@ -1,0 +1,40 @@
+{
+	"action": {
+		"default_title": "Toggle Curio sidebar",
+		"default_icon": {
+			"16": "icons/icon-16.png",
+			"32": "icons/icon-32.png",
+			"48": "icons/icon-48.png",
+			"128": "icons/icon-128.png"
+		}
+	},
+	"sidebar_action": {
+		"default_panel": "src/sidepanel/index.html",
+		"default_title": "Curio",
+		"default_icon": {
+			"16": "icons/icon-16.png",
+			"32": "icons/icon-32.png",
+			"48": "icons/icon-48.png",
+			"128": "icons/icon-128.png"
+		}
+	},
+	"background": {
+		"scripts": ["src/background/service-worker.ts"],
+		"type": "module"
+	},
+	"permissions": ["scripting", "storage", "activeTab", "tabs"],
+	"commands": {
+		"_execute_sidebar_action": {
+			"suggested_key": {
+				"default": "Alt+Shift+C"
+			},
+			"description": "Toggle Curio sidebar"
+		}
+	},
+	"browser_specific_settings": {
+		"gecko": {
+			"id": "curio@curio.local",
+			"strict_min_version": "128.0"
+		}
+	}
+}
