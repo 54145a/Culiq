@@ -16,7 +16,8 @@
 		"@crxjs/vite-plugin": "^2.0.0-beta.34",
 		"@types/chrome": "^0.0.291",
 		"typescript": "^5.7.2",
-		"vite": "^6.0.7"
+		"vite": "^6.0.7",
+		"web-ext": "^10.1.0"
 	},
 	"dependencies": {
 		"marked": "^18.0.3"

@@ -15,6 +15,18 @@ const base = readJson("./src/manifest.base.json");
 const overlay = readJson(`./src/manifest.${target}.json`);
 const manifest = { ...base, ...overlay } as ManifestV3Export;
 
+// CI passes VERSION (e.g. "1.0.2") from the git tag so manifests match the release.
+// Local dev builds keep the value hardcoded in manifest.base.json.
+const versionOverride = process.env.VERSION?.trim();
+if (versionOverride) {
+	if (!/^\d+(\.\d+){0,3}$/.test(versionOverride)) {
+		throw new Error(
+			`Invalid VERSION="${versionOverride}". Chrome MV3 requires 1-4 dot-separated integers (e.g. "1.0.2").`,
+		);
+	}
+	manifest.version = versionOverride;
+}
+
 export default defineConfig({
 	plugins: [crx({ manifest, browser: target })],
 	resolve: {

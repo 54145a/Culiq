@@ -57,13 +57,7 @@
 
 ##### Firefox
 
-由于当前发布的 `.xpi` **未经 Mozilla AMO 签名**。所以标准版 Firefox 还没办法直接使用，如果使用的是下面的版本，可以关闭强制签名校验（地址栏访问 `about:config`，搜索 `xpinstall.signatures.required`，把它设为 `false`）：
-
-- [Firefox Developer Edition](https://www.mozilla.org/firefox/developer/)
-- [Firefox Nightly](https://www.mozilla.org/firefox/channel/desktop/#nightly)
-- [Firefox ESR Unbranded](https://wiki.mozilla.org/Add-ons/Extension_Signing#Unbranded_Builds)
-
-然后在 `about:addons` 导入 `.xpi` 安装扩展
+直接在 `about:addons` 导入 `.xpi` 文件即可安装扩展
 
 #### 2. 从源码构建
 

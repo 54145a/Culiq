@@ -28,6 +28,20 @@ jobs:
           node-version: "20"
           cache: "npm"
 
+      - name: Resolve package version
+        id: ver
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#v}"
+            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          else
+            short_sha=$(echo "${GITHUB_SHA}" | cut -c1-7)
+            echo "tag=dev-${short_sha}" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install dependencies
         run: npm ci
 
@@ -36,17 +50,9 @@ jobs:
         run: npm run check
 
       - name: Build extension (${{ matrix.target }})
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: npm run build:${{ matrix.target }}
-
-      - name: Resolve package version
-        id: ver
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            short_sha=$(echo "${GITHUB_SHA}" | cut -c1-7)
-            echo "tag=dev-${short_sha}" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Package archive
         id: pkg
@@ -61,6 +67,31 @@ jobs:
           zip -r "../artifacts/${out}" .
           cd ..
           echo "ext=${ext}" >> "$GITHUB_OUTPUT"
+          ls -la artifacts
+
+      - name: Sign Firefox build (AMO unlisted, tag only)
+        if: matrix.target == 'firefox' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          rm -rf signed
+          npx web-ext sign \
+            --source-dir=dist-firefox \
+            --artifacts-dir=signed \
+            --api-key="$AMO_JWT_ISSUER" \
+            --api-secret="$AMO_JWT_SECRET" \
+            --channel=unlisted
+          signed_file=$(ls signed/*.xpi 2>/dev/null | head -n1)
+          if [[ -z "$signed_file" ]]; then
+            echo "::error::web-ext sign produced no .xpi"
+            ls -la signed || true
+            exit 1
+          fi
+          target="artifacts/curio-${{ steps.ver.outputs.tag }}-firefox.xpi"
+          rm -f "$target"
+          cp "$signed_file" "$target"
+          echo "Signed xpi → $target"
           ls -la artifacts
 
       - name: Upload build artifact
