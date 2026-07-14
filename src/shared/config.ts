@@ -1,4 +1,5 @@
 export type ProviderId = "anthropic" | "openai";
+export type ThemePreference = "system" | "light" | "dark";
 
 export interface ProviderConfig {
 	id: ProviderId;
@@ -9,6 +10,7 @@ export interface ProviderConfig {
 
 export interface CurioSettings {
 	version: 1;
+	theme: ThemePreference;
 	activeProvider: ProviderId;
 	providers: Record<ProviderId, ProviderConfig>;
 }
@@ -31,6 +33,7 @@ const STORAGE_KEY = "curio.settings.v1";
 export function defaultSettings(): CurioSettings {
 	return {
 		version: 1,
+		theme: "system",
 		activeProvider: "openai",
 		providers: {
 			anthropic: { id: "anthropic", apiKey: "", ...mapDefault("anthropic") },
@@ -51,6 +54,7 @@ export async function loadSettings(): Promise<CurioSettings> {
 	const base = defaultSettings();
 	return {
 		version: 1,
+		theme: isThemePreference(stored.theme) ? stored.theme : base.theme,
 		activeProvider: stored.activeProvider ?? base.activeProvider,
 		providers: {
 			anthropic: { ...base.providers.anthropic, ...stored.providers?.anthropic },
@@ -61,6 +65,15 @@ export async function loadSettings(): Promise<CurioSettings> {
 
 export async function saveSettings(settings: CurioSettings): Promise<void> {
 	await chrome.storage.local.set({ [STORAGE_KEY]: settings });
+}
+
+export async function saveTheme(theme: Exclude<ThemePreference, "system">): Promise<void> {
+	const settings = await loadSettings();
+	await saveSettings({ ...settings, theme });
+}
+
+function isThemePreference(value: unknown): value is ThemePreference {
+	return value === "system" || value === "light" || value === "dark";
 }
 
 export function getActiveProvider(settings: CurioSettings): ProviderConfig {

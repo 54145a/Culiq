@@ -1,7 +1,12 @@
-import type { AssistantMessage, Message, Tool, ToolResultMessage } from "../ai/types";
+import type { AssistantMessage, Message, TextContent, Tool, ToolResultContent, ToolResultMessage } from "../ai/types";
 
 export interface AgentToolResult {
-	content: { type: "text"; text: string }[];
+	content: ToolResultContent[];
+	isError?: boolean;
+}
+
+export interface AgentToolDisplayResult {
+	content: TextContent[];
 	isError?: boolean;
 }
 
@@ -41,7 +46,7 @@ export type AgentEvent =
 			type: "tool_execution_end";
 			toolCallId: string;
 			toolName: string;
-			result: AgentToolResult;
+			result: AgentToolDisplayResult;
 			isError: boolean;
 	  }
 	| { type: "turn_end"; assistantMessage: AssistantMessage; toolResults: ToolResultMessage[] }

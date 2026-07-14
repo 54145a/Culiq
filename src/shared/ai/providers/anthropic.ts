@@ -30,10 +30,19 @@ interface AnthropicToolUseBlock {
 	input: Record<string, unknown>;
 }
 
+interface AnthropicImageBlock {
+	type: "image";
+	source: {
+		type: "base64";
+		media_type: "image/png";
+		data: string;
+	};
+}
+
 interface AnthropicToolResultBlock {
 	type: "tool_result";
 	tool_use_id: string;
-	content: AnthropicTextBlock[];
+	content: (AnthropicTextBlock | AnthropicImageBlock)[];
 	is_error?: boolean;
 }
 
@@ -220,6 +229,19 @@ function mapStopReason(reason: string): StopReason {
 	}
 }
 
+function toAnthropicToolResultContent(
+	content: Extract<Message, { role: "toolResult" }>["content"],
+): (AnthropicTextBlock | AnthropicImageBlock)[] {
+	return content.map((block) =>
+		block.type === "text"
+			? { type: "text", text: block.text }
+			: {
+					type: "image",
+					source: { type: "base64", media_type: block.mediaType, data: block.data },
+				},
+	);
+}
+
 function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
 	const out: AnthropicMessage[] = [];
 	for (let i = 0; i < messages.length; i++) {
@@ -251,7 +273,7 @@ function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
 				{
 					type: "tool_result",
 					tool_use_id: msg.toolCallId,
-					content: msg.content.map((c) => ({ type: "text" as const, text: c.text })),
+					content: toAnthropicToolResultContent(msg.content),
 					...(msg.isError ? { is_error: true } : {}),
 				},
 			];
@@ -261,7 +283,7 @@ function toAnthropicMessages(messages: Message[]): AnthropicMessage[] {
 				results.push({
 					type: "tool_result",
 					tool_use_id: next.toolCallId,
-					content: next.content.map((c) => ({ type: "text" as const, text: c.text })),
+					content: toAnthropicToolResultContent(next.content),
 					...(next.isError ? { is_error: true } : {}),
 				});
 				j++;

@@ -1,3 +1,4 @@
+import { loadSettings, saveTheme, type ThemePreference } from "@shared/config";
 import { BgConnection, type ConnectionState } from "./bg-connection";
 import {
 	currentSessionId,
@@ -13,6 +14,7 @@ import { mountSettings } from "./settings-view";
 type ViewName = "chat" | "sessions" | "settings";
 
 const statusEl = document.getElementById("status") as HTMLSpanElement;
+const themeToggle = document.getElementById("theme-toggle") as HTMLButtonElement;
 const settingsRoot = document.getElementById("view-settings") as HTMLElement;
 const sessionsRoot = document.getElementById("view-sessions") as HTMLElement;
 const views: Record<ViewName, HTMLElement> = {
@@ -24,6 +26,38 @@ const views: Record<ViewName, HTMLElement> = {
 const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>("nav[role='tablist'] button"));
 
 let settingsMounted = false;
+let themePreference: ThemePreference = "system";
+const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+
+function resolvedTheme(): "light" | "dark" {
+	if (themePreference !== "system") return themePreference;
+	return systemTheme.matches ? "dark" : "light";
+}
+
+function applyTheme(): void {
+	const theme = resolvedTheme();
+	document.documentElement.dataset.theme = theme;
+	const next = theme === "dark" ? "light" : "dark";
+	themeToggle.textContent = theme === "dark" ? "☀" : "☾";
+	themeToggle.title = `Switch to ${next} theme`;
+	themeToggle.setAttribute("aria-label", `Switch to ${next} theme`);
+}
+
+async function initializeTheme(): Promise<void> {
+	const settings = await loadSettings();
+	themePreference = settings.theme;
+	applyTheme();
+}
+
+systemTheme.addEventListener("change", () => {
+	if (themePreference === "system") applyTheme();
+});
+
+themeToggle.addEventListener("click", () => {
+	themePreference = resolvedTheme() === "dark" ? "light" : "dark";
+	applyTheme();
+	void saveTheme(themePreference);
+});
 
 function switchView(name: ViewName): void {
 	for (const tab of tabs) {
@@ -42,6 +76,8 @@ function switchView(name: ViewName): void {
 for (const tab of tabs) {
 	tab.addEventListener("click", () => switchView(tab.dataset.view as ViewName));
 }
+
+void initializeTheme();
 
 const connection = new BgConnection();
 connection.onState((state: ConnectionState, rtt) => {

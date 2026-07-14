@@ -3,6 +3,7 @@ import { callContent } from "@shared/transport/tab-rpc";
 import type { AgentTool } from "../../types";
 import { evalJsTool } from "./eval-js";
 import { navigateTool } from "./navigate";
+import { screenshotTool } from "./screenshot";
 
 function describe(el: ElementSummary): string {
 	const id = el.id ? `#${el.id}` : "";
@@ -138,4 +139,12 @@ export const readDomTool: AgentTool = {
 	},
 };
 
-export const browserTools: AgentTool[] = [navigateTool, queryTool, clickTool, typeTool, readDomTool, evalJsTool];
+export const browserTools: AgentTool[] = [
+	navigateTool,
+	queryTool,
+	clickTool,
+	typeTool,
+	readDomTool,
+	screenshotTool,
+	evalJsTool,
+];

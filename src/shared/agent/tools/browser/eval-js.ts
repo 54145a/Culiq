@@ -8,7 +8,7 @@ type RunnerOutcome = { ok: true; kind: string; value: string } | { ok: false; er
 export const evalJsTool: AgentTool = {
 	name: "eval_js",
 	description:
-		"Execute JavaScript in the active tab. `world: 'main'` runs in the page's JS context (access to window globals, frameworks, hooks for reverse engineering); `world: 'isolated'` (default) runs in the extension's content-script context, isolated from page JS. Write a function body and `return` the value (top-level await supported). Result is JSON-stringified with truncation; DOM nodes, functions, errors, circular refs are stringified safely.",
+		"Execute JavaScript in the active tab. Always choose `world` explicitly: use `main` for reverse engineering, page globals, framework state, or fetch/XHR hooks; use `isolated` only for DOM-only operations that do not need page JavaScript state. Write a function body and `return` the value (top-level await supported). Result is JSON-stringified with truncation; DOM nodes, functions, errors, circular refs are stringified safely.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -20,14 +20,15 @@ export const evalJsTool: AgentTool = {
 			world: {
 				type: "string",
 				enum: ["isolated", "main"],
-				description: "Execution context. Default 'isolated'.",
+				description:
+					"Required execution context. Use 'main' for page JavaScript state and reverse engineering; use 'isolated' only for DOM-only operations.",
 			},
 			maxChars: {
 				type: "number",
 				description: "Truncate the serialized result to this many chars. Default 8000.",
 			},
 		},
-		required: ["code"],
+		required: ["code", "world"],
 		additionalProperties: false,
 	},
 	async execute(args, signal) {

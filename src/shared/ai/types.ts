@@ -7,6 +7,15 @@ export interface TextContent {
 	text: string;
 }
 
+export interface ImageContent {
+	type: "image";
+	mediaType: "image/png";
+	encoding: "base64";
+	data: string;
+}
+
+export type ToolResultContent = TextContent | ImageContent;
+
 export interface ThinkingContent {
 	type: "thinking";
 	thinking: string;
@@ -39,7 +48,7 @@ export interface AssistantMessage {
 export interface ToolResultMessage {
 	role: "toolResult";
 	toolCallId: string;
-	content: TextContent[];
+	content: ToolResultContent[];
 	isError?: boolean;
 }
 

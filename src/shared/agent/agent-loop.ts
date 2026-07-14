@@ -1,9 +1,20 @@
 import { streamSimple } from "../ai";
-import type { AssistantMessage, ToolCallContent, ToolResultMessage } from "../ai/types";
+import type { AssistantMessage, Message, ToolCallContent, ToolResultMessage } from "../ai/types";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "./types";
 import { toolToLlmSpec } from "./types";
 
 export type AgentEventSink = (event: AgentEvent) => void;
+
+function publicToolResult(message: ToolResultMessage): ToolResultMessage {
+	return {
+		...message,
+		content: message.content.filter((block) => block.type === "text"),
+	};
+}
+
+function publicMessages(messages: Message[]): Message[] {
+	return messages.map((message) => (message.role === "toolResult" ? publicToolResult(message) : message));
+}
 
 export async function runAgentLoop(
 	context: AgentContext,
@@ -18,11 +29,11 @@ export async function runAgentLoop(
 
 	while (true) {
 		if (signal?.aborted) {
-			emit({ type: "agent_end", messages: context.messages, stopReason: "aborted" });
+			emit({ type: "agent_end", messages: publicMessages(context.messages), stopReason: "aborted" });
 			return;
 		}
 		if (maxTurns !== undefined && turnIndex >= maxTurns) {
-			emit({ type: "agent_end", messages: context.messages, stopReason: "max_turns" });
+			emit({ type: "agent_end", messages: publicMessages(context.messages), stopReason: "max_turns" });
 			return;
 		}
 
@@ -36,7 +47,7 @@ export async function runAgentLoop(
 			emit({ type: "turn_end", assistantMessage, toolResults: [] });
 			emit({
 				type: "agent_end",
-				messages: context.messages,
+				messages: publicMessages(context.messages),
 				stopReason: assistantMessage.stopReason === "aborted" ? "aborted" : "error",
 				errorMessage: assistantMessage.errorMessage,
 			});
@@ -56,15 +67,16 @@ export async function runAgentLoop(
 			for (const r of results) {
 				toolResults.push(r);
 				context.messages.push(r);
-				emit({ type: "message_start", message: r });
-				emit({ type: "message_end", message: r });
+				const publicResult = publicToolResult(r);
+				emit({ type: "message_start", message: publicResult });
+				emit({ type: "message_end", message: publicResult });
 			}
 		}
 
-		emit({ type: "turn_end", assistantMessage, toolResults });
+		emit({ type: "turn_end", assistantMessage, toolResults: toolResults.map(publicToolResult) });
 
 		if (toolCalls.length === 0 || assistantMessage.stopReason !== "toolUse") {
-			emit({ type: "agent_end", messages: context.messages, stopReason: "end" });
+			emit({ type: "agent_end", messages: publicMessages(context.messages), stopReason: "end" });
 			return;
 		}
 
@@ -175,7 +187,7 @@ async function runToolCall(
 		type: "tool_execution_end",
 		toolCallId: toolCall.id,
 		toolName: toolCall.name,
-		result,
+		result: { ...result, content: result.content.filter((block) => block.type === "text") },
 		isError,
 	});
 

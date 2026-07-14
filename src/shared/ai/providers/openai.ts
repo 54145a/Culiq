@@ -19,10 +19,9 @@ interface OpenAIMessage {
 	reasoning_content?: string;
 }
 
-interface OpenAIContentPart {
-	type: "text";
-	text: string;
-}
+type OpenAIContentPart =
+	| { type: "text"; text: string }
+	| { type: "image_url"; image_url: { url: string; detail: "auto" } };
 
 interface OpenAIAssistantToolCall {
 	id: string;
@@ -39,6 +38,9 @@ export async function streamOpenAI(
 	const partial: AssistantMessage = { role: "assistant", content: [], stopReason: "end" };
 	stream.push({ type: "start", partial });
 
+	const includesImages = context.messages.some(
+		(message) => message.role === "toolResult" && message.content.some((block) => block.type === "image"),
+	);
 	const body = {
 		model: model.id,
 		messages: toOpenAIMessages(context.systemPrompt, context.messages),
@@ -76,7 +78,10 @@ export async function streamOpenAI(
 
 	if (!response.ok || !response.body) {
 		const text = await safeText(response);
-		fail(partial, stream, options.signal, `HTTP ${response.status}: ${text}`);
+		const hint = includesImages
+			? " This request included a screenshot; the selected model or OpenAI-compatible endpoint may not support Chat Completions image_url inputs."
+			: "";
+		fail(partial, stream, options.signal, `HTTP ${response.status}: ${text}${hint}`);
 		return;
 	}
 
@@ -212,7 +217,8 @@ function toOpenAIMessages(systemPrompt: string | undefined, messages: Message[])
 	const out: OpenAIMessage[] = [];
 	if (systemPrompt) out.push({ role: "system", content: systemPrompt });
 
-	for (const msg of messages) {
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i];
 		if (msg.role === "user") {
 			const text = typeof msg.content === "string" ? msg.content : msg.content.map((c) => c.text).join("");
 			out.push({ role: "user", content: text });
@@ -234,11 +240,32 @@ function toOpenAIMessages(systemPrompt: string | undefined, messages: Message[])
 			if (msg.reasoningContent && msg.reasoningContent.length > 0) entry.reasoning_content = msg.reasoningContent;
 			out.push(entry);
 		} else if (msg.role === "toolResult") {
-			out.push({
-				role: "tool",
-				tool_call_id: msg.toolCallId,
-				content: msg.content.map((c) => c.text).join(""),
-			});
+			const images: OpenAIContentPart[] = [];
+			let j = i;
+			while (j < messages.length && messages[j].role === "toolResult") {
+				const result = messages[j] as Extract<Message, { role: "toolResult" }>;
+				out.push({
+					role: "tool",
+					tool_call_id: result.toolCallId,
+					content: result.content
+						.filter((block) => block.type === "text")
+						.map((block) => block.text)
+						.join(""),
+				});
+				for (const block of result.content) {
+					if (block.type !== "image") continue;
+					images.push(
+						{ type: "text", text: `Screenshot from tool call ${result.toolCallId}:` },
+						{
+							type: "image_url",
+							image_url: { url: `data:${block.mediaType};base64,${block.data}`, detail: "auto" },
+						},
+					);
+				}
+				j++;
+			}
+			if (images.length > 0) out.push({ role: "user", content: images });
+			i = j - 1;
 		}
 	}
 	return out;

@@ -72,7 +72,14 @@ export async function setCurrent(id: string | null): Promise<void> {
 
 export async function upsertSession(session: Session): Promise<void> {
 	const store = await readStore();
-	store.sessions[session.id] = session;
+	store.sessions[session.id] = {
+		...session,
+		messages: session.messages.map((message) =>
+			message.role === "toolResult"
+				? { ...message, content: message.content.filter((block) => block.type === "text") }
+				: message,
+		),
+	};
 	await writeStore();
 }
 

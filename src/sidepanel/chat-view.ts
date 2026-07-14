@@ -1,5 +1,5 @@
-import type { AgentEvent, AgentToolResult } from "@shared/agent/types";
-import type { AssistantMessage, Message } from "@shared/ai/types";
+import type { AgentEvent, AgentToolDisplayResult } from "@shared/agent/types";
+import type { AssistantMessage, Message, ToolResultContent } from "@shared/ai/types";
 import {
 	deriveTitle,
 	getCurrentId,
@@ -292,10 +292,17 @@ function updateToolCardResult(card: ToolCardRef, resultText: string, isError: bo
 	card.bodyEl.textContent = resultText;
 }
 
-function finalizeToolCard(toolCallId: string, result: AgentToolResult, isError: boolean): void {
+function toolResultText(content: ToolResultContent[]): string {
+	return content
+		.filter((block) => block.type === "text")
+		.map((block) => block.text)
+		.join("\n");
+}
+
+function finalizeToolCard(toolCallId: string, result: AgentToolDisplayResult, isError: boolean): void {
 	const card = state.toolCards.get(toolCallId);
 	if (!card) return;
-	updateToolCardResult(card, result.content.map((c) => c.text).join("\n"), isError);
+	updateToolCardResult(card, toolResultText(result.content), isError);
 }
 
 function renderHistory(messages: Message[]): void {
@@ -329,7 +336,7 @@ function renderHistory(messages: Message[]): void {
 		} else if (msg.role === "toolResult") {
 			const card = pendingCards.get(msg.toolCallId);
 			if (!card) continue;
-			updateToolCardResult(card, msg.content.map((c) => c.text).join("\n"), msg.isError === true);
+			updateToolCardResult(card, toolResultText(msg.content), msg.isError === true);
 			pendingCards.delete(msg.toolCallId);
 		}
 	}
