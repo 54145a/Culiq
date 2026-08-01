@@ -1,6 +1,6 @@
 import { runAgentLoop } from "@shared/agent";
-import { SYSTEM_PROMPT } from "@shared/agent/system-prompt";
-import { getActiveProvider, loadSettings } from "@shared/config";
+import { getSystemPrompt } from "@shared/agent/system-prompt";
+import { getActiveProvider, loadSettings, type Capability } from "@shared/config";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
 
@@ -84,9 +84,15 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		const controller = new AbortController();
 		activeTurns.set(turnId, controller);
 
+		const enabled = new Set<Capability>(settings.capabilities);
+
 		try {
 			await runAgentLoop(
-				{ systemPrompt: SYSTEM_PROMPT, messages: msg.messages, tools: getTools() },
+				{
+					systemPrompt: getSystemPrompt(settings.capabilities),
+					messages: msg.messages,
+					tools: getTools().filter((tool) => enabled.has(tool.name as Capability)),
+				},
 				{
 					model: { id: provider.model, provider: provider.id },
 					apiKey: provider.apiKey,

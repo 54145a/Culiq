@@ -544,7 +544,37 @@ button.danger:hover {
 	padding: 14px;
 	overflow: auto;
 	gap: 14px;
-}.settings-header {
+}
+
+.settings-group {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.settings-group > summary.settings-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	cursor: pointer;
+	user-select: none;
+	list-style: none;
+}
+
+.settings-group > summary.settings-header::-webkit-details-marker {
+	display: none;
+}
+
+.summary-badge {
+	font-size: 0.72rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: none;
+	color: #4a90e2;
+}
+
+.settings-header {
 	margin: 0;
 	font-size: 0.78rem;
 	font-weight: 600;
@@ -640,6 +670,27 @@ button.danger:hover {
 
 .settings-actions .status[data-state="err"] {
 	color: #c0392b;
+}
+
+.capability-list {
+	display: grid;
+	gap: 6px;
+}
+
+.capability {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	font-size: 0.85rem;
+}
+
+.capability input {
+	margin-top: 2px;
+	padding: 0;
+	width: 16px;
+	height: 16px;
+	accent-color: #4a90e2;
+	flex: none;
 }
 
 /* sessions view */

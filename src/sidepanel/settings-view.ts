@@ -1,4 +1,5 @@
-import { loadSettings, PROVIDER_DEFAULTS, type ProviderId, saveSettings } from "@shared/config";
+import { SYSTEM_PROMPT_PARTS } from "@shared/agent/system-prompt";
+import { loadSettings, PROVIDER_DEFAULTS, type Capability, type ProviderId, saveSettings } from "@shared/config";
 
 const PROVIDERS: ProviderId[] = ["openai", "anthropic"];
 
@@ -10,22 +11,59 @@ export async function mountSettings(root: HTMLElement): Promise<void> {
 	const render = () => {
 		root.innerHTML = "";
 
-		const header = document.createElement("h2");
-		header.textContent = "Providers";
-		header.className = "settings-header";
-		root.appendChild(header);
+		const providers = document.createElement("details");
+		providers.className = "settings-group";
+		providers.open = false;
+
+		const providersSummary = document.createElement("summary");
+		providersSummary.className = "settings-header";
+		providersSummary.textContent = "Providers";
+
+		const activeLabel = PROVIDER_DEFAULTS[settings.activeProvider].label;
+		const badge = document.createElement("span");
+		badge.className = "summary-badge";
+		badge.textContent = activeLabel;
+		providersSummary.appendChild(badge);
+
+		providers.appendChild(providersSummary);
 
 		const hint = document.createElement("p");
 		hint.className = "settings-hint";
 		hint.textContent = "Click a provider to make it active.";
-		root.appendChild(hint);
+		providers.appendChild(hint);
 
 		for (const id of PROVIDERS) {
-			root.appendChild(renderCard(id));
+			providers.appendChild(renderCard(id));
 		}
+
+		root.appendChild(providers);
+
+		const capabilities = document.createElement("details");
+		capabilities.className = "settings-group";
+		capabilities.open = false;
+
+		const capHeader = document.createElement("summary");
+		capHeader.className = "settings-header";
+		capHeader.textContent = "Capabilities";
+		capabilities.appendChild(capHeader);
+
+		const capHint = document.createElement("p");
+		capHint.className = "settings-hint";
+		capHint.textContent = "Tools the agent is allowed to use.";
+		capabilities.appendChild(capHint);
+
+		const capList = document.createElement("div");
+		capList.className = "capability-list";
+		for (const [key, description] of Object.entries(SYSTEM_PROMPT_PARTS.capabilities)) {
+			capList.appendChild(renderCapability(key as Capability, description));
+		}
+		capabilities.appendChild(capList);
+
+		root.appendChild(capabilities);
 
 		const actions = document.createElement("div");
 		actions.className = "settings-actions";
+
 		statusEl.textContent = "";
 		statusEl.removeAttribute("data-state");
 		actions.appendChild(statusEl);
@@ -132,6 +170,32 @@ export async function mountSettings(root: HTMLElement): Promise<void> {
 		});
 
 		return card;
+	}
+
+	function renderCapability(key: Capability, description: string): HTMLLabelElement {
+		const label = document.createElement("label");
+		label.className = "capability";
+
+		const checkbox = document.createElement("input");
+		checkbox.type = "checkbox";
+		checkbox.checked = settings.capabilities.includes(key);
+		checkbox.addEventListener("change", () => {
+			if (checkbox.checked) {
+				if (!settings.capabilities.includes(key)) settings.capabilities.push(key);
+			} else {
+				settings.capabilities = settings.capabilities.filter((c) => c !== key);
+			}
+		});
+
+		const name = document.createElement("code");
+		name.textContent = key;
+
+		const desc = document.createElement("span");
+		desc.className = "capability-desc";
+		desc.textContent = description;
+
+		label.append(checkbox, name, desc);
+		return label;
 	}
 
 	render();
