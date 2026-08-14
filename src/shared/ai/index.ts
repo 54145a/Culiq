@@ -1,2 +1,3 @@
 export * from "./types";
-export { completeText, streamAssistant } from "./sdk";
+export { EventStream } from "./stream";
+export { streamSimple } from "./sdk";
