@@ -15,6 +15,7 @@ import {
 	saveMcpServers,
 	testMcpConnection,
 	type McpServerConfig,
+	type McpTransport,
 } from "@shared/mcp";
 
 const PROVIDERS: ProviderId[] = ["openai", "anthropic"];
@@ -383,6 +384,7 @@ function McpServersGroup() {
 	const [servers, setServers] = useState<McpServerConfig[] | null>(null);
 	const [name, setName] = useState("");
 	const [url, setUrl] = useState("");
+	const [transport, setTransport] = useState<McpTransport>("http");
 	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
 
 	const refresh = async () => {
@@ -413,7 +415,7 @@ function McpServersGroup() {
 			setStatus({ state: "err", text: `A server named "${trimmedName}" already exists.` });
 			return;
 		}
-		await persist([...(servers ?? []), { name: trimmedName, url: trimmedUrl, enabled: false }]);
+		await persist([...(servers ?? []), { name: trimmedName, url: trimmedUrl, enabled: false, transport }]);
 		setName("");
 		setUrl("");
 		setStatus({ state: "ok", text: `added ${trimmedName}` });
@@ -431,7 +433,7 @@ function McpServersGroup() {
 
 	const onTest = async (server: McpServerConfig) => {
 		setStatus({ state: "ok", text: `testing ${server.name}…` });
-		const result = await testMcpConnection(server.url);
+		const result = await testMcpConnection(server.url, server.transport);
 		if (result.ok) {
 			setStatus({ state: "ok", text: `${server.name}: connected (${result.serverName}), ${result.toolCount} tools` });
 		} else {
@@ -443,16 +445,30 @@ function McpServersGroup() {
 		<details className="settings-group">
 			<summary className="settings-header">MCP servers</summary>
 			<p className="settings-hint">
-				Connect to remote Model Context Protocol servers (Streamable HTTP). Their tools are exposed to the agent as{" "}
-				<code>server:tool</code> and toggle per server. Treat MCP servers as untrusted third-party code with external side
-				effects; only enable servers you trust.
+				Connect to Model Context Protocol servers. Their tools are exposed to the agent as <code>server:tool</code> and toggle
+				per server. Streamable HTTP is the modern transport; SSE is legacy. The URL must include the server's endpoint path
+				(e.g. <code>…/mcp</code> for streamable HTTP, <code>…/sse</code> for SSE) — a bare hostname won't work. Treat MCP
+				servers as untrusted third-party code with external side effects; only enable servers you trust.
 			</p>
-			<Field label="Name" type="text" value={name} placeholder="github" onInput={setName} />
-			<Field label="URL" type="text" value={url} placeholder="https://mcp.example.com/mcp" onInput={setUrl} />
 			<div className="settings-actions">
 				<span className="status" data-state={status?.state}>
 					{status?.text ?? ""}
 				</span>
+			</div>
+			<Field label="Name" type="text" value={name} placeholder="github" onInput={setName} />
+			<Field label="URL" type="text" value={url} placeholder="https://localhost:3001/mcp" onInput={setUrl} />
+			<label>
+				<span>Transport</span>
+				<select
+					value={transport}
+					onChange={(e) => setTransport((e.target as HTMLSelectElement).value as McpTransport)}
+					onClick={(e) => e.stopPropagation()}
+				>
+					<option value="http">Streamable HTTP</option>
+					<option value="sse">SSE (legacy)</option>
+				</select>
+			</label>
+			<div className="settings-actions">
 				<button type="button" onClick={() => void onAdd()}>
 					Add server
 				</button>
@@ -469,6 +485,7 @@ function McpServersGroup() {
 								onChange={(e) => void onToggle(server, (e.target as HTMLInputElement).checked)}
 							/>
 							<code>{server.name}</code>
+							<span className="capability-desc">{server.transport}</span>
 							<span className="capability-desc">{server.url}</span>
 							<button
 								type="button"

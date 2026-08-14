@@ -1,8 +1,8 @@
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import type { AgentTool, AgentToolResult } from "../agent/types";
-import { loadMcpServers, type McpServerConfig } from "./storage";
+import { loadMcpServers, type McpServerConfig, type McpTransport } from "./storage";
 
-export { loadMcpServers, saveMcpServers, type McpServerConfig } from "./storage";
+export { loadMcpServers, saveMcpServers, type McpServerConfig, type McpTransport } from "./storage";
 
 const CONNECTION_TIMEOUT_MS = 10_000;
 
@@ -44,10 +44,11 @@ export async function closeMcp(signal: AbortSignal): Promise<void> {
 /** Connect to a server and report how many tools it exposes. For the settings UI. */
 export async function testMcpConnection(
 	url: string,
+	transport: McpTransport = "http",
 ): Promise<{ ok: true; serverName: string; toolCount: number } | { ok: false; error: string }> {
 	try {
 		const client = await createMCPClient({
-			transport: { type: "http", url, fetch: fetchFn },
+			transport: { type: transport, url, fetch: fetchFn },
 			initializationOptions: { timeout: CONNECTION_TIMEOUT_MS },
 		});
 		try {
@@ -74,7 +75,7 @@ export async function createMcpTools(signal: AbortSignal): Promise<AgentTool[]> 
 async function connectServer(session: McpSession, server: McpServerConfig): Promise<AgentTool[]> {
 	try {
 		const client = await createMCPClient({
-			transport: { type: "http", url: server.url.trim(), fetch: fetchFn },
+			transport: { type: server.transport, url: server.url.trim(), fetch: fetchFn },
 			initializationOptions: { timeout: CONNECTION_TIMEOUT_MS },
 			clientName: "curio",
 		});
