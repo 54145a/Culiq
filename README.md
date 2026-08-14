@@ -30,7 +30,7 @@ A browser-extension browser agent that automatically operates the browser for yo
 ### Implementation
 
 - **Side panel** — chat UI in vanilla TypeScript + Vite + marked; the settings page uses Preact (Vite-native esbuild JSX, `jsxImportSource: preact`)
-- **Service worker** — the agent loop streams the LLM with `fetch` (Anthropic Messages / OpenAI Chat Completions), parses SSE, dispatches tool calls, and captures the active tab's visible viewport in the background
+- **Service worker** — the agent loop streams the LLM; provider differences are unified by the Vercel AI SDK (`streamText` + `@ai-sdk/openai-compatible` / `@ai-sdk/anthropic`, including DeepSeek reasoning and Anthropic thinking signatures), dispatches tool calls, and captures the active tab's visible viewport in the background
 - **Context compression** — estimates per-turn token usage (tokenx) inside the agent loop; past the context-window threshold, the oldest turns are handed to the LLM for summarization while the most recent turns stay verbatim, preserving AI / tool-result pairing
 - **Content script** — injected into all pages, performs DOM operations (query / click / type / read_dom)
 - **Page execution worlds** — on-demand `chrome.scripting.executeScript` in the MAIN or ISOLATED world so `eval_js` can access page globals, framework state, or an isolated DOM environment

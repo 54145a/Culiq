@@ -21,6 +21,9 @@
 		"web-ext": "^0.0.1"
 	},
 	"dependencies": {
+		"@ai-sdk/anthropic": "^4.0.38",
+		"@ai-sdk/openai-compatible": "^3.0.30",
+		"ai": "^7.0.64",
 		"marked": "^18.0.3",
 		"preact": "^10.29.8",
 		"tokenx": "^2.1.0"

@@ -78,15 +78,3 @@ export interface StreamOptions {
 	maxTokens?: number;
 	temperature?: number;
 }
-
-export type StreamEvent =
-	| { type: "start"; partial: AssistantMessage }
-	| { type: "text_start"; contentIndex: number; partial: AssistantMessage }
-	| { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
-	| { type: "text_end"; contentIndex: number; partial: AssistantMessage }
-	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
-	| { type: "toolcall_delta"; contentIndex: number; argsDelta: string; partial: AssistantMessage }
-	| { type: "toolcall_end"; contentIndex: number; partial: AssistantMessage }
-	| { type: "usage"; usage: { inputTokens: number; outputTokens: number }; partial: AssistantMessage }
-	| { type: "done"; message: AssistantMessage }
-	| { type: "error"; error: string; message: AssistantMessage };

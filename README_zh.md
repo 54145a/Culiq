@@ -30,7 +30,7 @@
 ### 实现
 
 - **Side panel** —— 对话 UI，原生 TypeScript + Vite + marked；设置页用 Preact（Vite 原生 esbuild JSX，`jsxImportSource: preact`）
-- **Service worker** —— agent loop，用 `fetch` 流式调用 LLM（Anthropic Messages / OpenAI Chat Completions），解析 SSE，分发 tool call，并在后台截取当前标签页的可见区域
+- **Service worker** —— agent loop 流式调用 LLM；Provider 差异由 Vercel AI SDK（`streamText` + `@ai-sdk/openai-compatible` / `@ai-sdk/anthropic`）统一处理（含 DeepSeek reasoning 与 Anthropic thinking 签名），分发 tool call，并在后台截取当前标签页的可见区域
 - **上下文压缩** —— agent loop 内按 turn 估算 token 用量（tokenx），超过上下文窗口阈值时把最旧的轮次交给 LLM 摘要，保留最近的轮次原文，保证 AI / tool result 消息配对完整
 - **Content script** —— 注入到所有页面，承担 DOM 操作（query / click / type / read_dom）
 - **Page execution worlds** —— 按需通过 `chrome.scripting.executeScript` 在 MAIN 或 ISOLATED world 执行代码，让 `eval_js` 访问页面 globals、框架内部状态或隔离的 DOM 环境

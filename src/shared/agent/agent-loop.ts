@@ -1,5 +1,5 @@
 import { estimateTokenCount, sliceByTokens } from "tokenx";
-import { streamSimple } from "../ai";
+import { completeText, streamAssistant } from "../ai";
 import type { AssistantMessage, Message, ToolCallContent, ToolResultMessage } from "../ai/types";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "./types";
 import { toolToLlmSpec } from "./types";
@@ -95,7 +95,8 @@ async function streamAssistantResponse(
 
 	await maybeCompressContext(context, config, emit, signal);
 
-	const stream = streamSimple(
+	let started = false;
+	const assistantMessage = await streamAssistant(
 		config.model,
 		{
 			...(context.systemPrompt ? { systemPrompt: context.systemPrompt } : {}),
@@ -109,25 +110,22 @@ async function streamAssistantResponse(
 			...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
 			...(signal ? { signal } : {}),
 		},
+		{
+			onStart: (partial) => {
+				started = true;
+				emit({ type: "message_start", message: partial });
+			},
+			onTextDelta: (contentIndex, text, partial) =>
+				emit({
+					type: "message_update",
+					message: partial,
+					delta: { kind: "text", contentIndex, text },
+				}),
+		},
 	);
 
-	let started = false;
-	for await (const event of stream) {
-		if (event.type === "start") {
-			started = true;
-			emit({ type: "message_start", message: event.partial });
-		} else if (event.type === "text_delta") {
-			emit({
-				type: "message_update",
-				message: event.partial,
-				delta: { kind: "text", contentIndex: event.contentIndex, text: event.delta },
-			});
-		} else if (event.type === "done" || event.type === "error") {
-			if (!started) emit({ type: "message_start", message: event.message });
-			return event.message;
-		}
-	}
-	return stream.result();
+	if (!started) emit({ type: "message_start", message: assistantMessage });
+	return assistantMessage;
 }
 
 async function executeParallel(
@@ -307,27 +305,25 @@ async function summarizeTurns(turns: Message[][], config: AgentLoopConfig, signa
 	if (text.length === 0) return "";
 	const capped = sliceByTokens(text, 0, SUMMARY_INPUT_TOKEN_CAP);
 
-	const stream = streamSimple(
-		config.model,
-		{
-			systemPrompt: SUMMARY_PROMPT,
-			messages: [{ role: "user", content: capped }],
-		},
-		{
-			apiKey: config.apiKey,
-			...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
-			maxTokens: SUMMARY_MAX_TOKENS,
-			...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
-			...(signal ? { signal } : {}),
-		},
-	);
-
-	let out = "";
-	for await (const event of stream) {
-		if (event.type === "text_delta") out += event.delta;
-		else if (event.type === "error") return "";
+	try {
+		const summary = await completeText(
+			config.model,
+			{
+				systemPrompt: SUMMARY_PROMPT,
+				messages: [{ role: "user", content: capped }],
+			},
+			{
+				apiKey: config.apiKey,
+				...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+				maxTokens: SUMMARY_MAX_TOKENS,
+				...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
+				...(signal ? { signal } : {}),
+			},
+		);
+		return summary.trim();
+	} catch {
+		return "";
 	}
-	return out.trim();
 }
 
 async function maybeCompressContext(
