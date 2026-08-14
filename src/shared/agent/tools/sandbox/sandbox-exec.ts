@@ -98,11 +98,17 @@ class OffscreenTransport implements SandboxTransport {
 }
 
 async function createSandboxTransport(): Promise<SandboxTransport> {
-	if (typeof Worker !== "undefined") return new DirectWorkerTransport();
-	await ensureOffscreen();
-	const transport = new OffscreenTransport(crypto.randomUUID());
-	transport.postMessage({ kind: "init", paths: Object.keys(BRIDGE_SPEC) });
-	return transport;
+	// Offscreen-first: every browser with the API (Chrome) hosts the sandbox
+	// worker in the offscreen document, so all such browsers share one path.
+	// Firefox backgrounds have no offscreen API but are workers themselves and
+	// can spawn the worker directly — the only platform-specific branch.
+	if (typeof chrome.offscreen !== "undefined") {
+		await ensureOffscreen();
+		const transport = new OffscreenTransport(crypto.randomUUID());
+		transport.postMessage({ kind: "init", paths: Object.keys(BRIDGE_SPEC) });
+		return transport;
+	}
+	return new DirectWorkerTransport();
 }
 
 // ---------------------------------------------------------------------------
