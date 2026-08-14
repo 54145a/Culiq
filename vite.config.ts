@@ -29,6 +29,10 @@ if (versionOverride) {
 
 export default defineConfig({
 	plugins: [crx({ manifest, browser: target })],
+	esbuild: {
+		jsx: "automatic",
+		jsxImportSource: "preact",
+	},
 	resolve: {
 		alias: {
 			"@shared": resolve(__dirname, "src/shared"),

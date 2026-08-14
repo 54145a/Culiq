@@ -1,5 +1,7 @@
 import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
+import { buildAvailableSkillsBlock, listEnabledSkills } from "@shared/skills";
+import { closeSandbox } from "@shared/agent/tools/sandbox";
 import { getActiveProvider, loadSettings, type Capability } from "@shared/config";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
@@ -87,9 +89,12 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		const enabled = new Set<Capability>(settings.capabilities);
 
 		try {
+			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
+			const systemPrompt = getSystemPrompt(settings.capabilities) + buildAvailableSkillsBlock(skills);
+
 			await runAgentLoop(
 				{
-					systemPrompt: getSystemPrompt(settings.capabilities),
+					systemPrompt,
 					messages: msg.messages,
 					tools: getTools().filter((tool) => enabled.has(tool.name as Capability)),
 				},
@@ -97,11 +102,13 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 					model: { id: provider.model, provider: provider.id },
 					apiKey: provider.apiKey,
 					baseUrl: provider.baseUrl,
+					contextManagement: settings.contextManagement,
 				},
 				(event) => send({ type: "agent_event", turnId, event }),
 				controller.signal,
 			);
 		} finally {
+			closeSandbox(controller.signal);
 			activeTurns.delete(turnId);
 		}
 	} catch (err) {

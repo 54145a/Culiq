@@ -1,0 +1,140 @@
+import { listBuiltinSkills } from "./builtin";
+import { parseSkillMarkdown } from "./frontmatter";
+import { deleteSkillMeta, getSkillMeta, setSkillEnabled as setMetaEnabled, setSkillMeta } from "./meta";
+import { deleteEntry, listDir, readTextFile, writeTextFile } from "./storage";
+import type { Skill } from "./types";
+
+export type { Skill } from "./types";
+
+const SKILLS_DIR = "skills";
+
+function skillDir(name: string): string {
+	return `${SKILLS_DIR}/${name}`;
+}
+
+function skillFilePath(name: string, file: string): string {
+	return `${SKILLS_DIR}/${name}/${file}`;
+}
+
+/** List user skills stored in OPFS. */
+export async function listUserSkills(): Promise<Skill[]> {
+	const names = await listDir(SKILLS_DIR);
+	const skills: Skill[] = [];
+	for (const name of names) {
+		const skill = await getUserSkill(name);
+		if (skill) skills.push(skill);
+	}
+	return skills;
+}
+
+export async function getUserSkill(name: string): Promise<Skill | undefined> {
+	const content = await readTextFile(skillFilePath(name, "SKILL.md"));
+	if (content === null) return undefined;
+	let parsed: ReturnType<typeof parseSkillMarkdown>;
+	try {
+		parsed = parseSkillMarkdown(content);
+	} catch {
+		return undefined;
+	}
+
+	const meta = (await getSkillMeta(parsed.name)) ?? {
+		source: "user" as const,
+		enabled: true,
+		createdAt: 0,
+		updatedAt: 0,
+	};
+
+	const scripts: Record<string, string> = {};
+	const files = await listDir(skillDir(name));
+	for (const file of files) {
+		if (file === "SKILL.md") continue;
+		const source = await readTextFile(skillFilePath(name, file));
+		if (source !== null) scripts[file] = source;
+	}
+
+	return {
+		id: `user:${parsed.name}`,
+		name: parsed.name,
+		description: parsed.description,
+		content,
+		scripts,
+		source: "user",
+		enabled: meta.enabled,
+		createdAt: meta.createdAt,
+		updatedAt: meta.updatedAt,
+	};
+}
+
+export async function saveUserSkill(skill: Skill): Promise<void> {
+	await writeTextFile(skillFilePath(skill.name, "SKILL.md"), skill.content);
+	for (const [file, source] of Object.entries(skill.scripts)) {
+		await writeTextFile(skillFilePath(skill.name, file), source);
+	}
+	await setSkillMeta(skill.name, {
+		source: "user",
+		enabled: skill.enabled,
+		createdAt: skill.createdAt,
+		updatedAt: skill.updatedAt,
+	});
+}
+
+export async function deleteUserSkill(name: string): Promise<void> {
+	await deleteEntry(skillDir(name));
+	await deleteSkillMeta(name);
+}
+
+export async function setSkillEnabled(name: string, enabled: boolean): Promise<void> {
+	await setMetaEnabled(name, enabled);
+}
+
+/** All skills (builtin + user), builtin first. */
+export async function listSkills(): Promise<Skill[]> {
+	const [builtin, user] = await Promise.all([listBuiltinSkills(), listUserSkills()]);
+	const byName = new Map(user.map((s) => [s.name, s]));
+	return [...builtin.filter((b) => !byName.has(b.name)), ...user];
+}
+
+/** Enabled skills, used to build the `<available_skills>` prompt block. */
+export async function listEnabledSkills(): Promise<Skill[]> {
+	return (await listSkills()).filter((s) => s.enabled);
+}
+
+export async function getSkill(name: string): Promise<Skill | undefined> {
+	const user = await getUserSkill(name);
+	if (user) return user;
+	return (await listBuiltinSkills()).find((s) => s.name === name);
+}
+
+/**
+ * Build the `<available_skills>` block appended to the system prompt, listing
+ * each enabled skill's name and description. Load the full SKILL.md content via
+ * the `use_skill` tool when needed.
+ */
+export function buildAvailableSkillsBlock(skills: Skill[]): string {
+	if (skills.length === 0) return "";
+	const entries = skills.map((s) => `  <skill name="${escapeXml(s.name)}">${escapeXml(s.description)}</skill>`).join("\n");
+	return `\n<available_skills>\n${entries}\n</available_skills>`;
+}
+
+function escapeXml(value: string): string {
+	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+export { parseSkillMarkdown };
+
+/** Parse a skill folder's SKILL.md content into a user-installable Skill. */
+export function buildUserSkill(content: string, scripts: Record<string, string>): Skill {
+	const parsed = parseSkillMarkdown(content);
+	const now = Date.now();
+	return {
+		id: `user:${parsed.name}`,
+		name: parsed.name,
+		description: parsed.description,
+		content,
+		scripts,
+		source: "user",
+		enabled: true,
+		createdAt: now,
+		updatedAt: now,
+	};
+}

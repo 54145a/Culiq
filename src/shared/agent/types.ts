@@ -1,4 +1,5 @@
 import type { AssistantMessage, Message, TextContent, Tool, ToolResultContent, ToolResultMessage } from "../ai/types";
+import type { ContextManagementConfig, ProviderId } from "../config";
 
 export interface AgentToolResult {
 	content: ToolResultContent[];
@@ -27,12 +28,13 @@ export interface AgentContext {
 }
 
 export interface AgentLoopConfig {
-	model: { id: string; provider: import("../config").ProviderId };
+	model: { id: string; provider: ProviderId };
 	apiKey: string;
 	baseUrl?: string;
 	maxTokens?: number;
 	temperature?: number;
 	maxTurns?: number;
+	contextManagement?: ContextManagementConfig;
 }
 
 export type AgentEvent =
@@ -50,6 +52,13 @@ export type AgentEvent =
 			isError: boolean;
 	  }
 	| { type: "turn_end"; assistantMessage: AssistantMessage; toolResults: ToolResultMessage[] }
+	| {
+			type: "context_compressed";
+			beforeTokens: number;
+			afterTokens: number;
+			keptTurns: number;
+			summary: string;
+	  }
 	| { type: "agent_end"; messages: Message[]; stopReason: "end" | "max_turns" | "error" | "aborted"; errorMessage?: string };
 
 export function toolToLlmSpec(tool: AgentTool): Tool {

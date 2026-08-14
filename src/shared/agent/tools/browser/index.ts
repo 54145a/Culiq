@@ -2,8 +2,12 @@ import type { ElementSummary } from "@shared/transport/content-rpc";
 import { callContent } from "@shared/transport/tab-rpc";
 import type { AgentTool } from "../../types";
 import { evalJsTool } from "./eval-js";
+import { fetchUrlTool } from "./fetch-url";
+import { listTabsTool } from "./list-tabs";
 import { navigateTool } from "./navigate";
+import { reloadTabTool } from "./reload-tab";
 import { screenshotTool } from "./screenshot";
+import { switchTabTool } from "./switch-tab";
 
 function describe(el: ElementSummary): string {
 	const id = el.id ? `#${el.id}` : "";
@@ -147,4 +151,8 @@ export const browserTools: AgentTool[] = [
 	readDomTool,
 	screenshotTool,
 	evalJsTool,
+	listTabsTool,
+	switchTabTool,
+	reloadTabTool,
+	fetchUrlTool,
 ];

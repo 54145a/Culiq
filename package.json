@@ -20,7 +20,9 @@
 		"web-ext": "^0.0.1"
 	},
 	"dependencies": {
-		"marked": "^18.0.3"
+		"marked": "^18.0.3",
+		"preact": "^10.29.8",
+		"tokenx": "^2.1.0"
 	},
 	"allowScripts": {
 		"esbuild@0.25.12": true,

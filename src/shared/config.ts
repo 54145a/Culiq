@@ -4,6 +4,16 @@ export type ProviderId = "anthropic" | "openai";
 export type ThemePreference = "system" | "light" | "dark";
 export type Capability = keyof typeof SYSTEM_PROMPT_PARTS.capabilities;
 
+export interface ContextManagementConfig {
+	enabled: boolean;
+	/** Fraction of the context window that triggers compression (0-1). */
+	thresholdRatio: number;
+	/** Recent complete turns kept verbatim when compressing. */
+	keepTurns: number;
+	/** Optional manual context window size in tokens, overrides auto-detection. */
+	windowOverride?: number;
+}
+
 export interface ProviderConfig {
 	id: ProviderId;
 	apiKey: string;
@@ -11,7 +21,7 @@ export interface ProviderConfig {
 	model: string;
 }
 
-const CURIO_SETTINGS_VERSION = 2;
+const CURIO_SETTINGS_VERSION = 3;
 
 export interface CurioSettings {
 	version: typeof CURIO_SETTINGS_VERSION;
@@ -19,7 +29,15 @@ export interface CurioSettings {
 	activeProvider: ProviderId;
 	providers: Record<ProviderId, ProviderConfig>;
 	capabilities: Capability[];
+	contextManagement: ContextManagementConfig;
 }
+
+export const CONTEXT_MANAGEMENT_DEFAULTS: ContextManagementConfig = {
+	enabled: true,
+	thresholdRatio: 0.7,
+	keepTurns: 4,
+	windowOverride: undefined,
+};
 
 export const PROVIDER_DEFAULTS: Record<ProviderId, { label: string; baseUrl: string; model: string }> = {
 	anthropic: {
@@ -46,6 +64,7 @@ export function defaultSettings(): CurioSettings {
 			openai: { id: "openai", apiKey: "", ...mapDefault("openai") },
 		},
 		capabilities: Object.keys(SYSTEM_PROMPT_PARTS.capabilities) as Capability[],
+		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
 	};
 }
 
@@ -54,10 +73,19 @@ function mapDefault(id: ProviderId) {
 	return { baseUrl: d.baseUrl, model: d.model };
 }
 
+interface StoredSettings {
+	version?: number;
+	theme?: unknown;
+	activeProvider?: ProviderId;
+	providers?: Partial<Record<ProviderId, Partial<ProviderConfig>>>;
+	capabilities?: Capability[];
+	contextManagement?: Partial<ContextManagementConfig>;
+}
+
 export async function loadSettings(): Promise<CurioSettings> {
 	const raw = await chrome.storage.local.get(STORAGE_KEY);
-	const stored = raw[STORAGE_KEY] as CurioSettings | undefined;
-	if (!stored || stored.version !== 2) return defaultSettings();
+	const stored = raw[STORAGE_KEY] as StoredSettings | undefined;
+	if (!stored || (stored.version !== 2 && stored.version !== 3)) return defaultSettings();
 	const base = defaultSettings();
 	return {
 		version: CURIO_SETTINGS_VERSION,
@@ -68,6 +96,7 @@ export async function loadSettings(): Promise<CurioSettings> {
 			openai: { ...base.providers.openai, ...stored.providers?.openai },
 		},
 		capabilities: stored.capabilities ?? base.capabilities,
+		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
 	};
 }
 

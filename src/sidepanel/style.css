@@ -351,6 +351,24 @@ nav button[aria-selected="true"] {
 	border-color: color-mix(in srgb, #c0392b 35%, transparent);
 }
 
+#log li.msg.notice {
+	font-size: 0.78rem;
+	color: color-mix(in srgb, currentColor 55%, transparent);
+	border-style: dashed;
+	border-color: color-mix(in srgb, currentColor 25%, transparent);
+}
+
+.skill-delete {
+	margin-left: auto;
+	padding: 1px 8px;
+	font-size: 0.72rem;
+	background: none;
+	border: 1px solid color-mix(in srgb, #c0392b 40%, transparent);
+	color: #c0392b;
+	border-radius: 6px;
+	cursor: pointer;
+}
+
 /* tool call cards */
 
 #log li.tool-card {
@@ -542,7 +560,8 @@ button.danger:hover {
 
 #view-settings {
 	padding: 14px;
-	overflow: auto;
+	overflow-y: auto;
+	overflow-x: hidden;
 	gap: 14px;
 }
 
@@ -587,6 +606,7 @@ button.danger:hover {
 	margin: -8px 0 0;
 	font-size: 0.85rem;
 	color: color-mix(in srgb, currentColor 55%, transparent);
+	overflow-wrap: anywhere;
 }
 
 .provider-card {
@@ -660,8 +680,10 @@ button.danger:hover {
 
 .settings-actions .status {
 	flex: 1;
+	min-width: 0;
 	font-size: 0.82rem;
 	color: color-mix(in srgb, currentColor 60%, transparent);
+	overflow-wrap: anywhere;
 }
 
 .settings-actions .status[data-state="ok"] {
@@ -682,6 +704,13 @@ button.danger:hover {
 	align-items: flex-start;
 	gap: 8px;
 	font-size: 0.85rem;
+	min-width: 0;
+}
+
+.capability-desc {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-wrap: break-word;
 }
 
 .capability input {

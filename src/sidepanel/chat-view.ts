@@ -187,6 +187,11 @@ function handleAgentEvent(event: AgentEvent): void {
 		case "tool_execution_end":
 			finalizeToolCard(event.toolCallId, event.result, event.isError);
 			return;
+		case "context_compressed":
+			appendNotice(
+				`Context compressed: ${formatTokens(event.beforeTokens)} → ${formatTokens(event.afterTokens)} tokens · kept ${event.keptTurns} recent turn${event.keptTurns === 1 ? "" : "s"} verbatim`,
+			);
+			return;
 		case "agent_end":
 			finalizeAgent(event.messages, event.stopReason, event.errorMessage);
 			return;
@@ -370,6 +375,14 @@ function appendUser(text: string): void {
 function appendError(text: string): void {
 	const li = document.createElement("li");
 	li.className = "msg err";
+	li.textContent = text;
+	logEl.appendChild(li);
+	scrollToBottom();
+}
+
+function appendNotice(text: string): void {
+	const li = document.createElement("li");
+	li.className = "msg notice";
 	li.textContent = text;
 	logEl.appendChild(li);
 	scrollToBottom();
