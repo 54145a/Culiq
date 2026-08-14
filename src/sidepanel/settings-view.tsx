@@ -1,4 +1,3 @@
-import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { SYSTEM_PROMPT_PARTS } from "@shared/agent/system-prompt";
 import {
@@ -519,7 +518,7 @@ function McpServersGroup() {
 	);
 }
 
-function SettingsView() {
+export function SettingsView() {
 	const [settings, setSettings] = useState<CurioSettings | null>(null);
 	const [saveState, setSaveState] = useState<"idle" | "saving" | "ok" | "err">("idle");
 	const [saveMsg, setSaveMsg] = useState("");
@@ -561,8 +560,4 @@ function SettingsView() {
 			</div>
 		</>
 	);
-}
-
-export function mountSettings(root: HTMLElement): void {
-	render(<SettingsView />, root);
 }

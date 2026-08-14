@@ -30,6 +30,13 @@ body {
 	background: inherit;
 }
 
+#app {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+}
+
 header {
 	display: flex;
 	flex-direction: column;
