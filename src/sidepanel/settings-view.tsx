@@ -445,7 +445,7 @@ function McpServersGroup() {
 		<details className="settings-group">
 			<summary className="settings-header">MCP servers</summary>
 			<p className="settings-hint">
-				Connect to Model Context Protocol servers. Their tools are exposed to the agent as <code>server:tool</code> and toggle
+				Connect to Model Context Protocol servers. Their tools are exposed to the agent as <code>server-tool</code> and toggle
 				per server. Streamable HTTP is the modern transport; SSE is legacy. The URL must include the server's endpoint path
 				(e.g. <code>…/mcp</code> for streamable HTTP, <code>…/sse</code> for SSE) — a bare hostname won't work. Treat MCP
 				servers as untrusted third-party code with external side effects; only enable servers you trust.

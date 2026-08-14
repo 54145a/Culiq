@@ -97,7 +97,7 @@ function mcpTool(
 	client: MCPClient,
 ): AgentTool {
 	return {
-		name: `${serverName}:${toolName}`,
+		name: mcpToolName(serverName, toolName),
 		description: `[MCP server: ${serverName}] ${description ?? "No description provided."}`,
 		parameters: inputSchema,
 		async execute(args, signal) {
@@ -132,7 +132,7 @@ function callToolContent(result: McpCallResult): AgentToolResult["content"] {
 /** A diagnostic tool so a broken server surfaces to the LLM instead of failing silently. */
 function connectionErrorTool(server: McpServerConfig, message: string): AgentTool {
 	return {
-		name: `${sanitizeName(server.name)}:__connection_error`,
+		name: mcpToolName(sanitizeName(server.name), "__connection_error"),
 		description: `The MCP server "${server.name}" (${server.url}) failed to connect when this session started. Call this tool to retrieve the exact error and report it to the user.`,
 		parameters: { type: "object", properties: {}, additionalProperties: false },
 		async execute() {
@@ -151,4 +151,15 @@ function sanitizeName(name: string): string {
 		.replace(/[^A-Za-z0-9_-]+/g, "-")
 		.replace(/^-+|-+$/g, "");
 	return cleaned || "mcp";
+}
+
+/**
+ * OpenAI/Anthropic tool names must match `^[a-zA-Z0-9_-]+$`, so the colon
+ * prefix scheme is out. Join server + tool with '-' and strip anything else
+ * (MCP tool names may contain colons/dots for nesting).
+ */
+function mcpToolName(serverName: string, toolName: string): string {
+	const server = sanitizeName(serverName);
+	const tool = toolName.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+	return tool ? `${server}-${tool}` : server;
 }
