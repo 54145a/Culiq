@@ -22,7 +22,7 @@
 		"scripts": ["src/background/service-worker.ts"],
 		"type": "module"
 	},
-	"permissions": ["scripting", "storage", "activeTab", "tabs", "downloads"],
+	"permissions": ["scripting", "storage", "activeTab", "tabs", "downloads", "windows"],
 	"commands": {
 		"_execute_sidebar_action": {
 			"suggested_key": {

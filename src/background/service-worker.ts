@@ -31,6 +31,25 @@ self.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
 
 const activeTurns = new Map<string, AbortController>();
 
+let popupWindowId: number | undefined;
+chrome.windows.onRemoved.addListener((id) => {
+	if (id === popupWindowId) popupWindowId = undefined;
+});
+
+async function openPopupWindow(): Promise<void> {
+	if (popupWindowId !== undefined) {
+		try {
+			await chrome.windows.update(popupWindowId, { focused: true });
+			return;
+		} catch {
+			popupWindowId = undefined;
+		}
+	}
+	const url = chrome.runtime.getURL("src/sidepanel/index.html?window=1");
+	const win = await chrome.windows.create({ url, type: "popup", width: 440, height: 720 });
+	popupWindowId = win.id;
+}
+
 chrome.runtime.onConnect.addListener((port) => {
 	if (port.name !== PANEL_PORT) return;
 
@@ -55,6 +74,9 @@ chrome.runtime.onConnect.addListener((port) => {
 				ctrl?.abort();
 				return;
 			}
+			case "open_window":
+				void openPopupWindow();
+				return;
 		}
 	});
 

@@ -1,5 +1,6 @@
 import { loadSettings, saveTheme, type ThemePreference } from "@shared/config";
 import { BgConnection, type ConnectionState } from "./bg-connection";
+import { type PanelToBg } from "@shared/transport/protocol";
 import {
 	currentSessionId,
 	isBusy,
@@ -15,6 +16,7 @@ type ViewName = "chat" | "sessions" | "settings";
 
 const statusEl = document.getElementById("status") as HTMLSpanElement;
 const themeToggle = document.getElementById("theme-toggle") as HTMLButtonElement;
+const popoutToggle = document.getElementById("popout-toggle") as HTMLButtonElement;
 const settingsRoot = document.getElementById("view-settings") as HTMLElement;
 const sessionsRoot = document.getElementById("view-sessions") as HTMLElement;
 const views: Record<ViewName, HTMLElement> = {
@@ -24,6 +26,9 @@ const views: Record<ViewName, HTMLElement> = {
 };
 
 const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>("nav[role='tablist'] button"));
+
+const isPopupWindow = new URLSearchParams(location.search).get("window") === "1";
+if (isPopupWindow) document.body.dataset.mode = "window";
 
 let settingsMounted = false;
 let themePreference: ThemePreference = "system";
@@ -115,5 +120,13 @@ const sessionsView = mountSessions(sessionsRoot, {
 });
 
 onSessionChange(() => sessionsView.refresh());
+
+if (!isPopupWindow) {
+	popoutToggle.addEventListener("click", () => {
+		connection.send({ type: "open_window" } satisfies PanelToBg);
+	});
+} else {
+	popoutToggle.hidden = true;
+}
 
 connection.start();
