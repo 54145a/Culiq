@@ -19,14 +19,11 @@ interface LiveToolCard {
 	result: string;
 }
 
-interface LiveBubble {
-	spans: { index: number; raw: string }[];
-}
+/** Chronological log entries of the in-progress run: bubbles and tool cards interleaved. */
+type LiveItem = { kind: "bubble"; spans: { index: number; raw: string }[] } | { kind: "tool"; card: LiveToolCard };
 
 interface LiveState {
-	/** Assistant messages of the current run, one per `message_start` (multi-turn runs). */
-	bubbles: LiveBubble[];
-	toolCards: LiveToolCard[];
+	items: LiveItem[];
 }
 
 interface Notice {
@@ -107,21 +104,30 @@ function handleAgentEvent(event: AgentEvent): void {
 	switch (event.type) {
 		case "message_start":
 			if (event.message.role === "assistant") {
-				const live = store.live ?? { bubbles: [], toolCards: [] };
-				store.live = { bubbles: [...live.bubbles, { spans: [] }], toolCards: live.toolCards };
+				const items = store.live ? [...store.live.items, { kind: "bubble" as const, spans: [] }] : [{ kind: "bubble" as const, spans: [] }];
+				store.live = { items };
 				notify();
 			}
 			return;
 		case "message_update":
 			if (!store.live) return;
 			{
-				const bubble = store.live.bubbles[store.live.bubbles.length - 1];
-				let span = bubble.spans.find((s) => s.index === event.delta.contentIndex);
-				if (!span) {
-					span = { index: event.delta.contentIndex, raw: "" };
-					bubble.spans.push(span);
+				let bubble: Extract<LiveItem, { kind: "bubble" }> | undefined;
+				for (let i = store.live.items.length - 1; i >= 0; i--) {
+					const item = store.live.items[i];
+					if (item.kind === "bubble") {
+						bubble = item;
+						break;
+					}
 				}
-				span.raw += event.delta.text;
+				if (bubble) {
+					let span = bubble.spans.find((s) => s.index === event.delta.contentIndex);
+					if (!span) {
+						span = { index: event.delta.contentIndex, raw: "" };
+						bubble.spans.push(span);
+					}
+					span.raw += event.delta.text;
+				}
 				store.live = { ...store.live };
 			}
 			notify();
@@ -129,17 +135,17 @@ function handleAgentEvent(event: AgentEvent): void {
 		case "tool_execution_start":
 			if (!store.live) return;
 			store.live = {
-				...store.live,
-				toolCards: [...store.live.toolCards, { id: event.toolCallId, name: event.toolName, args: event.args, status: "running", result: "" }],
+				items: [...store.live.items, { kind: "tool", card: { id: event.toolCallId, name: event.toolName, args: event.args, status: "running", result: "" } }],
 			};
 			notify();
 			return;
 		case "tool_execution_end":
 			if (!store.live) return;
 			store.live = {
-				...store.live,
-				toolCards: store.live.toolCards.map((c) =>
-					c.id === event.toolCallId ? { ...c, status: event.isError ? "error" : "ok", result: toolResultText(event.result.content) } : c,
+				items: store.live.items.map((item) =>
+					item.kind === "tool" && item.card.id === event.toolCallId
+						? { kind: "tool", card: { ...item.card, status: event.isError ? "error" : "ok", result: toolResultText(event.result.content) } }
+						: item,
 				),
 			};
 			notify();
@@ -399,7 +405,8 @@ export function ChatView({ transport }: { transport: ChatTransport }) {
 	const history = useMemo(() => getHistory(messages), [messages]);
 
 	const title = useMemo(() => {
-		const count = messages.length + (live ? live.bubbles.length : 0);
+		const liveBubbles = live ? live.items.filter((i) => i.kind === "bubble").length : 0;
+		const count = messages.length + liveBubbles;
 		const tokens = totalTokens(messages);
 		const parts = [`${count} message${count === 1 ? "" : "s"}`];
 		if (tokens > 0) parts.push(`${formatTokens(tokens)} tokens`);
@@ -416,18 +423,19 @@ export function ChatView({ transport }: { transport: ChatTransport }) {
 			</div>
 			<ul id="log" ref={logRef} aria-live="polite">
 				{history.map(renderHistoryItem)}
-				{live?.bubbles.map((bubble, bi) =>
-					bubble.spans.length > 0 ? (
-						<li className="msg assistant" key={`live-${bi}`}>
-							{bubble.spans.map((s) => (
-								<div className="text md" key={s.index} dangerouslySetInnerHTML={{ __html: renderMarkdown(s.raw) }} />
-							))}
-						</li>
-					) : null,
+				{live?.items.map((item, i) =>
+					item.kind === "bubble"
+						? item.spans.length > 0
+							? (
+									<li className="msg assistant" key={`live-${i}`}>
+										{item.spans.map((s) => (
+											<div className="text md" key={s.index} dangerouslySetInnerHTML={{ __html: renderMarkdown(s.raw) }} />
+										))}
+									</li>
+								)
+							: null
+						: <ToolCardView key={item.card.id} card={item.card} />,
 				)}
-				{live?.toolCards.map((card) => (
-					<ToolCardView key={card.id} card={card} />
-				))}
 				{notices.map((n) => (
 					<li className={n.className} key={n.id}>
 						{n.text}
