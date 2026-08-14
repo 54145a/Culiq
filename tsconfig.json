@@ -16,9 +16,8 @@
 		"skipLibCheck": true,
 		"resolveJsonModule": true,
 		"types": ["chrome", "vite/client"],
-		"baseUrl": ".",
 		"paths": {
-			"@shared/*": ["src/shared/*"]
+			"@shared/*": ["./src/shared/*"]
 		}
 	},
 	"include": ["src/**/*.ts", "src/**/*.html"]

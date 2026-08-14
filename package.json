@@ -10,11 +10,12 @@
 		"build": "npm run build:chrome && npm run build:firefox",
 		"build:chrome": "TARGET=chrome vite build",
 		"build:firefox": "TARGET=firefox vite build",
-		"check": "tsc --noEmit"
+		"check": "tsgo --noEmit"
 	},
 	"devDependencies": {
 		"@crxjs/vite-plugin": "^2.0.0-beta.34",
 		"@types/chrome": "^0.0.291",
+		"@typescript/native-preview": "7.0.0-dev.20260707.2",
 		"typescript": "^5.7.2",
 		"vite": "^6.0.7",
 		"web-ext": "^0.0.1"

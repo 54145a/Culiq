@@ -1,5 +1,5 @@
 import { parseSkillMarkdown } from "./frontmatter";
-import type { Skill } from "./types";
+import type { Skill } from "./index";
 
 /**
  * Builtin skills ship with the extension under `public/skills/<name>/`.

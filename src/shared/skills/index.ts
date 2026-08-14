@@ -1,10 +1,22 @@
 import { listBuiltinSkills } from "./builtin";
 import { parseSkillMarkdown } from "./frontmatter";
-import { deleteSkillMeta, getSkillMeta, setSkillEnabled as setMetaEnabled, setSkillMeta } from "./meta";
+import { deleteSkillMeta, getSkillMeta, setSkillEnabled as setMetaEnabled, setSkillMeta } from "./storage";
 import { deleteEntry, listDir, readTextFile, writeTextFile } from "./storage";
-import type { Skill } from "./types";
 
-export type { Skill } from "./types";
+export interface Skill {
+	id: string;
+	name: string;
+	description: string;
+	/** Full SKILL.md content (frontmatter + body). */
+	content: string;
+	/** Script files: file name -> source. */
+	scripts: Record<string, string>;
+	/** "builtin" ships with the extension; "user" is installed into OPFS. */
+	source: "builtin" | "user";
+	enabled: boolean;
+	createdAt: number;
+	updatedAt: number;
+}
 
 const SKILLS_DIR = "skills";
 
