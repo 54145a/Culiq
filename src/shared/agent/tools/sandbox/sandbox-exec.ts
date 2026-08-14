@@ -13,52 +13,146 @@ interface PendingCall {
 }
 
 interface SandboxSession {
-	worker: Worker;
+	transport: SandboxTransport;
 	nextId: number;
 	pending: Map<number, PendingCall>;
 }
 
+/** Message pipe between the SW and the sandbox worker (init/eval/bridge/eval-result). */
+interface SandboxTransport {
+	postMessage(data: unknown): void;
+	onMessage(cb: (data: unknown) => void): void;
+	close(): void;
+}
+
+// ---------------------------------------------------------------------------
+// Transports: direct worker (Firefox: background workers can spawn workers) or
+// offscreen-document relay (Chrome MV3 service workers have no Worker global).
+// ---------------------------------------------------------------------------
+
+class DirectWorkerTransport implements SandboxTransport {
+	private worker: Worker;
+	private handler: ((data: unknown) => void) | null = null;
+
+	constructor() {
+		this.worker = createSandboxWorker();
+		this.worker.addEventListener("message", (e) => this.handler?.(e.data));
+	}
+
+	postMessage(data: unknown): void {
+		this.worker.postMessage(data);
+	}
+
+	onMessage(cb: (data: unknown) => void): void {
+		this.handler = cb;
+	}
+
+	close(): void {
+		this.worker.terminate();
+	}
+}
+
+const OFFSCREEN_URL = "offscreen.html";
+const OFFSCREEN_MSG = { send: "sandbox_send", msg: "sandbox_msg", close: "sandbox_close" } as const;
+
+let offscreenReady: Promise<void> | null = null;
+
+function ensureOffscreen(): Promise<void> {
+	if (typeof chrome.offscreen === "undefined") return Promise.resolve();
+	offscreenReady ??= (async () => {
+		const exists = await chrome.offscreen.hasDocument();
+		if (!exists) {
+			await chrome.offscreen.createDocument({
+				url: OFFSCREEN_URL,
+				reasons: [chrome.offscreen.Reason.WORKERS],
+				justification: "Host the sandbox_exec worker; MV3 service workers cannot create workers.",
+			});
+		}
+	})();
+	return offscreenReady;
+}
+
+class OffscreenTransport implements SandboxTransport {
+	private handler: ((data: unknown) => void) | null = null;
+	private readonly listener: (msg: { type?: string; sessionId?: string; data?: unknown }) => void;
+
+	constructor(private readonly sessionId: string) {
+		this.listener = (msg) => {
+			if (msg?.type === OFFSCREEN_MSG.msg && msg.sessionId === this.sessionId) this.handler?.(msg.data);
+		};
+		chrome.runtime.onMessage.addListener(this.listener);
+	}
+
+	postMessage(data: unknown): void {
+		void chrome.runtime.sendMessage({ type: OFFSCREEN_MSG.send, sessionId: this.sessionId, data });
+	}
+
+	onMessage(cb: (data: unknown) => void): void {
+		this.handler = cb;
+	}
+
+	close(): void {
+		chrome.runtime.onMessage.removeListener(this.listener);
+		void chrome.runtime.sendMessage({ type: OFFSCREEN_MSG.close, sessionId: this.sessionId });
+	}
+}
+
+async function createSandboxTransport(): Promise<SandboxTransport> {
+	if (typeof Worker !== "undefined") return new DirectWorkerTransport();
+	await ensureOffscreen();
+	const transport = new OffscreenTransport(crypto.randomUUID());
+	transport.postMessage({ kind: "init", paths: Object.keys(BRIDGE_SPEC) });
+	return transport;
+}
+
+// ---------------------------------------------------------------------------
+// Session lifecycle
+// ---------------------------------------------------------------------------
+
 const sessions = new WeakMap<AbortSignal, SandboxSession>();
 
-/** Terminate the sandbox worker for a turn (idempotent). */
+/** Close the sandbox for a turn (idempotent). */
 export function closeSandbox(signal: AbortSignal): void {
 	const session = sessions.get(signal);
 	if (!session) return;
 	sessions.delete(signal);
-	session.worker.terminate();
+	session.transport.close();
 }
 
-function getSession(signal: AbortSignal): SandboxSession {
+async function getSession(signal: AbortSignal): Promise<SandboxSession> {
 	let session = sessions.get(signal);
 	if (!session) {
-		const created: SandboxSession = { worker: createSandboxWorker(), nextId: 1, pending: new Map() };
+		const created: SandboxSession = { transport: await createSandboxTransport(), nextId: 1, pending: new Map() };
 		sessions.set(signal, created);
 		signal.addEventListener("abort", () => closeSandbox(signal), { once: true });
-		created.worker.addEventListener("message", (event) => onWorkerMessage(created, event));
+		created.transport.onMessage((data) => onWorkerMessage(created, data));
 		session = created;
 	}
 	return session;
 }
 
-function onWorkerMessage(session: SandboxSession, event: MessageEvent): void {
-	const data = event.data as
+function onWorkerMessage(
+	session: SandboxSession,
+	data: unknown,
+): void {
+	const msg = data as
 		| { kind: "eval-result"; id: number; ok: boolean; value?: string; error?: string }
 		| { kind: "bridge"; id: number; path: string; args?: unknown[] }
 		| undefined;
 
-	if (!data) return;
+	if (!msg) return;
 
-	if (data.kind === "eval-result") {
-		const pending = session.pending.get(data.id);
+	if (msg.kind === "eval-result") {
+		const pending = session.pending.get(msg.id);
 		if (!pending) return;
-		session.pending.delete(data.id);
+		session.pending.delete(msg.id);
 		clearTimeout(pending.timer);
-		pending.resolve(data.ok ? { ok: true, value: data.value ?? "" } : { ok: false, error: data.error ?? "unknown sandbox error" });
+		pending.resolve(msg.ok ? { ok: true, value: msg.value ?? "" } : { ok: false, error: msg.error ?? "unknown sandbox error" });
 		return;
 	}
 
-	if (data.kind === "bridge") {
-		void handleBridge(session, data.id, data.path, data.args ?? []);
+	if (msg.kind === "bridge") {
+		void handleBridge(session, msg.id, msg.path, msg.args ?? []);
 	}
 }
 
@@ -67,9 +161,9 @@ async function handleBridge(session: SandboxSession, id: number, path: string, a
 		const entry = BRIDGE_SPEC[path];
 		if (!entry) throw new Error(`sandbox bridge: unknown API ${path}`);
 		const value = await entry.invoke(args);
-		session.worker.postMessage({ kind: "bridge-result", id, ok: true, value: serializeBridgeValue(value) });
+		session.transport.postMessage({ kind: "bridge-result", id, ok: true, value: serializeBridgeValue(value) });
 	} catch (err) {
-		session.worker.postMessage({
+		session.transport.postMessage({
 			kind: "bridge-result",
 			id,
 			ok: false,
@@ -88,25 +182,26 @@ function serializeBridgeValue(value: unknown): unknown {
 }
 
 function evaluate(signal: AbortSignal, code: string): Promise<SandboxOutcome> {
-	const session = getSession(signal);
-	const id = session.nextId++;
+	return getSession(signal).then((session) => {
+		const id = session.nextId++;
 
-	return new Promise<SandboxOutcome>((resolve) => {
-		const timer = setTimeout(() => {
-			session.pending.delete(id);
-			closeSandbox(signal);
-			resolve({ ok: false, error: `sandbox_exec timed out after ${TIMEOUT_MS / 1000}s` });
-		}, TIMEOUT_MS);
+		return new Promise<SandboxOutcome>((resolve) => {
+			const timer = setTimeout(() => {
+				session.pending.delete(id);
+				closeSandbox(signal);
+				resolve({ ok: false, error: `sandbox_exec timed out after ${TIMEOUT_MS / 1000}s` });
+			}, TIMEOUT_MS);
 
-		session.pending.set(id, {
-			resolve: (outcome) => {
-				clearTimeout(timer);
-				resolve(outcome);
-			},
-			timer,
+			session.pending.set(id, {
+				resolve: (outcome) => {
+					clearTimeout(timer);
+					resolve(outcome);
+				},
+				timer,
+			});
+
+			session.transport.postMessage({ kind: "eval", id, code });
 		});
-
-		session.worker.postMessage({ kind: "eval", id, code });
 	});
 }
 

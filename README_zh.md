@@ -36,7 +36,7 @@
 - **Content script** —— 注入到所有页面，承担 DOM 操作（query / click / type / read_dom）
 - **Page execution worlds** —— 按需通过 `chrome.scripting.executeScript` 在 MAIN 或 ISOLATED world 执行代码，让 `eval_js` 访问页面 globals、框架内部状态或隔离的 DOM 环境
 - **Skills** —— 技能由用户从本地文件夹导入存入 **OPFS**（Origin Private File System，扩展私有、origin 隔离；`skills/<name>/SKILL.md` + 文件），元数据（enabled 等）存 `chrome.storage.local`；`use_skill` 以虚拟文件系统方式访问技能文件（先索引、再按需读取单个文件，读取可截断），脚本源码暂不执行、仅供模型参考
-- **Sandbox** —— `sandbox_exec` 在从静态扩展文件加载的专用 Worker（无 chrome.* 最小权限）中执行 Agent 提供的 JS；沙箱暴露 OPFS（`sandbox.fs`）、`sandbox.fetch` 与白名单 chrome 桥（Worker 侧代理 → postMessage → SW 执行真实 chrome.*，白名单 + 参数校验）。API 声明以紧凑 .d.ts 注入 system prompt，`sandbox.docs(name)` 按需返回详情；Worker 单 turn 内持久（SW 挂起即终止），跨 turn 状态落到 OPFS
+- **Sandbox** —— `sandbox_exec` 在从静态扩展文件加载的专用 Worker（无 chrome.* 最小权限）中执行 Agent 提供的 JS；沙箱暴露 OPFS（`sandbox.fs`）、`sandbox.fetch` 与白名单 chrome 桥（Worker 侧代理 → postMessage → SW 执行真实 chrome.*，白名单 + 参数校验）。API 声明以紧凑 .d.ts 注入 system prompt，`sandbox.docs(name)` 按需返回详情；Worker 单 turn 内持久（SW 挂起即终止），跨 turn 状态落到 OPFS。Chrome MV3 的 service worker 无法创建 Worker，因此该场景下 Worker 跑在 offscreen 文档里、经 chrome.runtime 与 SW 中转；Firefox 的 background 可直接创建
 
 ### 安装
 
