@@ -30,6 +30,18 @@ const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>("nav[role='
 const isPopupWindow = new URLSearchParams(location.search).get("window") === "1";
 if (isPopupWindow) document.body.dataset.mode = "window";
 
+// While a pop-out window is open, the sidebar shows a placeholder instead of the UI.
+const POPUP_ACTIVE_KEY = "curio.popup.active";
+if (!isPopupWindow) {
+	const syncPopupMode = (active: boolean) => {
+		document.body.dataset.popupActive = active ? "true" : "false";
+	};
+	chrome.storage.onChanged.addListener((changes, area) => {
+		if (area === "session" && changes[POPUP_ACTIVE_KEY]) syncPopupMode(changes[POPUP_ACTIVE_KEY].newValue === true);
+	});
+	void chrome.storage.session.get(POPUP_ACTIVE_KEY).then((v) => syncPopupMode(v[POPUP_ACTIVE_KEY] === true));
+}
+
 let settingsMounted = false;
 let themePreference: ThemePreference = "system";
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");

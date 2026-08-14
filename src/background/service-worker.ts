@@ -31,9 +31,15 @@ self.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
 
 const activeTurns = new Map<string, AbortController>();
 
+// Set while a pop-out window is open; the sidebar reacts by showing a placeholder.
+const POPUP_ACTIVE_KEY = "curio.popup.active";
+
 let popupWindowId: number | undefined;
 chrome.windows.onRemoved.addListener((id) => {
-	if (id === popupWindowId) popupWindowId = undefined;
+	if (id === popupWindowId) {
+		popupWindowId = undefined;
+		void chrome.storage.session.remove(POPUP_ACTIVE_KEY);
+	}
 });
 
 async function openPopupWindow(): Promise<void> {
@@ -48,6 +54,14 @@ async function openPopupWindow(): Promise<void> {
 	const url = chrome.runtime.getURL("src/sidepanel/index.html?window=1");
 	const win = await chrome.windows.create({ url, type: "popup", width: 440, height: 720 });
 	popupWindowId = win.id;
+	await chrome.storage.session.set({ [POPUP_ACTIVE_KEY]: true });
+	void closeSidebar();
+}
+
+/** Firefox can close its sidebar programmatically; Chrome's sidePanel API cannot. */
+function closeSidebar(): void {
+	const sidebar = (chrome as unknown as { sidebarAction?: { close?: () => Promise<void> } }).sidebarAction;
+	sidebar?.close?.().catch(() => {});
 }
 
 chrome.runtime.onConnect.addListener((port) => {
