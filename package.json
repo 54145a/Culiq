@@ -10,7 +10,9 @@
 		"build": "npm run build:chrome && npm run build:firefox",
 		"build:chrome": "TARGET=chrome vite build",
 		"build:firefox": "TARGET=firefox vite build",
+		"mcp:server": "npx --yes @modelcontextprotocol/server-everything streamableHttp",
 		"test:mcp": "node scripts/mcp-smoke.mjs",
+		"test:sandbox": "node scripts/sandbox-worker-smoke.mjs",
 		"check": "tsgo --noEmit"
 	},
 	"devDependencies": {
