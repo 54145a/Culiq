@@ -6,6 +6,11 @@ export { loadMcpServers, saveMcpServers, type McpServerConfig } from "./storage"
 
 const CONNECTION_TIMEOUT_MS = 10_000;
 
+// The MCP client calls its stored fetch with an arbitrary `this`, which throws
+// "Failed to execute 'fetch' on 'Window': Illegal invocation" in Chrome. Bind it
+// to the real global so the receiver is always correct (panel and SW alike).
+const fetchFn = globalThis.fetch.bind(globalThis);
+
 interface McpSession {
 	clients: MCPClient[];
 }
@@ -42,7 +47,7 @@ export async function testMcpConnection(
 ): Promise<{ ok: true; serverName: string; toolCount: number } | { ok: false; error: string }> {
 	try {
 		const client = await createMCPClient({
-			transport: { type: "http", url },
+			transport: { type: "http", url, fetch: fetchFn },
 			initializationOptions: { timeout: CONNECTION_TIMEOUT_MS },
 		});
 		try {
@@ -69,7 +74,7 @@ export async function createMcpTools(signal: AbortSignal): Promise<AgentTool[]> 
 async function connectServer(session: McpSession, server: McpServerConfig): Promise<AgentTool[]> {
 	try {
 		const client = await createMCPClient({
-			transport: { type: "http", url: server.url.trim() },
+			transport: { type: "http", url: server.url.trim(), fetch: fetchFn },
 			initializationOptions: { timeout: CONNECTION_TIMEOUT_MS },
 			clientName: "curio",
 		});

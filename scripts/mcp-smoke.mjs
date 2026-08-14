@@ -76,17 +76,35 @@ await new Promise((resolve) => server.listen(0, resolve));
 const { port } = server.address();
 const url = `http://127.0.0.1:${port}/mcp`;
 
-const client = await createMCPClient({ transport: { type: "http", url }, clientName: "curio" });
-try {
-	if (client.serverInfo.name !== "smoke-server") throw new Error(`bad serverInfo: ${client.serverInfo.name}`);
-	const listed = await client.listTools();
-	const names = listed.tools.map((t) => t.name);
-	if (names.join(",") !== "echo") throw new Error(`bad tools: ${names}`);
-	const result = await client.callTool({ name: "echo", arguments: { text: "hi" } });
-	const text = result?.content?.[0]?.text;
-	if (text !== "echo: hi") throw new Error(`bad call result: ${text}`);
-	console.log("mcp smoke OK:", url, "->", client.serverInfo.name, names.join(","), "=>", text);
-} finally {
-	await client.close();
-	server.close();
+const realFetch = globalThis.fetch;
+const ILLEGAL = "Failed to execute 'fetch' on 'Window': Illegal invocation";
+
+// Mimic Chrome: fetch is a Window method and rejects any receiver that is not the
+// global. The MCP client stores the passed fetch and calls it as `this.fetchFn(...)`,
+// so an unbound reference reproduces the "Illegal invocation" crash users hit.
+function chromeLikeFetch(input, init) {
+	if (this !== globalThis) throw new TypeError(ILLEGAL);
+	return realFetch(input, init);
 }
+
+async function roundTrip(fetchFn) {
+	const client = await createMCPClient({ transport: { type: "http", url, fetch: fetchFn }, clientName: "curio" });
+	try {
+		const names = (await client.listTools()).tools.map((t) => t.name);
+		const text = (await client.callTool({ name: "echo", arguments: { text: "hi" } }))?.content?.[0]?.text;
+		if (text !== "echo: hi") throw new Error(`bad call result: ${text}`);
+		return names.join(",") + " => " + text;
+	} finally {
+		await client.close();
+	}
+}
+
+const unboundThrows = await roundTrip(chromeLikeFetch).then(
+	() => false,
+	(err) => err instanceof TypeError && err.message === ILLEGAL,
+);
+if (!unboundThrows) throw new Error("unbound fetch did not reproduce the Illegal invocation bug");
+
+const boundResult = await roundTrip(chromeLikeFetch.bind(globalThis));
+console.log("mcp smoke OK:", url, "->", boundResult, "| unbound fetch correctly rejected");
+server.close();
