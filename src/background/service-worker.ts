@@ -3,6 +3,7 @@ import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { buildAvailableSkillsBlock, listEnabledSkills } from "@shared/skills";
 import { closeSandbox, generateSandboxDts } from "@shared/agent/tools/sandbox";
 import { getActiveProvider, loadSettings, type Capability } from "@shared/config";
+import { closeMcp, createMcpTools } from "@shared/mcp";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
 
@@ -92,12 +93,13 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
 			const sandboxDts = enabled.has("sandbox_exec") ? `\n\n${generateSandboxDts()}` : "";
 			const systemPrompt = getSystemPrompt(settings.capabilities) + buildAvailableSkillsBlock(skills) + sandboxDts;
+			const mcpTools = await createMcpTools(controller.signal);
 
 			await runAgentLoop(
 				{
 					systemPrompt,
 					messages: msg.messages,
-					tools: getTools().filter((tool) => enabled.has(tool.name as Capability)),
+					tools: [...getTools().filter((tool) => enabled.has(tool.name as Capability)), ...mcpTools],
 				},
 				{
 					model: { id: provider.model, provider: provider.id },
@@ -110,6 +112,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			);
 		} finally {
 			closeSandbox(controller.signal);
+			await closeMcp(controller.signal);
 			activeTurns.delete(turnId);
 		}
 	} catch (err) {

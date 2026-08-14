@@ -10,6 +10,12 @@ import {
 	saveSettings,
 } from "@shared/config";
 import { buildUserSkill, deleteUserSkill, listSkills, saveUserSkill, setSkillEnabled, type Skill } from "@shared/skills";
+import {
+	loadMcpServers,
+	saveMcpServers,
+	testMcpConnection,
+	type McpServerConfig,
+} from "@shared/mcp";
 
 const PROVIDERS: ProviderId[] = ["openai", "anthropic"];
 
@@ -373,6 +379,129 @@ function parseClawHubSlug(url: string): string | null {
 	}
 }
 
+function McpServersGroup() {
+	const [servers, setServers] = useState<McpServerConfig[] | null>(null);
+	const [name, setName] = useState("");
+	const [url, setUrl] = useState("");
+	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
+
+	const refresh = async () => {
+		try {
+			setServers(await loadMcpServers());
+		} catch (err) {
+			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+		}
+	};
+
+	useEffect(() => {
+		void refresh();
+	}, []);
+
+	const persist = async (next: McpServerConfig[]) => {
+		await saveMcpServers(next);
+		setServers(next);
+	};
+
+	const onAdd = async () => {
+		const trimmedName = name.trim();
+		const trimmedUrl = url.trim();
+		if (!trimmedName || !trimmedUrl) {
+			setStatus({ state: "err", text: "Enter a name and URL." });
+			return;
+		}
+		if (servers?.some((s) => s.name === trimmedName)) {
+			setStatus({ state: "err", text: `A server named "${trimmedName}" already exists.` });
+			return;
+		}
+		await persist([...(servers ?? []), { name: trimmedName, url: trimmedUrl, enabled: false }]);
+		setName("");
+		setUrl("");
+		setStatus({ state: "ok", text: `added ${trimmedName}` });
+	};
+
+	const onToggle = async (server: McpServerConfig, enabled: boolean) => {
+		if (!servers) return;
+		await persist(servers.map((s) => (s.name === server.name ? { ...s, enabled } : s)));
+	};
+
+	const onDelete = async (server: McpServerConfig) => {
+		if (!servers) return;
+		await persist(servers.filter((s) => s.name !== server.name));
+	};
+
+	const onTest = async (server: McpServerConfig) => {
+		setStatus({ state: "ok", text: `testing ${server.name}…` });
+		const result = await testMcpConnection(server.url);
+		if (result.ok) {
+			setStatus({ state: "ok", text: `${server.name}: connected (${result.serverName}), ${result.toolCount} tools` });
+		} else {
+			setStatus({ state: "err", text: `${server.name}: ${result.error}` });
+		}
+	};
+
+	return (
+		<details className="settings-group">
+			<summary className="settings-header">MCP servers</summary>
+			<p className="settings-hint">
+				Connect to remote Model Context Protocol servers (Streamable HTTP). Their tools are exposed to the agent as{" "}
+				<code>server:tool</code> and toggle per server. Treat MCP servers as untrusted third-party code with external side
+				effects; only enable servers you trust.
+			</p>
+			<Field label="Name" type="text" value={name} placeholder="github" onInput={setName} />
+			<Field label="URL" type="text" value={url} placeholder="https://mcp.example.com/mcp" onInput={setUrl} />
+			<div className="settings-actions">
+				<span className="status" data-state={status?.state}>
+					{status?.text ?? ""}
+				</span>
+				<button type="button" onClick={() => void onAdd()}>
+					Add server
+				</button>
+			</div>
+			<div className="capability-list">
+				{servers === null ? null : servers.length === 0 ? (
+					<p className="settings-hint">No MCP servers configured yet.</p>
+				) : (
+					servers.map((server) => (
+						<label className="capability" key={server.name}>
+							<input
+								type="checkbox"
+								checked={server.enabled}
+								onChange={(e) => void onToggle(server, (e.target as HTMLInputElement).checked)}
+							/>
+							<code>{server.name}</code>
+							<span className="capability-desc">{server.url}</span>
+							<button
+								type="button"
+								className="skill-delete"
+								title="Test connection"
+								onClick={(e) => {
+									e.preventDefault();
+									e.stopPropagation();
+									void onTest(server);
+								}}
+							>
+								test
+							</button>
+							<button
+								type="button"
+								className="skill-delete"
+								title="Delete server"
+								onClick={(e) => {
+									e.preventDefault();
+									e.stopPropagation();
+									void onDelete(server);
+								}}
+							>
+								delete
+							</button>
+						</label>
+					))
+				)}
+			</div>
+		</details>
+	);
+}
+
 function SettingsView() {
 	const [settings, setSettings] = useState<CurioSettings | null>(null);
 	const [saveState, setSaveState] = useState<"idle" | "saving" | "ok" | "err">("idle");
@@ -404,6 +533,7 @@ function SettingsView() {
 			<CapabilitiesGroup settings={settings} dirty={dirty} />
 			<ContextGroup settings={settings} dirty={dirty} />
 			<SkillsGroup />
+			<McpServersGroup />
 			<div className="settings-actions">
 				<span className="status" data-state={saveState === "ok" ? "ok" : saveState === "err" ? "err" : undefined}>
 					{saveMsg}

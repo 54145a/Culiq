@@ -11,6 +11,9 @@ importers:
       '@ai-sdk/anthropic':
         specifier: ^4.0.38
         version: 4.0.38(zod@4.4.3)
+      '@ai-sdk/mcp':
+        specifier: ^2.0.31
+        version: 2.0.31(zod@4.4.3)
       '@ai-sdk/openai-compatible':
         specifier: ^3.0.30
         version: 3.0.30(zod@4.4.3)
@@ -26,6 +29,9 @@ importers:
       tokenx:
         specifier: ^2.1.0
         version: 2.1.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@crxjs/vite-plugin':
         specifier: ^2.0.0-beta.34
@@ -56,6 +62,12 @@ packages:
 
   '@ai-sdk/gateway@4.0.51':
     resolution: {integrity: sha512-tQxWGUbg/O3A5EgekJo/C2byLVQ1r+vL6QdEVWmxUSnPhdCupcOeDbQO1tv9Um40VrdwYuSWlYzcbWvtlG5bOA==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/mcp@2.0.31':
+    resolution: {integrity: sha512-vBxkIg4CB9wQjWYo5uu1G/Vv3Xhbi3JZ47HoT5ywLNTycxKlY2RGGynTyGqcXLcvWBErRyMygDYVFn8VPc1N+w==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -587,6 +599,10 @@ packages:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
 
+  pkce-challenge@5.0.1:
+    resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
+    engines: {node: '>=16.20.0'}
+
   postcss@8.5.25:
     resolution: {integrity: sha512-DTPx3RWSSnWyzLxQnlH0rJP+EW5ekl16ZU4/psbIhA0e53kJfdgaN5vKM+xP7yJtXVu+nfdVFmlgFDEKAe4Pyw==}
     engines: {node: ^10 || ^12 || >=14}
@@ -699,6 +715,13 @@ snapshots:
       '@ai-sdk/provider': 4.0.7
       '@ai-sdk/provider-utils': 5.0.27(zod@4.4.3)
       '@vercel/oidc': 3.2.0
+      zod: 4.4.3
+
+  '@ai-sdk/mcp@2.0.31(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.7
+      '@ai-sdk/provider-utils': 5.0.27(zod@4.4.3)
+      pkce-challenge: 5.0.1
       zod: 4.4.3
 
   '@ai-sdk/openai-compatible@3.0.30(zod@4.4.3)':
@@ -1084,6 +1107,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.5: {}
+
+  pkce-challenge@5.0.1: {}
 
   postcss@8.5.25:
     dependencies:

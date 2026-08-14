@@ -10,6 +10,7 @@
 		"build": "npm run build:chrome && npm run build:firefox",
 		"build:chrome": "TARGET=chrome vite build",
 		"build:firefox": "TARGET=firefox vite build",
+		"test:mcp": "node scripts/mcp-smoke.mjs",
 		"check": "tsgo --noEmit"
 	},
 	"devDependencies": {
@@ -22,11 +23,13 @@
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^4.0.38",
+		"@ai-sdk/mcp": "^2.0.31",
 		"@ai-sdk/openai-compatible": "^3.0.30",
 		"ai": "^7.0.64",
 		"marked": "^18.0.3",
 		"preact": "^10.29.8",
-		"tokenx": "^2.1.0"
+		"tokenx": "^2.1.0",
+		"zod": "^4.4.3"
 	},
 	"allowScripts": {
 		"esbuild@0.25.12": true,
