@@ -1,7 +1,7 @@
 import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { buildAvailableSkillsBlock, listEnabledSkills } from "@shared/skills";
-import { closeSandbox } from "@shared/agent/tools/sandbox";
+import { closeSandbox, generateSandboxDts } from "@shared/agent/tools/sandbox";
 import { getActiveProvider, loadSettings, type Capability } from "@shared/config";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
@@ -90,7 +90,8 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 
 		try {
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
-			const systemPrompt = getSystemPrompt(settings.capabilities) + buildAvailableSkillsBlock(skills);
+			const sandboxDts = enabled.has("sandbox_exec") ? `\n\n${generateSandboxDts()}` : "";
+			const systemPrompt = getSystemPrompt(settings.capabilities) + buildAvailableSkillsBlock(skills) + sandboxDts;
 
 			await runAgentLoop(
 				{

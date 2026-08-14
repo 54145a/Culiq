@@ -1,4 +1,5 @@
 import type { AgentTool } from "../../types";
+import { BRIDGE_SPEC } from "./api";
 import { createSandboxWorker } from "./worker";
 
 const TIMEOUT_MS = 60_000;
@@ -6,9 +7,15 @@ const DEFAULT_MAX_CHARS = 8_000;
 
 type SandboxOutcome = { ok: true; value: string } | { ok: false; error: string };
 
+interface PendingCall {
+	resolve: (outcome: SandboxOutcome) => void;
+	timer: number;
+}
+
 interface SandboxSession {
 	worker: Worker;
 	nextId: number;
+	pending: Map<number, PendingCall>;
 }
 
 const sessions = new WeakMap<AbortSignal, SandboxSession>();
@@ -24,11 +31,60 @@ export function closeSandbox(signal: AbortSignal): void {
 function getSession(signal: AbortSignal): SandboxSession {
 	let session = sessions.get(signal);
 	if (!session) {
-		session = { worker: createSandboxWorker(), nextId: 1 };
-		sessions.set(signal, session);
+		const created: SandboxSession = { worker: createSandboxWorker(), nextId: 1, pending: new Map() };
+		sessions.set(signal, created);
 		signal.addEventListener("abort", () => closeSandbox(signal), { once: true });
+		created.worker.addEventListener("message", (event) => onWorkerMessage(created, event));
+		session = created;
 	}
 	return session;
+}
+
+function onWorkerMessage(session: SandboxSession, event: MessageEvent): void {
+	const data = event.data as
+		| { kind: "eval-result"; id: number; ok: boolean; value?: string; error?: string }
+		| { kind: "bridge"; id: number; path: string; args?: unknown[] }
+		| undefined;
+
+	if (!data) return;
+
+	if (data.kind === "eval-result") {
+		const pending = session.pending.get(data.id);
+		if (!pending) return;
+		session.pending.delete(data.id);
+		clearTimeout(pending.timer);
+		pending.resolve(data.ok ? { ok: true, value: data.value ?? "" } : { ok: false, error: data.error ?? "unknown sandbox error" });
+		return;
+	}
+
+	if (data.kind === "bridge") {
+		void handleBridge(session, data.id, data.path, data.args ?? []);
+	}
+}
+
+async function handleBridge(session: SandboxSession, id: number, path: string, args: unknown[]): Promise<void> {
+	try {
+		const entry = BRIDGE_SPEC[path];
+		if (!entry) throw new Error(`sandbox bridge: unknown API ${path}`);
+		const value = await entry.invoke(args);
+		session.worker.postMessage({ kind: "bridge-result", id, ok: true, value: serializeBridgeValue(value) });
+	} catch (err) {
+		session.worker.postMessage({
+			kind: "bridge-result",
+			id,
+			ok: false,
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+}
+
+/** Strip non-serializable values so the result survives postMessage. */
+function serializeBridgeValue(value: unknown): unknown {
+	try {
+		return JSON.parse(JSON.stringify(value));
+	} catch {
+		return String(value);
+	}
 }
 
 function evaluate(signal: AbortSignal, code: string): Promise<SandboxOutcome> {
@@ -37,28 +93,27 @@ function evaluate(signal: AbortSignal, code: string): Promise<SandboxOutcome> {
 
 	return new Promise<SandboxOutcome>((resolve) => {
 		const timer = setTimeout(() => {
-			session.worker.removeEventListener("message", onMessage);
+			session.pending.delete(id);
 			closeSandbox(signal);
 			resolve({ ok: false, error: `sandbox_exec timed out after ${TIMEOUT_MS / 1000}s` });
 		}, TIMEOUT_MS);
 
-		const onMessage = (event: MessageEvent) => {
-			const data = event.data as { id?: number; ok?: boolean; value?: string; error?: string };
-			if (data.id !== id) return;
-			session.worker.removeEventListener("message", onMessage);
-			clearTimeout(timer);
-			resolve(data.ok ? { ok: true, value: data.value ?? "" } : { ok: false, error: data.error ?? "unknown sandbox error" });
-		};
+		session.pending.set(id, {
+			resolve: (outcome) => {
+				clearTimeout(timer);
+				resolve(outcome);
+			},
+			timer,
+		});
 
-		session.worker.addEventListener("message", onMessage);
-		session.worker.postMessage({ id, code });
+		session.worker.postMessage({ kind: "eval", id, code });
 	});
 }
 
 export const sandboxExecTool: AgentTool = {
 	name: "sandbox_exec",
 	description:
-		"Run JavaScript in a restricted sandbox worker in the extension's background context. Exposed APIs: `sandbox.fs.read(path)`, `sandbox.fs.write(path, content)`, `sandbox.fs.list(path)`, `sandbox.fs.delete(path)`, `sandbox.fs.mkdir(path)` over the Origin Private File System (OPFS — the extension's private, origin-scoped storage; paths relative, no '..'); and `sandbox.fetch(url, init)` (extension-origin, CORS-free to permitted hosts). Standard worker globals (crypto, URL, TextEncoder, etc.) are available. No DOM and no chrome.* APIs. State (variables, OPFS handles) persists across sandbox_exec calls within the same turn. Top-level await supported; `return X` to send a value back. Use it for file work, patching skill files, network requests, and computation — instead of adding more dedicated tools.",
+		"Run JavaScript in a restricted sandbox worker in the extension's background context. Exposed APIs (see the `sandbox` type declarations in the system prompt; `sandbox.docs(name)` returns details): `sandbox.fs.{read,write,list,delete,mkdir}` over OPFS (relative paths, no '..'), `sandbox.fetch(url, init)` (extension-origin, CORS-free), a chrome bridge `sandbox.chrome.tabs.{query,get,update,reload}` and `sandbox.chrome.windows.{get,update}` (whitelisted, non-destructive), and `sandbox.evalInTab(tabId, world, code)` to run JS in a page. No DOM and no direct chrome.* inside the worker; bridge calls are proxied through the background and validated. State persists within the turn. Top-level await supported; `return X` to send a value back.",
 	parameters: {
 		type: "object",
 		properties: {

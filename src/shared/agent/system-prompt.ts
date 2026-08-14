@@ -12,7 +12,7 @@ export const SYSTEM_PROMPT_PARTS = {
 		"reload_tab": "Reload a tab (default the active tab); `bypassCache: true` forces a hard reload.",
 		"fetch_url": "Fetch a URL for a one-shot read of its rendered content (text or HTML) in a new foreground tab, then close it. For API endpoints and static pages only; not for interactive browsing (use `navigate` + DOM tools instead). URLs that respond with a file download will download instead of render and return nothing.",
 		"use_skill": "Access a skill's files (see <available_skills>): omit `file` for the skill index (truncated instructions + file listing), or pass `file` to read a specific file. Skills encode reusable workflows — browse and read files as needed.",
-		"sandbox_exec": "Run JavaScript in a restricted sandbox worker in the extension context. Exposes `sandbox.fs.{read,write,list,delete,mkdir}` (OPFS — origin-private storage, relative paths) and `sandbox.fetch`. No DOM, no chrome.*. State persists within the turn. Use for file work, patching skills, network requests, and computation.",
+		"sandbox_exec": "Run JavaScript in a restricted sandbox worker in the extension context. Exposes `sandbox.fs.{read,write,list,delete,mkdir}` (OPFS), `sandbox.fetch`, and a whitelisted chrome bridge `sandbox.chrome.tabs.*` / `sandbox.chrome.windows.*` plus `sandbox.evalInTab(tabId, world, code)`. Full API type declarations are appended to this prompt; `sandbox.docs(name)` returns details. No DOM, no direct chrome.*; bridge calls are validated and non-destructive. State persists within the turn. Use for file work, patching skills, page reads, network requests, and computation.",
 		"noop": "Echoes input. For testing only."
 	})
 };

@@ -1,10 +1,15 @@
 /**
  * Sandbox worker: a dedicated Web Worker (no chrome.* access) that evaluates
  * agent-provided JavaScript with a curated API surface:
- *   - sandbox.fs.{read,write,list,delete,mkdir}  → OPFS (origin-private files)
- *   - sandbox.fetch                               → extension-origin fetch
+ *   - sandbox.fs.{read,write,list,delete,mkdir}   → OPFS (origin-private files)
+ *   - sandbox.fetch                                → extension-origin fetch
+ *   - sandbox.chrome.* / evalInTab / docs          → RPC bridge to the SW
  * plus standard worker globals (crypto, URL, TextEncoder, ...).
+ *
+ * The bridge surface is generated from the shared spec in api.ts, so the
+ * worker-side shims always match the .d.ts injected into the system prompt.
  */
+import { generateSandboxShims } from "./api";
 
 const MAX_FILE_BYTES = 1_048_576;
 
@@ -105,15 +110,28 @@ const sandbox = {
   fetch: (input, init) => fetch(input, init),
 };
 
-self.onmessage = async (e) => {
-  const { id, code } = e.data;
-  try {
-    const fn = new Function("sandbox", "return (async () => { " + code + " })()");
-    const value = await fn(sandbox);
-    self.postMessage({ id, ok: true, value: typeof value === "string" ? value : serialize(value) });
-  } catch (err) {
-    self.postMessage({ id, ok: false, error: (err && (err.stack || err.message)) || String(err) });
+${generateSandboxShims()}
+
+self.onmessage = (e) => {
+  const data = e.data || {};
+  if (data.kind === "bridge-result") {
+    const pending = bridgeCalls.get(data.id);
+    if (!pending) return;
+    bridgeCalls.delete(data.id);
+    if (data.ok) pending.resolve(data.value);
+    else pending.reject(new Error(data.error || "bridge error"));
+    return;
   }
+  if (data.kind !== "eval") return;
+  void (async () => {
+    try {
+      const fn = new Function("sandbox", "return (async () => { " + data.code + " })()");
+      const value = await fn(sandbox);
+      self.postMessage({ kind: "eval-result", id: data.id, ok: true, value: typeof value === "string" ? value : serialize(value) });
+    } catch (err) {
+      self.postMessage({ kind: "eval-result", id: data.id, ok: false, error: (err && (err.stack || err.message)) || String(err) });
+    }
+  })();
 };
 `;
 
