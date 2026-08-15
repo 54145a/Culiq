@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import type { AgentEvent, AgentToolDisplayResult } from "@shared/agent/types";
+import type { AgentEvent } from "@shared/agent/types";
 import type { Message, ToolResultContent } from "@shared/ai/types";
 import { deriveTitle, getCurrentId, getSession, newSession, type Session, setCurrent, upsertSession } from "@shared/sessions";
 import { type BgToPanel, type PanelToBg } from "@shared/transport/protocol";
@@ -312,7 +312,7 @@ function ToolCardView({ card }: { card: LiveToolCard }) {
 				className="tool-head"
 				role="button"
 				tabIndex={0}
-				aria-expanded={String(expanded)}
+				aria-expanded={expanded}
 				title="Click to expand"
 				onClick={toggle}
 				onKeyDown={(e) => {

@@ -5,7 +5,11 @@
 		"moduleResolution": "Bundler",
 		"jsx": "react-jsx",
 		"jsxImportSource": "preact",
-		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"lib": [
+			"ES2022",
+			"DOM",
+			"DOM.Iterable"
+		],
 		"strict": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
@@ -15,10 +19,19 @@
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"resolveJsonModule": true,
-		"types": ["chrome", "vite/client"],
+		"types": [
+			"chrome",
+			"vite/client"
+		],
 		"paths": {
-			"@shared/*": ["./src/shared/*"]
+			"@shared/*": [
+				"./src/shared/*"
+			]
 		}
 	},
-	"include": ["src/**/*.ts", "src/**/*.html"]
+	"include": [
+		"src/**/*.tsx",
+		"src/**/*.ts",
+		"src/**/*.html"
+	]
 }

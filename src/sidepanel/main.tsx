@@ -36,7 +36,7 @@ function App() {
 	const [visited, setVisited] = useState<{ sessions: boolean; settings: boolean }>({ sessions: false, settings: false });
 	const [conn, setConn] = useState<{ state: ConnectionState; rtt?: number }>({ state: "connecting" });
 	const [pref, setPref] = useState<ThemePreference>("system");
-	const [systemTick, setSystemTick] = useState(0);
+	const [, setSystemTick] = useState(0);
 
 	useEffect(() => {
 		return connection.onState((state, rtt) => setConn({ state, rtt }));
@@ -148,7 +148,7 @@ function App() {
 							type="button"
 							role="tab"
 							data-view={name}
-							aria-selected={String(view === name)}
+							aria-selected={view === name}
 							onClick={() => switchView(name)}
 						>
 							{name === "chat" ? "Chat" : name === "sessions" ? "Sessions" : "Settings"}
