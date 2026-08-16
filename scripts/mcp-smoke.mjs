@@ -72,8 +72,10 @@ const server = createServer((req, res) => {
 	});
 });
 
-await new Promise((resolve) => server.listen(0, resolve));
-const { port } = server.address();
+await new Promise((resolve) => server.listen(0, () => resolve(undefined)));
+const addr = server.address();
+if (addr === null || typeof addr === "string") throw new Error("server is not listening");
+const { port } = addr;
 const url = `http://127.0.0.1:${port}/mcp`;
 
 const realFetch = globalThis.fetch;

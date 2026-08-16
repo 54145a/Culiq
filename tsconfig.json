@@ -29,9 +29,5 @@
 			]
 		}
 	},
-	"include": [
-		"src/**/*.tsx",
-		"src/**/*.ts",
-		"src/**/*.html"
-	]
+	"include": ["src/**/*.tsx", "src/**/*.ts", "src/**/*.html"]
 }

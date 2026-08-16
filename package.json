@@ -1,34 +1,33 @@
 {
-	"name": "curio",
-	"private": true,
+	"name": "@54145a/curio",
 	"version": "1.0.0",
 	"type": "module",
 	"description": "Curio — browser agent Chrome extension",
 	"scripts": {
 		"dev": "TARGET=chrome vite",
 		"dev:firefox": "TARGET=firefox vite",
-		"build": "npm run build:chrome && npm run build:firefox",
+		"build": "pnpm run build:chrome && pnpm run build:firefox",
 		"build:chrome": "TARGET=chrome vite build",
 		"build:firefox": "TARGET=firefox vite build",
-		"mcp:server": "npx --yes @modelcontextprotocol/server-everything streamableHttp",
+		"mcp:server": "pnpx --yes @modelcontextprotocol/server-everything streamableHttp",
 		"test:mcp": "node scripts/mcp-smoke.mjs",
 		"test:sandbox": "node scripts/sandbox-worker-smoke.mjs",
-		"check": "tsgo --noEmit"
+		"check": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p scripts/tsconfig.json --noEmit"
 	},
 	"devDependencies": {
-		"@crxjs/vite-plugin": "^2.0.0-beta.34",
+		"@crxjs/vite-plugin": "^2.7.1",
 		"@types/chrome": "^0.0.291",
-		"@typescript/native-preview": "7.0.0-dev.20260707.2",
-		"typescript": "^5.7.2",
-		"vite": "^6.0.7",
+		"@types/node": "^26.2.0",
+		"typescript": "^7.0.2",
+		"vite": "^6.4.3",
 		"web-ext": "^0.0.1"
 	},
 	"dependencies": {
-		"@ai-sdk/anthropic": "^4.0.38",
-		"@ai-sdk/mcp": "^2.0.31",
+		"@ai-sdk/anthropic": "^4.0.39",
+		"@ai-sdk/mcp": "^2.0.32",
 		"@ai-sdk/openai-compatible": "^3.0.30",
-		"ai": "^7.0.64",
-		"marked": "^18.0.3",
+		"ai": "^7.0.66",
+		"marked": "^18.0.9",
 		"preact": "^10.29.8",
 		"tokenx": "^2.1.0",
 		"zod": "^4.4.3"

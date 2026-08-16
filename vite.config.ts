@@ -13,7 +13,7 @@ if (target !== "chrome" && target !== "firefox") {
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 const base = readJson("./src/manifest.base.json");
 const overlay = readJson(`./src/manifest.${target}.json`);
-const manifest = { ...base, ...overlay } as ManifestV3Export;
+const manifest = { ...base, ...overlay } as Record<string, unknown>;
 
 // CI passes VERSION (e.g. "1.0.2") from the git tag so manifests match the release.
 // Local dev builds keep the value hardcoded in manifest.base.json.
@@ -28,7 +28,7 @@ if (versionOverride) {
 }
 
 export default defineConfig({
-	plugins: [crx({ manifest, browser: target })],
+	plugins: [crx({ manifest: manifest as unknown as ManifestV3Export, browser: target })],
 	esbuild: {
 		jsx: "automatic",
 		jsxImportSource: "preact",
