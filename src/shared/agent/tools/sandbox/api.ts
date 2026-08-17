@@ -50,6 +50,11 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 			return chrome.tabs.reload(Number(tabId), reloadProperties as chrome.tabs.ReloadProperties);
 		},
 	},
+	"tabs.waitForLoad": {
+		signature: "waitForLoad(tabId: number, timeoutMs?: number): Promise<void>",
+		description: "Wait for a tab to finish loading (status 'complete'). Default timeout 30s.",
+		invoke: ([tabId, timeoutMs]) => waitForTabLoad(Number(tabId), timeoutMs != null ? Number(timeoutMs) : 30_000),
+	},
 	"windows.get": {
 		signature: "get(windowId: number, queryOptions?: object): Promise<Window>",
 		description: "Get a window.",
@@ -190,6 +195,27 @@ async function evalInTab(tabId: number, world: "MAIN" | "ISOLATED", code: string
 	const outcome = (results[0]?.result as TabRunnerOutcome | undefined) ?? { ok: false, error: "evalInTab: no result" };
 	if (!outcome.ok) throw new Error(outcome.error ?? "evalInTab failed");
 	return outcome.value ?? "";
+}
+
+function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
+	return new Promise((resolve, reject) => {
+		let settled = false;
+		const finish = (err?: Error) => {
+			if (settled) return;
+			settled = true;
+			chrome.tabs.onUpdated.removeListener(onUpdate);
+			clearTimeout(timer);
+			err ? reject(err) : resolve();
+		};
+		const onUpdate = (id: number, info: chrome.tabs.TabChangeInfo) => {
+			if (id === tabId && info.status === "complete") finish();
+		};
+		const timer = setTimeout(() => finish(new Error(`waitForLoad timed out after ${timeoutMs / 1000}s`)), timeoutMs);
+		chrome.tabs.onUpdated.addListener(onUpdate);
+		chrome.tabs.get(tabId).then((tab) => {
+			if (tab.status === "complete") finish();
+		});
+	});
 }
 
 async function evalInAllFrames(
