@@ -8,7 +8,16 @@ import {
 const RPC_TIMEOUT_MS = 15_000;
 const PROTECTED_URL = /^(chrome|chrome-extension|edge|about|devtools):/i;
 
-export async function getActiveTab(): Promise<chrome.tabs.Tab> {
+export function isProtectedUrl(url: string): boolean {
+	return PROTECTED_URL.test(url);
+}
+
+/**
+ * The tab the tools would operate on: focused window's active tab, falling back
+ * to any non-protected active tab. Never throws — returns undefined when no tab
+ * exists. getActiveTab() adds the protected-URL guard on top.
+ */
+export async function findTargetTab(): Promise<chrome.tabs.Tab | undefined> {
 	// lastFocusedWindow can be our own pop-out window (whose tab is the extension
 	// page) when it is focused — never operate on it. Prefer the focused window's
 	// active tab, then any non-protected active tab across windows.
@@ -17,7 +26,11 @@ export async function getActiveTab(): Promise<chrome.tabs.Tab> {
 	for (const w of windows) byWindow.set(w.id, w);
 	const activeTabs = await chrome.tabs.query({ active: true });
 	activeTabs.sort((a, b) => Number(byWindow.get(b.windowId)?.focused) - Number(byWindow.get(a.windowId)?.focused));
-	const tab = activeTabs.find((t) => t.url && !PROTECTED_URL.test(t.url)) ?? activeTabs[0];
+	return activeTabs.find((t) => t.url && !PROTECTED_URL.test(t.url)) ?? activeTabs[0];
+}
+
+export async function getActiveTab(): Promise<chrome.tabs.Tab> {
+	const tab = await findTargetTab();
 	if (!tab || tab.id === undefined) throw new Error("No active tab found.");
 	if (!tab.url) throw new Error("Active tab has no URL (still loading?).");
 	if (PROTECTED_URL.test(tab.url)) throw new Error(`Cannot operate on protected URL: ${tab.url}`);

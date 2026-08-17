@@ -524,6 +524,23 @@ form {
 	border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
 }
 
+.context-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 14px 0;
+	font-size: 0.78rem;
+}
+
+.context-label {
+	color: color-mix(in srgb, currentColor 55%, transparent);
+}
+
+#context-mode {
+	padding: 2px 6px;
+	font-size: 0.78rem;
+}
+
 #input {
 	flex: 1;
 	height: 44px;

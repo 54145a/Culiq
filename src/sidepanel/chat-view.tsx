@@ -3,7 +3,7 @@ import type { JSX } from "preact";
 import type { AgentEvent } from "@shared/agent/types";
 import type { Message, ToolResultContent } from "@shared/ai/types";
 import { deriveTitle, getCurrentId, getSession, newSession, type Session, setCurrent, upsertSession } from "@shared/sessions";
-import { type BgToPanel, type PanelToBg } from "@shared/transport/protocol";
+import { type BgToPanel, type ChatContextMode, type PanelToBg } from "@shared/transport/protocol";
 import { renderMarkdown } from "./markdown";
 
 export interface ChatTransport {
@@ -176,7 +176,7 @@ function finalizeAgent(messages: Message[], stopReason: string, errorMessage?: s
 	void persistCurrent();
 }
 
-function submitTurn(transport: ChatTransport, text: string): void {
+function submitTurn(transport: ChatTransport, text: string, contextMode?: ChatContextMode): void {
 	const trimmed = text.trim();
 	if (!trimmed || store.turnId) return;
 	store.current.messages = [...store.current.messages, { role: "user", content: trimmed }];
@@ -188,7 +188,7 @@ function submitTurn(transport: ChatTransport, text: string): void {
 	store.busy = true;
 	notify();
 	void persistCurrent();
-	transport.send({ type: "chat_send", turnId, messages: store.current.messages });
+	transport.send({ type: "chat_send", turnId, messages: store.current.messages, ...(contextMode ? { contextMode } : {}) });
 }
 
 export async function loadSessionIntoChat(id: string): Promise<void> {
@@ -336,6 +336,7 @@ function ToolCardView({ card }: { card: LiveToolCard }) {
 
 function Composer({ busy, transport, inputRef }: { busy: boolean; transport: ChatTransport; inputRef: { current: HTMLTextAreaElement | null } }) {
 	const [value, setValue] = useState("");
+	const [contextMode, setContextMode] = useState<ChatContextMode | "none">("none");
 	const submit = (e: Event) => {
 		e.preventDefault();
 		if (busy) {
@@ -343,30 +344,48 @@ function Composer({ busy, transport, inputRef }: { busy: boolean; transport: Cha
 			if (turnId) transport.send({ type: "chat_abort", turnId });
 			return;
 		}
-		submitTurn(transport, value);
+		submitTurn(transport, value, contextMode === "none" ? undefined : contextMode);
 		setValue("");
+		setContextMode("none");
 	};
 	return (
-		<form id="form" onSubmit={submit}>
-			<textarea
-				id="input"
-				ref={inputRef}
-				rows={1}
-				value={value}
-				disabled={busy}
-				placeholder="ask the agent…  (Shift+Enter for newline)"
-				onInput={(e) => setValue((e.target as HTMLTextAreaElement).value)}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-						e.preventDefault();
-						submit(e);
-					}
-				}}
-			/>
-			<button type="submit" className={busy ? "danger" : undefined}>
-				{busy ? "stop" : "send"}
-			</button>
-		</form>
+		<>
+			<div className="context-row">
+				<label className="context-label" htmlFor="context-mode">
+					Context
+				</label>
+				<select
+					id="context-mode"
+					value={contextMode}
+					onChange={(e) => setContextMode((e.target as HTMLSelectElement).value as ChatContextMode | "none")}
+					onClick={(e) => e.stopPropagation()}
+				>
+					<option value="none">None</option>
+					<option value="tabs">All tabs</option>
+					<option value="current">Current tab</option>
+				</select>
+			</div>
+			<form id="form" onSubmit={submit}>
+				<textarea
+					id="input"
+					ref={inputRef}
+					rows={1}
+					value={value}
+					disabled={busy}
+					placeholder="ask the agent…  (Shift+Enter for newline)"
+					onInput={(e) => setValue((e.target as HTMLTextAreaElement).value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+							e.preventDefault();
+							submit(e);
+						}
+					}}
+				/>
+				<button type="submit" className={busy ? "danger" : undefined}>
+					{busy ? "stop" : "send"}
+				</button>
+			</form>
+		</>
 	);
 }
 

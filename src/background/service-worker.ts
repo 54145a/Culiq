@@ -4,6 +4,8 @@ import { buildAvailableSkillsBlock, listEnabledSkills } from "@shared/skills";
 import { closeSandbox, generateSandboxDts } from "@shared/agent/tools/sandbox";
 import { getActiveProvider, loadSettings, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
+import { isProtectedUrl } from "@shared/transport/tab-rpc";
+import { type ChatContextMode } from "@shared/transport/protocol";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
 
@@ -128,7 +130,9 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		try {
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
 			const sandboxDts = enabled.has("sandbox_exec") ? `\n\n${generateSandboxDts()}` : "";
-			const systemPrompt = getSystemPrompt(settings.capabilities) + buildAvailableSkillsBlock(skills) + sandboxDts;
+			const context = await buildSendTimeContext(msg.contextMode);
+			const systemPrompt =
+				getSystemPrompt(settings.capabilities) + buildAvailableSkillsBlock(skills) + sandboxDts + (context ? `\n\n${context}` : "");
 			const mcpTools = await createMcpTools(controller.signal);
 
 			await runAgentLoop(
@@ -155,4 +159,40 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		console.error("[curio sw] handleChat failed:", err);
 		sendErrorEnd(err instanceof Error ? err.message : String(err));
 	}
+}
+
+/**
+ * Meta-context appended to the system prompt at send time:
+ * - contextMode "tabs": all open tabs (id/title/url) so the agent can switch between them.
+ * - contextMode "current": the focused tab's id/title/url.
+ * - always: if the focused page is a browser-internal page (and not our own
+ *   extension page), warn the agent that DOM tools cannot touch it and it may be
+ *   a fresh/blank tab, so it navigates instead of failing read_dom.
+ */
+async function buildSendTimeContext(contextMode: ChatContextMode | undefined): Promise<string> {
+	const blocks: string[] = [];
+	const [focused] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+	const focusedUrl = focused?.url;
+	const isOurPage = focusedUrl !== undefined && focusedUrl.startsWith(`chrome-extension://${chrome.runtime.id}`);
+	const internal = focusedUrl !== undefined && isProtectedUrl(focusedUrl) && !isOurPage;
+
+	if (contextMode === "tabs") {
+		const tabs = await chrome.tabs.query({});
+		const lines = tabs
+			.filter((t) => t.id !== undefined && t.url && !isProtectedUrl(t.url))
+			.map((t) => `- [${t.id}]${t.active ? " (active)" : ""} "${t.title ?? ""}" ${t.url}`);
+		if (lines.length > 0) {
+			blocks.push(`The user shared all open tabs. Open tabs:\n${lines.join("\n")}\n\nUse switch_tab to switch tabs and read_dom to inspect a tab's content.`);
+		}
+	} else if (contextMode === "current" && focusedUrl && !internal && !isOurPage) {
+		blocks.push(`The current page is "${focused?.title ?? ""}" (tab ${focused?.id}, ${focusedUrl}).`);
+	}
+
+	if (internal) {
+		blocks.push(
+			`The current page is a browser-internal page: ${focusedUrl}. DOM tools (read_dom, query, click, type, screenshot) cannot operate on it — if the user wants a web page, open one with navigate instead.`,
+		);
+	}
+
+	return blocks.join("\n\n");
 }
