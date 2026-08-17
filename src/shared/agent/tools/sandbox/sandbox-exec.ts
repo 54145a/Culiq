@@ -1,6 +1,5 @@
 import type { AgentTool } from "../../types";
 import { BRIDGE_SPEC } from "./api";
-import { createSandboxWorker } from "./worker";
 
 const TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_CHARS = 8_000;
@@ -25,66 +24,27 @@ interface SandboxTransport {
 	close(): void;
 }
 
-// ---------------------------------------------------------------------------
-// Transports: direct worker (Firefox: background workers can spawn workers) or
-// offscreen-document relay (Chrome MV3 service workers have no Worker global).
-// ---------------------------------------------------------------------------
+const SANDBOX_MSG = { send: "sandbox_send", msg: "sandbox_msg", close: "sandbox_close" } as const;
 
-class DirectWorkerTransport implements SandboxTransport {
-	private worker: Worker;
-	private handler: ((data: unknown) => void) | null = null;
-
-	constructor() {
-		this.worker = createSandboxWorker();
-		this.worker.addEventListener("message", (e) => this.handler?.(e.data));
-	}
-
-	postMessage(data: unknown): void {
-		this.worker.postMessage(data);
-	}
-
-	onMessage(cb: (data: unknown) => void): void {
-		this.handler = cb;
-	}
-
-	close(): void {
-		this.worker.terminate();
-	}
-}
-
-const OFFSCREEN_URL = "offscreen.html";
-const OFFSCREEN_MSG = { send: "sandbox_send", msg: "sandbox_msg", close: "sandbox_close" } as const;
-
-let offscreenReady: Promise<void> | null = null;
-
-function ensureOffscreen(): Promise<void> {
-	if (typeof chrome.offscreen === "undefined") return Promise.resolve();
-	offscreenReady ??= (async () => {
-		const exists = await chrome.offscreen.hasDocument();
-		if (!exists) {
-			await chrome.offscreen.createDocument({
-				url: OFFSCREEN_URL,
-				reasons: [chrome.offscreen.Reason.WORKERS],
-				justification: "Host the sandbox_exec worker; MV3 service workers cannot create workers.",
-			});
-		}
-	})();
-	return offscreenReady;
-}
-
-class OffscreenTransport implements SandboxTransport {
+/**
+ * The sandbox worker runs in a hidden iframe inside the active side panel /
+ * pop-up window (a window context — `new Worker` exists in both browsers).
+ * Messages relay through chrome.runtime. Broadcast is safe because the
+ * single-panel guard ensures only one iframe is ever listening.
+ */
+class IframeTransport implements SandboxTransport {
 	private handler: ((data: unknown) => void) | null = null;
 	private readonly listener: (msg: { type?: string; sessionId?: string; data?: unknown }) => void;
 
 	constructor(private readonly sessionId: string) {
 		this.listener = (msg) => {
-			if (msg?.type === OFFSCREEN_MSG.msg && msg.sessionId === this.sessionId) this.handler?.(msg.data);
+			if (msg?.type === SANDBOX_MSG.msg && msg.sessionId === this.sessionId) this.handler?.(msg.data);
 		};
 		chrome.runtime.onMessage.addListener(this.listener);
 	}
 
 	postMessage(data: unknown): void {
-		void chrome.runtime.sendMessage({ type: OFFSCREEN_MSG.send, sessionId: this.sessionId, data });
+		void chrome.runtime.sendMessage({ type: SANDBOX_MSG.send, sessionId: this.sessionId, data });
 	}
 
 	onMessage(cb: (data: unknown) => void): void {
@@ -93,22 +53,14 @@ class OffscreenTransport implements SandboxTransport {
 
 	close(): void {
 		chrome.runtime.onMessage.removeListener(this.listener);
-		void chrome.runtime.sendMessage({ type: OFFSCREEN_MSG.close, sessionId: this.sessionId });
+		void chrome.runtime.sendMessage({ type: SANDBOX_MSG.close, sessionId: this.sessionId });
 	}
 }
 
-async function createSandboxTransport(): Promise<SandboxTransport> {
-	// Offscreen-first: every browser with the API (Chrome) hosts the sandbox
-	// worker in the offscreen document, so all such browsers share one path.
-	// Firefox backgrounds have no offscreen API but are workers themselves and
-	// can spawn the worker directly — the only platform-specific branch.
-	if (typeof chrome.offscreen !== "undefined") {
-		await ensureOffscreen();
-		const transport = new OffscreenTransport(crypto.randomUUID());
-		transport.postMessage({ kind: "init", paths: Object.keys(BRIDGE_SPEC) });
-		return transport;
-	}
-	return new DirectWorkerTransport();
+function createSandboxTransport(): SandboxTransport {
+	const transport = new IframeTransport(crypto.randomUUID());
+	transport.postMessage({ kind: "init", paths: Object.keys(BRIDGE_SPEC) });
+	return transport;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,10 +77,10 @@ export function closeSandbox(signal: AbortSignal): void {
 	session.transport.close();
 }
 
-async function getSession(signal: AbortSignal): Promise<SandboxSession> {
+function getSession(signal: AbortSignal): SandboxSession {
 	let session = sessions.get(signal);
 	if (!session) {
-		const created: SandboxSession = { transport: await createSandboxTransport(), nextId: 1, pending: new Map() };
+		const created: SandboxSession = { transport: createSandboxTransport(), nextId: 1, pending: new Map() };
 		sessions.set(signal, created);
 		signal.addEventListener("abort", () => closeSandbox(signal), { once: true });
 		created.transport.onMessage((data) => onWorkerMessage(created, data));
@@ -137,10 +89,7 @@ async function getSession(signal: AbortSignal): Promise<SandboxSession> {
 	return session;
 }
 
-function onWorkerMessage(
-	session: SandboxSession,
-	data: unknown,
-): void {
+function onWorkerMessage(session: SandboxSession, data: unknown): void {
 	const msg = data as
 		| { kind: "eval-result"; id: number; ok: boolean; value?: string; error?: string }
 		| { kind: "bridge"; id: number; path: string; args?: unknown[] }
@@ -188,33 +137,32 @@ function serializeBridgeValue(value: unknown): unknown {
 }
 
 function evaluate(signal: AbortSignal, code: string): Promise<SandboxOutcome> {
-	return getSession(signal).then((session) => {
-		const id = session.nextId++;
+	const session = getSession(signal);
+	const id = session.nextId++;
 
-		return new Promise<SandboxOutcome>((resolve) => {
-			const timer = setTimeout(() => {
-				session.pending.delete(id);
-				closeSandbox(signal);
-				resolve({ ok: false, error: `sandbox_exec timed out after ${TIMEOUT_MS / 1000}s` });
-			}, TIMEOUT_MS);
+	return new Promise<SandboxOutcome>((resolve) => {
+		const timer = setTimeout(() => {
+			session.pending.delete(id);
+			closeSandbox(signal);
+			resolve({ ok: false, error: `sandbox_exec timed out after ${TIMEOUT_MS / 1000}s` });
+		}, TIMEOUT_MS);
 
-			session.pending.set(id, {
-				resolve: (outcome) => {
-					clearTimeout(timer);
-					resolve(outcome);
-				},
-				timer,
-			});
-
-			session.transport.postMessage({ kind: "eval", id, code });
+		session.pending.set(id, {
+			resolve: (outcome) => {
+				clearTimeout(timer);
+				resolve(outcome);
+			},
+			timer,
 		});
+
+		session.transport.postMessage({ kind: "eval", id, code });
 	});
 }
 
 export const sandboxExecTool: AgentTool = {
 	name: "sandbox_exec",
 	description:
-		"Run JavaScript in a restricted sandbox worker in the extension's background context. Exposed APIs (see the `sandbox` type declarations in the system prompt; `sandbox.docs(name)` returns details): `sandbox.fs.{read,write,list,delete,mkdir}` over OPFS (relative paths, no '..'), `sandbox.fetch(url, init)` (extension-origin, CORS-free), a chrome bridge `sandbox.chrome.tabs.{query,get,update,reload}` and `sandbox.chrome.windows.{get,update}` (whitelisted, non-destructive), and `sandbox.evalInTab(tabId, world, code)` to run JS in a page. No DOM and no direct chrome.* inside the worker; bridge calls are proxied through the background and validated. State persists within the turn. Top-level await supported; `return X` to send a value back.",
+		"Run JavaScript in a restricted sandbox worker hosted in the panel's hidden iframe. Exposed APIs (see the `sandbox` type declarations in the system prompt; `sandbox.docs(name)` returns details): `sandbox.fs.{read,write,list,delete,mkdir}` over OPFS (relative paths, no '..'), `sandbox.fetch(url, init)` (extension-origin, CORS-free), a chrome bridge `sandbox.chrome.tabs.{query,get,update,reload}` and `sandbox.chrome.windows.{get,update}` (whitelisted, non-destructive), and `sandbox.evalInTab(tabId, world, code)` to run JS in a page. No DOM and no direct chrome.* inside the worker; bridge calls are proxied through the background and validated. State persists within the turn. Top-level await supported; `return X` to send a value back.",
 	parameters: {
 		type: "object",
 		properties: {

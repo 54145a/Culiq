@@ -31,17 +31,11 @@ self.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
 	console.error("[curio sw] unhandled rejection:", e.reason);
 });
 
-const activeTurns = new Map<string, AbortController>();
-
-// Set while a pop-out window is open; the sidebar reacts by showing a placeholder.
-const POPUP_ACTIVE_KEY = "curio.popup.active";
+const activeTurns = new Map<string, { controller: AbortController; port: chrome.runtime.Port }>();
 
 let popupWindowId: number | undefined;
 chrome.windows.onRemoved.addListener((id) => {
-	if (id === popupWindowId) {
-		popupWindowId = undefined;
-		void chrome.storage.session.remove(POPUP_ACTIVE_KEY);
-	}
+	if (id === popupWindowId) popupWindowId = undefined;
 });
 
 async function openPopupWindow(): Promise<void> {
@@ -56,7 +50,6 @@ async function openPopupWindow(): Promise<void> {
 	const url = chrome.runtime.getURL("src/sidepanel/index.html?window=1");
 	const win = await chrome.windows.create({ url, type: "popup", width: 440, height: 720 });
 	popupWindowId = win.id;
-	await chrome.storage.session.set({ [POPUP_ACTIVE_KEY]: true });
 	void closeSidebar();
 }
 
@@ -83,11 +76,10 @@ chrome.runtime.onConnect.addListener((port) => {
 				send({ type: "pong", nonce: msg.nonce });
 				return;
 			case "chat_send":
-				void handleChat(msg, send);
+				void handleChat(msg, send, port);
 				return;
 			case "chat_abort": {
-				const ctrl = activeTurns.get(msg.turnId);
-				ctrl?.abort();
+				activeTurns.get(msg.turnId)?.controller.abort();
 				return;
 			}
 			case "open_window":
@@ -97,14 +89,20 @@ chrome.runtime.onConnect.addListener((port) => {
 	});
 
 	port.onDisconnect.addListener(() => {
-		for (const ctrl of activeTurns.values()) ctrl.abort();
-		activeTurns.clear();
+		// Only abort turns started by this panel; a placeholder panel disconnecting
+		// must not kill the active panel's turn.
+		for (const [turnId, turn] of activeTurns) {
+			if (turn.port === port) {
+				turn.controller.abort();
+				activeTurns.delete(turnId);
+			}
+		}
 	});
 
 	send({ type: "log", level: "info", text: "background connected" });
 });
 
-async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: (m: BgToPanel) => void): Promise<void> {
+async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: (m: BgToPanel) => void, port: chrome.runtime.Port): Promise<void> {
 	const turnId = msg.turnId;
 	const sendErrorEnd = (errorMessage: string) =>
 		send({
@@ -123,7 +121,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		}
 
 		const controller = new AbortController();
-		activeTurns.set(turnId, controller);
+		activeTurns.set(turnId, { controller, port });
 
 		const enabled = new Set<Capability>(settings.capabilities);
 

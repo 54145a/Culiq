@@ -60,10 +60,11 @@ if (!result || !result.ok || !String(result.value).includes("42")) throw new Err
 console.log("sandbox worker smoke OK: bridge", bridge.path, "=>", result.value.trim());
 
 // ---------------------------------------------------------------------------
-// Phase 2: offscreen host relay (Chrome path — the SW has no Worker global, so
-// sandbox_exec runs the worker here and relays through chrome.runtime).
+// Phase 2: sandbox-frame host relay — the worker runs in a hidden iframe inside
+// the panel (a window context has Worker in both browsers) and relays through
+// chrome.runtime. The single-panel guard means one listener, no duplicates.
 // ---------------------------------------------------------------------------
-const offscreenSrc = readFileSync(new URL("../public/offscreen.js", import.meta.url), "utf8");
+const hostSrc = readFileSync(new URL("../public/sandbox-frame.js", import.meta.url), "utf8");
 
 const workers = new Map();
 const swReceived = [];
@@ -98,14 +99,14 @@ const fakeWorkerGlobal = {
 	},
 };
 const octx = createContext({ ...fakeWorkerGlobal, chrome: fakeChrome, Map, console });
-runInContext(offscreenSrc, octx);
-if (runtimeListeners.length !== 1) throw new Error("offscreen host did not register a listener");
+runInContext(hostSrc, octx);
+if (runtimeListeners.length !== 1) throw new Error("sandbox-frame host did not register a listener");
 
 const host = runtimeListeners[0];
 host({ type: "sandbox_send", sessionId: "s1", data: { kind: "init", paths } });
-if (!workers.has("s1")) throw new Error("offscreen host did not create a worker");
+if (!workers.has("s1")) throw new Error("sandbox-frame host did not create a worker");
 const w = workers.get("s1");
-if (w.url !== "chrome-extension://id/sandbox-worker.js") throw new Error("offscreen worker URL wrong");
+if (w.url !== "chrome-extension://id/sandbox-worker.js") throw new Error("sandbox-frame worker URL wrong");
 if (w.lastPost?.kind !== "init") throw new Error("init not forwarded to worker");
 
 host({ type: "sandbox_send", sessionId: "s1", data: { kind: "eval", id: 9, code: "x" } });
@@ -117,5 +118,5 @@ if (!relayed || relayed.data.path !== "tabs.query") throw new Error("worker -> S
 
 host({ type: "sandbox_send", sessionId: "s1", data: { kind: "close" } });
 if (w.terminated !== true || workers.has("s1")) throw new Error("worker not terminated on close");
-console.log("sandbox offscreen relay smoke OK");
+console.log("sandbox-frame relay smoke OK");
 

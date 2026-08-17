@@ -1,5 +1,5 @@
 import { render } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { loadSettings, saveTheme, type ThemePreference } from "@shared/config";
 import { type PanelToBg } from "@shared/transport/protocol";
 import { BgConnection, type ConnectionState } from "./bg-connection";
@@ -20,8 +20,27 @@ type ViewName = "chat" | "sessions" | "settings";
 const isPopupWindow = new URLSearchParams(location.search).get("window") === "1";
 if (isPopupWindow) document.body.dataset.mode = "window";
 
-// While a pop-out window is open, the sidebar shows a placeholder instead of the UI.
-const POPUP_ACTIVE_KEY = "curio.popup.active";
+// Single-panel guard: only one panel (side panel or pop-out window) runs the UI
+// at a time. Each panel writes {id, ts} to session storage and heartbeats it; a
+// panel seeing a fresh foreign id shows a placeholder instead of the UI. This
+// also makes the sandbox iframe broadcast-safe (exactly one listener exists).
+const PANEL_KEY = "curio.panel.active";
+const PANEL_TTL_MS = 30_000;
+const HEARTBEAT_MS = 20_000;
+
+interface PanelFlag {
+	id: string;
+	ts: number;
+}
+
+function isPanelFlag(value: unknown): value is PanelFlag {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as PanelFlag).id === "string" &&
+		typeof (value as PanelFlag).ts === "number"
+	);
+}
 
 const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -37,6 +56,98 @@ function App() {
 	const [conn, setConn] = useState<{ state: ConnectionState; rtt?: number }>({ state: "connecting" });
 	const [pref, setPref] = useState<ThemePreference>("system");
 	const [, setSystemTick] = useState(0);
+
+	const [blocked, setBlockedState] = useState(false);
+	const blockedRef = useRef(false);
+	const panelIdRef = useRef(crypto.randomUUID());
+	const yieldPanelRef = useRef<() => void>(() => {});
+
+	const setBlocked = (b: boolean) => {
+		blockedRef.current = b;
+		setBlockedState(b);
+		document.body.dataset.popupActive = b ? "true" : "false";
+	};
+
+	useEffect(() => {
+		const myId = panelIdRef.current;
+		let heartbeat: number | undefined;
+
+		const clearOwnFlag = async () => {
+			const raw = await chrome.storage.session.get(PANEL_KEY);
+			const flag = raw[PANEL_KEY];
+			if (isPanelFlag(flag) && flag.id === myId) await chrome.storage.session.remove(PANEL_KEY);
+		};
+
+		const stopHeartbeat = () => {
+			if (heartbeat !== undefined) {
+				window.clearInterval(heartbeat);
+				heartbeat = undefined;
+			}
+		};
+
+		const takeOver = async () => {
+			await chrome.storage.session.set({ [PANEL_KEY]: { id: myId, ts: Date.now() } });
+			setBlocked(false);
+			if (heartbeat === undefined) {
+				heartbeat = window.setInterval(() => {
+					void chrome.storage.session.set({ [PANEL_KEY]: { id: myId, ts: Date.now() } });
+				}, HEARTBEAT_MS);
+			}
+		};
+
+		// Yield to the pop-out window: stop heartbeating, clear our flag, show placeholder.
+		const yieldPanel = () => {
+			stopHeartbeat();
+			void clearOwnFlag();
+			setBlocked(true);
+		};
+		yieldPanelRef.current = yieldPanel;
+
+		const onChange = (changes: Record<string, { newValue?: unknown }>, area: string) => {
+			if (area !== "session" || !changes[PANEL_KEY]) return;
+			const flag = changes[PANEL_KEY].newValue;
+			if (isPanelFlag(flag) && flag.id !== myId && flag.ts > Date.now() - PANEL_TTL_MS) {
+				stopHeartbeat();
+				setBlocked(true);
+			} else if (blockedRef.current) {
+				// The other panel closed or went stale; take over.
+				void takeOver();
+			}
+		};
+		chrome.storage.onChanged.addListener(onChange);
+
+		void (async () => {
+			const raw = await chrome.storage.session.get(PANEL_KEY);
+			const flag = raw[PANEL_KEY];
+			if (isPanelFlag(flag) && flag.id !== myId && flag.ts > Date.now() - PANEL_TTL_MS) {
+				setBlocked(true);
+			} else {
+				await takeOver();
+			}
+		})();
+
+		const onUnload = () => {
+			stopHeartbeat();
+			void clearOwnFlag();
+		};
+		window.addEventListener("beforeunload", onUnload);
+
+		return () => {
+			chrome.storage.onChanged.removeListener(onChange);
+			window.removeEventListener("beforeunload", onUnload);
+			stopHeartbeat();
+		};
+	}, []);
+
+	// Hidden iframe hosts the sandbox worker; only the active panel creates one.
+	useEffect(() => {
+		if (blocked) return;
+		const iframe = document.createElement("iframe");
+		iframe.className = "sandbox-frame";
+		iframe.src = chrome.runtime.getURL("sandbox-frame.html");
+		document.body.appendChild(iframe);
+		return () => iframe.remove();
+	}, [blocked]);
 
 	useEffect(() => {
 		return connection.onState((state, rtt) => setConn({ state, rtt }));
@@ -57,19 +168,6 @@ function App() {
 		connection.start();
 	}, []);
 
-	useEffect(() => {
-		if (isPopupWindow) return;
-		const sync = (active: boolean) => {
-			document.body.dataset.popupActive = active ? "true" : "false";
-		};
-		const onChange = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-			if (area === "session" && changes[POPUP_ACTIVE_KEY]) sync(changes[POPUP_ACTIVE_KEY].newValue === true);
-		};
-		chrome.storage.onChanged.addListener(onChange);
-		void chrome.storage.session.get(POPUP_ACTIVE_KEY).then((v) => sync(v[POPUP_ACTIVE_KEY] === true));
-		return () => chrome.storage.onChanged.removeListener(onChange);
-	}, []);
-
 	const theme = pref === "system" ? (systemTheme.matches ? "dark" : "light") : pref;
 	useEffect(() => {
 		document.documentElement.dataset.theme = theme;
@@ -85,6 +183,12 @@ function App() {
 		const next: ThemePreference = theme === "dark" ? "light" : "dark";
 		setPref(next);
 		void saveTheme(next);
+	};
+
+	const onPopout = () => {
+		// Yield first so the new window becomes the single active panel.
+		yieldPanelRef.current();
+		connection.send({ type: "open_window" } satisfies PanelToBg);
 	};
 
 	const statusText =
@@ -125,7 +229,7 @@ function App() {
 								type="button"
 								aria-label="Open in window"
 								title="Open in separate window"
-								onClick={() => connection.send({ type: "open_window" } satisfies PanelToBg)}
+								onClick={onPopout}
 							>
 								⛶
 							</button>
@@ -167,8 +271,8 @@ function App() {
 			</section>
 			<section id="view-popup-hint" className="view" data-active="false">
 				<div className="popup-hint">
-					<p>Curio is open in a separate window.</p>
-					<p className="hint">You can close this side panel.</p>
+					<p>Curio is already running in another panel.</p>
+					<p className="hint">Close that panel to continue here.</p>
 				</div>
 			</section>
 		</>

@@ -1,8 +1,9 @@
 /**
- * Offscreen document host for sandbox_exec. Chrome MV3 service workers cannot
- * call `new Worker`, so the sandbox worker runs in this window context and the
- * service worker relays messages through chrome.runtime. One host serves every
- * sandbox session, keyed by sessionId (Chrome keeps a single offscreen doc).
+ * Sandbox host for sandbox_exec, loaded as a hidden iframe in the active
+ * side panel / pop-up window. A window context can call `new Worker` in both
+ * Chrome and Firefox, so this unifies the sandbox across browsers. The
+ * single-panel guard guarantees only one such iframe exists, so relaying over
+ * chrome.runtime (broadcast) never duplicates responses.
  *
  * Protocol (all via chrome.runtime messages):
  *   SW -> host:  { type: "sandbox_send", sessionId, data }   forward to worker

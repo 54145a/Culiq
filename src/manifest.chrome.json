@@ -16,5 +16,5 @@
 		"service_worker": "src/background/service-worker.ts",
 		"type": "module"
 	},
-	"permissions": ["sidePanel", "scripting", "storage", "activeTab", "tabs", "downloads", "windows", "offscreen"]
+	"permissions": ["sidePanel", "scripting", "storage", "activeTab", "tabs", "downloads", "windows"]
 }
