@@ -6,7 +6,7 @@ export type ChatContextMode = "tabs" | "current";
 
 export type PanelToBg =
 	| { type: "ping"; nonce: string }
-	| { type: "chat_send"; turnId: string; messages: Message[]; contextMode?: ChatContextMode }
+	| { type: "chat_send"; turnId: string; messages: Message[]; contextMode?: ChatContextMode; windowId?: number }
 	| { type: "chat_abort"; turnId: string }
 	| { type: "open_window" };
 

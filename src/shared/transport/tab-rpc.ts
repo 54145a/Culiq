@@ -12,18 +12,30 @@ export function isProtectedUrl(url: string): boolean {
 	return PROTECTED_URL.test(url);
 }
 
+let panelWindowId: number | undefined;
+
+/** The window that hosts the active panel; the target tab lives next to it. */
+export function setPanelWindow(windowId: number | undefined): void {
+	panelWindowId = windowId;
+}
+
+/** The active tab of the panel's own window (the tab next to the side panel). */
+export async function getPanelWindowTab(): Promise<chrome.tabs.Tab | undefined> {
+	if (panelWindowId === undefined) return undefined;
+	const [tab] = await chrome.tabs.query({ active: true, windowId: panelWindowId });
+	return tab;
+}
+
 /**
- * The tab the tools would operate on: focused normal window's active tab,
- * falling back to any non-protected active tab in a normal window. Never
- * throws — returns undefined when no usable tab exists. getActiveTab() adds
- * the protected-URL guard on top.
+ * The tab the tools operate on: the tab next to the side panel — the active
+ * tab of the panel's own window — NOT the focused window, since the user may
+ * have switched windows or be in a PWA. Falls back to any non-protected active
+ * tab in a normal window. Never throws; getActiveTab() adds the guards.
  */
 export async function findTargetTab(): Promise<chrome.tabs.Tab | undefined> {
-	// lastFocusedWindow can be our own pop-out window (whose tab is the extension
-	// page) when it is focused — never operate on it. PWA standalone windows and
-	// popups are non-"normal" windows, so their tabs are also excluded as the
-	// default target (switch_tab can still reach them explicitly). Prefer the
-	// focused normal window's active tab, then any non-protected one.
+	const panelTab = await getPanelWindowTab();
+	if (panelTab?.url && !PROTECTED_URL.test(panelTab.url)) return panelTab;
+
 	const windows = await chrome.windows.getAll();
 	const byWindow = new Map<number | undefined, chrome.windows.Window>();
 	for (const w of windows) byWindow.set(w.id, w);

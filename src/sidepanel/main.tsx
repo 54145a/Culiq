@@ -14,8 +14,13 @@ import {
 } from "./chat-view";
 import { refreshSessions, SessionsView, type SessionsViewOptions } from "./sessions-view";
 import { SettingsView } from "./settings-view";
+import { setPanelWindowId } from "./window";
 
 type ViewName = "chat" | "sessions" | "settings";
+
+// The tab next to this panel lives in the panel's own window — capture it so
+// the background can target the right tab even when another window is focused.
+void chrome.windows.getCurrent().then((win) => setPanelWindowId(win?.id));
 
 const isPopupWindow = new URLSearchParams(location.search).get("window") === "1";
 if (isPopupWindow) document.body.dataset.mode = "window";

@@ -5,6 +5,7 @@ import type { Message, ToolResultContent } from "@shared/ai/types";
 import { deriveTitle, getCurrentId, getSession, newSession, type Session, setCurrent, upsertSession } from "@shared/sessions";
 import { type BgToPanel, type ChatContextMode, type PanelToBg } from "@shared/transport/protocol";
 import { renderMarkdown } from "./markdown";
+import { getPanelWindowId } from "./window";
 
 export interface ChatTransport {
 	send(msg: PanelToBg): void;
@@ -188,7 +189,13 @@ function submitTurn(transport: ChatTransport, text: string, contextMode?: ChatCo
 	store.busy = true;
 	notify();
 	void persistCurrent();
-	transport.send({ type: "chat_send", turnId, messages: store.current.messages, ...(contextMode ? { contextMode } : {}) });
+	transport.send({
+		type: "chat_send",
+		turnId,
+		messages: store.current.messages,
+		...(contextMode ? { contextMode } : {}),
+		...(getPanelWindowId() !== undefined ? { windowId: getPanelWindowId() } : {}),
+	});
 }
 
 export async function loadSessionIntoChat(id: string): Promise<void> {

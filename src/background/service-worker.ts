@@ -4,7 +4,7 @@ import { buildAvailableSkillsBlock, listEnabledSkills } from "@shared/skills";
 import { closeSandbox, generateSandboxDts } from "@shared/agent/tools/sandbox";
 import { getActiveProvider, loadSettings, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
-import { isProtectedUrl } from "@shared/transport/tab-rpc";
+import { getPanelWindowTab, isProtectedUrl, setPanelWindow } from "@shared/transport/tab-rpc";
 import { type ChatContextMode } from "@shared/transport/protocol";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
@@ -126,6 +126,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		const enabled = new Set<Capability>(settings.capabilities);
 
 		try {
+			setPanelWindow(msg.windowId);
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
 			const sandboxDts = enabled.has("sandbox_exec") ? `\n\n${generateSandboxDts()}` : "";
 			const context = await buildSendTimeContext(msg.contextMode);
@@ -152,6 +153,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			closeSandbox(controller.signal);
 			await closeMcp(controller.signal);
 			activeTurns.delete(turnId);
+			setPanelWindow(undefined);
 		}
 	} catch (err) {
 		console.error("[curio sw] handleChat failed:", err);
@@ -169,10 +171,12 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
  */
 async function buildSendTimeContext(contextMode: ChatContextMode | undefined): Promise<string> {
 	const blocks: string[] = [];
-	const [focused] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-	const focusedUrl = focused?.url;
-	const isOurPage = focusedUrl !== undefined && focusedUrl.startsWith(`chrome-extension://${chrome.runtime.id}`);
-	const internal = focusedUrl !== undefined && isProtectedUrl(focusedUrl) && !isOurPage;
+	// The "current page" is the tab next to the panel (its own window's active
+	// tab), not the focused window — the user may have switched windows.
+	const current = (await getPanelWindowTab()) ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+	const currentUrl = current?.url;
+	const isOurPage = currentUrl !== undefined && currentUrl.startsWith(`chrome-extension://${chrome.runtime.id}`);
+	const internal = currentUrl !== undefined && isProtectedUrl(currentUrl) && !isOurPage;
 
 	if (contextMode === "tabs") {
 		const tabs = await chrome.tabs.query({});
@@ -182,13 +186,13 @@ async function buildSendTimeContext(contextMode: ChatContextMode | undefined): P
 		if (lines.length > 0) {
 			blocks.push(`The user shared all open tabs. Open tabs:\n${lines.join("\n")}\n\nUse switch_tab to switch tabs and read_dom to inspect a tab's content.`);
 		}
-	} else if (contextMode === "current" && focusedUrl && !internal && !isOurPage) {
-		blocks.push(`The current page is "${focused?.title ?? ""}" (tab ${focused?.id}, ${focusedUrl}).`);
+	} else if (contextMode === "current" && currentUrl && !internal && !isOurPage) {
+		blocks.push(`The current page is "${current?.title ?? ""}" (tab ${current?.id}, ${currentUrl}).`);
 	}
 
 	if (internal) {
 		blocks.push(
-			`The current page is a browser-internal page: ${focusedUrl}. DOM tools (read_dom, query, click, type, screenshot) cannot operate on it — if the user wants a web page, open one with navigate instead.`,
+			`The current page is a browser-internal page: ${currentUrl}. DOM tools (read_dom, query, click, type, screenshot) cannot operate on it — if the user wants a web page, open one with navigate instead.`,
 		);
 	}
 
