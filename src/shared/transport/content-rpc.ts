@@ -59,7 +59,7 @@ export type ContentResponse =
 	| { ok: true; method: ContentMethod; result: ContentResultMap[ContentMethod] }
 	| { ok: false; method: ContentMethod | "unknown"; error: string };
 
-export const CONTENT_ENVELOPE_MAGIC = "curio.content.rpc";
+export const CONTENT_ENVELOPE_MAGIC = "culiq.content.rpc";
 
 export interface ContentEnvelope {
 	magic: typeof CONTENT_ENVELOPE_MAGIC;

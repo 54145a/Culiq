@@ -1,6 +1,6 @@
 {
 	"manifest_version": 3,
-	"name": "Curio",
+	"name": "Culiq",
 	"version": "1.0.0",
 	"description": "Browser agent — chat to control the active tab",
 	"icons": {

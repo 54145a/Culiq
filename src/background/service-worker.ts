@@ -25,10 +25,10 @@ if (sidebarAction?.toggle) {
 }
 
 self.addEventListener("error", (e: ErrorEvent) => {
-	console.error("[curio sw] uncaught error:", e.message, e.error);
+	console.error("[culiq sw] uncaught error:", e.message, e.error);
 });
 self.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
-	console.error("[curio sw] unhandled rejection:", e.reason);
+	console.error("[culiq sw] unhandled rejection:", e.reason);
 });
 
 const activeTurns = new Map<string, { controller: AbortController; port: chrome.runtime.Port }>();
@@ -67,7 +67,7 @@ chrome.runtime.onConnect.addListener((port) => {
 		try {
 			port.postMessage(msg);
 		} catch (err) {
-			console.warn("[curio sw] postMessage failed:", err);
+			console.warn("[culiq sw] postMessage failed:", err);
 		}
 	};
 
@@ -157,7 +157,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			setPanelWindow(undefined);
 		}
 	} catch (err) {
-		console.error("[curio sw] handleChat failed:", err);
+		console.error("[culiq sw] handleChat failed:", err);
 		sendErrorEnd(err instanceof Error ? err.message : String(err));
 	}
 }

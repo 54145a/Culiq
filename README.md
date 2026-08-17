@@ -1,6 +1,6 @@
-# Curio
+# Culiq
 
-> Radical Fork of Curio that aims to create an extendable browser agent platform
+> Fork of Curio that aims to create an extendable browser agent platform
 
 A browser-extension browser agent that automatically operates the browser for you — opening pages, reading content, clicking buttons, filling forms, running JavaScript, and doing basic reverse engineering. Supports Chrome, Edge, and Firefox.
 
@@ -44,15 +44,15 @@ A browser-extension browser agent that automatically operates the browser for yo
 
 Find the artifact for your browser on the [Releases](../../releases) page:
 
-- Chrome / Edge: `curio-vX.Y.Z-chrome.zip`
-- Firefox (128+): `curio-vX.Y.Z-firefox.xpi`
+- Chrome / Edge: `culiq-vX.Y.Z-chrome.zip`
+- Firefox (128+): `culiq-vX.Y.Z-firefox.xpi`
 
 ##### Chrome / Edge
 
 1. Unzip the archive to any directory
 2. Open `chrome://extensions` (`edge://extensions` for Edge), enable Developer mode in the top-right
 3. **Load unpacked** → select the directory
-4. Click the Curio icon in the toolbar to open the sidebar
+4. Click the Culiq icon in the toolbar to open the sidebar
 
 ##### Firefox
 
@@ -61,8 +61,8 @@ Import the `.xpi` file directly from `about:addons`.
 #### 2. Build from source
 
 ```bash
-git clone https://github.com/54145a/Curio.git
-cd Curio
+git clone https://github.com/54145a/Culiq.git
+cd Culiq
 corepack enable        # enable pnpm (or install pnpm yourself)
 pnpm install
 pnpm run build         # produces dist-chrome/ and dist-firefox/

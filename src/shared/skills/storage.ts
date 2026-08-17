@@ -11,7 +11,7 @@ export interface SkillMeta {
 	updatedAt: number;
 }
 
-const META_KEY = "curio.skills.meta";
+const META_KEY = "culiq.skills.meta";
 type MetaMap = Record<string, SkillMeta>;
 
 async function readMeta(): Promise<MetaMap> {

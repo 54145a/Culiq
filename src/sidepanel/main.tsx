@@ -29,7 +29,7 @@ if (isPopupWindow) document.body.dataset.mode = "window";
 // at a time. Each panel writes {id, ts} to session storage and heartbeats it; a
 // panel seeing a fresh foreign id shows a placeholder instead of the UI. This
 // also makes the sandbox iframe broadcast-safe (exactly one listener exists).
-const PANEL_KEY = "curio.panel.active";
+const PANEL_KEY = "culiq.panel.active";
 const PANEL_TTL_MS = 30_000;
 const HEARTBEAT_MS = 5_000;
 
@@ -230,7 +230,7 @@ function App() {
 		<>
 			<header>
 				<div className="brand">
-					<h1>Curio</h1>
+					<h1>Culiq</h1>
 					<div className="header-actions">
 						<span id="status" data-state={statusState}>
 							{statusText}
@@ -283,7 +283,7 @@ function App() {
 			</section>
 			<section id="view-popup-hint" className="view" data-active="false">
 				<div className="popup-hint">
-					<p>Curio is already running in another panel.</p>
+					<p>Culiq is already running in another panel.</p>
 					<p className="hint">Close that panel to continue here.</p>
 				</div>
 			</section>

@@ -4,7 +4,7 @@ import {
 	loadSettings,
 	PROVIDER_DEFAULTS,
 	type Capability,
-	type CurioSettings,
+	type CuliqSettings,
 	type ProviderId,
 	type SearchEngineId,
 	saveSettings,
@@ -54,7 +54,7 @@ function ProviderCard({
 	dirty,
 }: {
 	id: ProviderId;
-	settings: CurioSettings;
+	settings: CuliqSettings;
 	activate: () => void;
 	dirty: () => void;
 }) {
@@ -103,7 +103,7 @@ function ProviderCard({
 	);
 }
 
-function ProvidersGroup({ settings, dirty }: { settings: CurioSettings; dirty: () => void }) {
+function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const activate = (id: ProviderId) => {
 		if (settings.activeProvider === id) return;
 		settings.activeProvider = id;
@@ -124,7 +124,7 @@ function ProvidersGroup({ settings, dirty }: { settings: CurioSettings; dirty: (
 	);
 }
 
-function CapabilitiesGroup({ settings, dirty }: { settings: CurioSettings; dirty: () => void }) {
+function CapabilitiesGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const toggle = (key: Capability, checked: boolean) => {
 		if (checked) {
 			if (!settings.capabilities.includes(key)) settings.capabilities.push(key);
@@ -155,7 +155,7 @@ function CapabilitiesGroup({ settings, dirty }: { settings: CurioSettings; dirty
 	);
 }
 
-function ContextGroup({ settings, dirty }: { settings: CurioSettings; dirty: () => void }) {
+function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const cm = settings.contextManagement;
 
 	return (
@@ -519,7 +519,7 @@ function McpServersGroup() {
 	);
 }
 
-function SearchGroup({ settings, dirty }: { settings: CurioSettings; dirty: () => void }) {
+function SearchGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const engines: [SearchEngineId, string][] = [["bing", "Bing"]];
 
 	return (
@@ -548,7 +548,7 @@ function SearchGroup({ settings, dirty }: { settings: CurioSettings; dirty: () =
 }
 
 export function SettingsView() {
-	const [settings, setSettings] = useState<CurioSettings | null>(null);
+	const [settings, setSettings] = useState<CuliqSettings | null>(null);
 	const [saveState, setSaveState] = useState<"idle" | "saving" | "ok" | "err">("idle");
 	const [saveMsg, setSaveMsg] = useState("");
 

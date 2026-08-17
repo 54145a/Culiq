@@ -102,10 +102,10 @@ export interface ProviderConfig {
 	model: string;
 }
 
-const CURIO_SETTINGS_VERSION = 4;
+const CULIQ_SETTINGS_VERSION = 4;
 
-export interface CurioSettings {
-	version: typeof CURIO_SETTINGS_VERSION;
+export interface CuliqSettings {
+	version: typeof CULIQ_SETTINGS_VERSION;
 	theme: ThemePreference;
 	activeProvider: ProviderId;
 	providers: Record<ProviderId, ProviderConfig>;
@@ -135,11 +135,11 @@ export const PROVIDER_DEFAULTS: Record<ProviderId, { label: string; baseUrl: str
 	},
 };
 
-const STORAGE_KEY = `curio.settings.v${CURIO_SETTINGS_VERSION}`;
+const STORAGE_KEY = `culiq.settings.v${CULIQ_SETTINGS_VERSION}`;
 
-export function defaultSettings(): CurioSettings {
+export function defaultSettings(): CuliqSettings {
 	return {
-		version: CURIO_SETTINGS_VERSION,
+		version: CULIQ_SETTINGS_VERSION,
 		theme: "system",
 		activeProvider: "openai",
 		providers: {
@@ -167,13 +167,13 @@ interface StoredSettings {
 	searchEngine?: unknown;
 }
 
-export async function loadSettings(): Promise<CurioSettings> {
+export async function loadSettings(): Promise<CuliqSettings> {
 	const raw = await chrome.storage.local.get(STORAGE_KEY);
 	const stored = raw[STORAGE_KEY] as StoredSettings | undefined;
 	if (!stored || (stored.version !== 2 && stored.version !== 3 && stored.version !== 4)) return defaultSettings();
 	const base = defaultSettings();
 	return {
-		version: CURIO_SETTINGS_VERSION,
+		version: CULIQ_SETTINGS_VERSION,
 		theme: isThemePreference(stored.theme) ? stored.theme : base.theme,
 		activeProvider: stored.activeProvider ?? base.activeProvider,
 		providers: {
@@ -186,7 +186,7 @@ export async function loadSettings(): Promise<CurioSettings> {
 	};
 }
 
-export async function saveSettings(settings: CurioSettings): Promise<void> {
+export async function saveSettings(settings: CuliqSettings): Promise<void> {
 	await chrome.storage.local.set({ [STORAGE_KEY]: settings });
 }
 
@@ -199,6 +199,6 @@ function isThemePreference(value: unknown): value is ThemePreference {
 	return value === "system" || value === "light" || value === "dark";
 }
 
-export function getActiveProvider(settings: CurioSettings): ProviderConfig {
+export function getActiveProvider(settings: CuliqSettings): ProviderConfig {
 	return settings.providers[settings.activeProvider];
 }

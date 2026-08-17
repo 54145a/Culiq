@@ -11,7 +11,7 @@ export interface McpServerConfig {
 	transport: McpTransport;
 }
 
-const STORAGE_KEY = "curio.mcp.servers";
+const STORAGE_KEY = "culiq.mcp.servers";
 
 export async function loadMcpServers(): Promise<McpServerConfig[]> {
 	const raw = await chrome.storage.local.get(STORAGE_KEY);

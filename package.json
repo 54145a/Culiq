@@ -1,8 +1,8 @@
 {
-	"name": "@54145a/curio",
+	"name": "@54145a/culiq",
 	"version": "1.0.0",
 	"type": "module",
-	"description": "Curio — browser agent Chrome extension",
+	"description": "Culiq — browser agent Chrome extension",
 	"scripts": {
 		"dev": "TARGET=chrome vite",
 		"dev:firefox": "TARGET=firefox vite",

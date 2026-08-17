@@ -1,5 +1,6 @@
 import { sliceByTokens } from "tokenx";
 import { getSkill, listSkills } from "@shared/skills";
+import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 
 const INDEX_TOKEN_CAP = 8000;

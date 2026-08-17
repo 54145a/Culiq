@@ -77,7 +77,7 @@ async function connectServer(session: McpSession, server: McpServerConfig): Prom
 		const client = await createMCPClient({
 			transport: { type: server.transport, url: server.url.trim(), fetch: fetchFn },
 			initializationOptions: { timeout: CONNECTION_TIMEOUT_MS },
-			clientName: "curio",
+			clientName: "culiq",
 		});
 		session.clients.push(client);
 		const { tools: definitions } = await client.listTools();

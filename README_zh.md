@@ -1,6 +1,6 @@
-# Curio
+# Culiq
 
-> Radical Fork of Curio that aims to create an extendable browser agent platform
+> Fork of Curio that aims to create an extendable browser agent platform
 
 一个浏览器扩展形式的 browser agent，能够自动帮你操作浏览器，比如打开网页、读取内容、点击按钮、填写表单、执行 JavaScript，以及进行基本的逆向分析。支持 Chrome、Edge 和 Firefox。
 
@@ -44,15 +44,15 @@
 
 在 [Releases](../../releases) 页面找到对应浏览器的产物：
 
-- Chrome / Edge：`curio-vX.Y.Z-chrome.zip`
-- Firefox（128+）：`curio-vX.Y.Z-firefox.xpi`
+- Chrome / Edge：`culiq-vX.Y.Z-chrome.zip`
+- Firefox（128+）：`culiq-vX.Y.Z-firefox.xpi`
 
 ##### Chrome / Edge
 
 1. 解压 zip 到任意目录
 2. 打开 `chrome://extensions`（Edge 是 `edge://extensions`），启用右上角开发者模式
 3. **加载已解压的扩展程序** → 选择解压目录
-4. 点击工具栏的 Curio 图标打开侧边栏
+4. 点击工具栏的 Culiq 图标打开侧边栏
 
 ##### Firefox
 
@@ -61,8 +61,8 @@
 #### 2. 从源码构建
 
 ```bash
-git clone https://github.com/54145a/Curio.git
-cd Curio
+git clone https://github.com/54145a/Culiq.git
+cd Culiq
 corepack enable        # 启用 pnpm（或自行安装 pnpm）
 pnpm install
 pnpm run build         # 同时产出 dist-chrome/ 和 dist-firefox/

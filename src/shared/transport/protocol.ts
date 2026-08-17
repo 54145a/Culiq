@@ -16,4 +16,4 @@ export type BgToPanel =
 	| { type: "agent_event"; turnId: string; event: AgentEvent }
 	| { type: "panel_transfer" };
 
-export const PANEL_PORT = "curio.panel";
+export const PANEL_PORT = "culiq.panel";

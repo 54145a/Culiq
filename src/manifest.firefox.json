@@ -1,6 +1,6 @@
 {
 	"action": {
-		"default_title": "Toggle Curio sidebar",
+		"default_title": "Toggle Culiq sidebar",
 		"default_icon": {
 			"16": "icons/icon-16.png",
 			"32": "icons/icon-32.png",
@@ -10,7 +10,7 @@
 	},
 	"sidebar_action": {
 		"default_panel": "src/sidepanel/index.html",
-		"default_title": "Curio",
+		"default_title": "Culiq",
 		"default_icon": {
 			"16": "icons/icon-16.png",
 			"32": "icons/icon-32.png",
@@ -28,12 +28,12 @@
 			"suggested_key": {
 				"default": "Alt+Shift+C"
 			},
-			"description": "Toggle Curio sidebar"
+			"description": "Toggle Culiq sidebar"
 		}
 	},
 	"browser_specific_settings": {
 		"gecko": {
-			"id": "Curio@54145a",
+			"id": "Culiq@54145a",
 			"strict_min_version": "128.0"
 		}
 	}

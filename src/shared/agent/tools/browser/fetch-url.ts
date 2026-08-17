@@ -40,7 +40,7 @@ export const fetchUrlTool: AgentTool = {
 		properties: {
 			url: { type: "string", description: "Absolute http(s) URL to fetch." },
 			mode: { type: "string", enum: ["text", "html", "outline"], description: "Output mode: `text` (innerText, default), `html` (raw markup), or `outline` (headings, links, forms)." },
-			afterLoad: { type: "string", enum: ["close", "open"], description: "Close the tab after reading (default `"close"`, one-shot) or leave it open (`"open"`) so follow-up tools can use it." },
+			afterLoad: { type: "string", enum: ["close", "open"], description: "Close the tab after reading ('close', one-shot) or leave it open ('open') so follow-up tools can use it." },
 			maxChars: { type: "number", description: "Truncate the result to this many chars. Default 200000." },
 			probeMime: { type: "boolean", description: "HEAD-probe the URL first and refuse non-textual content types. Default true; set false to fetch anyway." },
 		},
