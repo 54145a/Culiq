@@ -1,5 +1,6 @@
 import type { ElementSummary } from "@shared/transport/content-rpc";
 import { callContent } from "@shared/transport/tab-rpc";
+import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 
 function describe(el: ElementSummary): string {
@@ -13,8 +14,7 @@ function describe(el: ElementSummary): string {
 
 export const queryTool: AgentTool = {
 	name: "query",
-	description:
-		"Find elements on the active page by CSS selector. Returns up to `limit` matches with tag, id, classes, text, attrs, and visibility info. Use this before click/type to confirm the right element exists.",
+	description: CAPABILITY_INFO.query.description,
 	parameters: {
 		type: "object",
 		properties: {
@@ -48,8 +48,7 @@ export const queryTool: AgentTool = {
 
 export const clickTool: AgentTool = {
 	name: "click",
-	description:
-		"Click the first element matching a CSS selector on the active page. Scrolls into view first. Provide `index` to pick a non-first match.",
+	description: CAPABILITY_INFO.click.description,
 	parameters: {
 		type: "object",
 		properties: {
@@ -74,8 +73,7 @@ export const clickTool: AgentTool = {
 
 export const typeTool: AgentTool = {
 	name: "type",
-	description:
-		"Type text into an <input>, <textarea>, or contenteditable element matching the selector. By default replaces the existing value. Set `submit: true` to submit the form (or send Enter) after typing.",
+	description: CAPABILITY_INFO.type.description,
 	parameters: {
 		type: "object",
 		properties: {
@@ -111,8 +109,7 @@ export const typeTool: AgentTool = {
 
 export const readDomTool: AgentTool = {
 	name: "read_dom",
-	description:
-		"Read the current page's DOM. Modes: 'text' for innerText (default, best for reading content), 'html' for outerHTML, 'outline' for a structural outline of headings/links/forms/landmarks. Optionally limit scope by `selector`.",
+	description: CAPABILITY_INFO.read_dom.description,
 	parameters: {
 		type: "object",
 		properties: {

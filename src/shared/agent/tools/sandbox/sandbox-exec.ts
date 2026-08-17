@@ -1,4 +1,5 @@
 import type { AgentTool } from "../../types";
+import { CAPABILITY_INFO } from "@shared/config";
 import { BRIDGE_SPEC } from "./api";
 
 const TIMEOUT_MS = 60_000;
@@ -161,8 +162,7 @@ function evaluate(signal: AbortSignal, code: string): Promise<SandboxOutcome> {
 
 export const sandboxExecTool: AgentTool = {
 	name: "sandbox_exec",
-	description:
-		"Run JavaScript in a restricted sandbox worker hosted in the panel's hidden iframe. Exposed APIs (see the `sandbox` type declarations in the system prompt; `sandbox.docs(name)` returns details): `sandbox.fs.{read,write,list,delete,mkdir}` over OPFS (relative paths, no '..'), `sandbox.fetch(url, init)` (extension-origin, CORS-free), a chrome bridge `sandbox.chrome.tabs.{query,get,update,reload}` and `sandbox.chrome.windows.{get,update}` (whitelisted, non-destructive), and `sandbox.evalInTab(tabId, world, code)` to run JS in a page. No DOM and no direct chrome.* inside the worker; bridge calls are proxied through the background and validated. State persists within the turn. Top-level await supported; `return X` to send a value back.",
+	description: CAPABILITY_INFO.sandbox_exec.description,
 	parameters: {
 		type: "object",
 		properties: {

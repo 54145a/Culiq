@@ -7,8 +7,7 @@ const DEFAULT_FILE_MAX_CHARS = 8_000;
 
 export const useSkillTool: AgentTool = {
 	name: "use_skill",
-	description:
-		"Access a skill's files (see <available_skills>). Without `file`, returns the skill index: description, truncated SKILL.md instructions, and a listing of its files (SKILL.md + scripts). Pass `file` to read a specific file's content, truncated to `maxChars`. Browse files like a filesystem and read what you need; do not dump everything at once.",
+	description: CAPABILITY_INFO.use_skill.description,
 	parameters: {
 		type: "object",
 		properties: {

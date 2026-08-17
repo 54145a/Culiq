@@ -132,7 +132,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			const sandboxDts = enabled.has("sandbox_exec") ? `\n\n${generateSandboxDts()}` : "";
 			const context = await buildSendTimeContext(msg.contextMode);
 			const systemPrompt =
-				getSystemPrompt(settings.capabilities) + buildAvailableSkillsBlock(skills) + sandboxDts + (context ? `\n\n${context}` : "");
+				getSystemPrompt() + buildAvailableSkillsBlock(skills) + sandboxDts + (context ? `\n\n${context}` : "");
 			const mcpTools = await createMcpTools(controller.signal);
 
 			await runAgentLoop(

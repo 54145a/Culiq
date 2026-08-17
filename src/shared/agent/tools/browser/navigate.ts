@@ -1,11 +1,11 @@
 import { getActiveTab } from "@shared/transport/tab-rpc";
+import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 import { waitForTabComplete } from "./wait";
 
 export const navigateTool: AgentTool = {
 	name: "navigate",
-	description:
-		"Open a URL in the active tab (default) or in a new tab. Waits until the page finishes loading by default. Use this when you need to take the user to a different page before reading/clicking/typing on it.",
+	description: CAPABILITY_INFO.navigate.description,
 	parameters: {
 		type: "object",
 		properties: {

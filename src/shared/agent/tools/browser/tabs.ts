@@ -1,11 +1,11 @@
 import { getActiveTab } from "@shared/transport/tab-rpc";
+import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 import { waitForTabComplete } from "./wait";
 
 export const listTabsTool: AgentTool = {
 	name: "list_tabs",
-	description:
-		"List all open browser tabs with their id, url, title, window id, and active state. Use this to orient yourself when the task spans multiple tabs, then switch with switch_tab.",
+	description: CAPABILITY_INFO.list_tabs.description,
 	parameters: {
 		type: "object",
 		properties: {
@@ -32,8 +32,7 @@ export const listTabsTool: AgentTool = {
 
 export const switchTabTool: AgentTool = {
 	name: "switch_tab",
-	description:
-		"Activate a browser tab by id (from list_tabs) and focus its window. The following tools then operate on that tab as the active tab.",
+	description: CAPABILITY_INFO.switch_tab.description,
 	parameters: {
 		type: "object",
 		properties: {
@@ -62,8 +61,7 @@ export const switchTabTool: AgentTool = {
 
 export const reloadTabTool: AgentTool = {
 	name: "reload_tab",
-	description:
-		"Reload a tab (default: the active tab). Use `bypassCache: true` to force a hard reload. Optionally wait for the page to finish loading before returning.",
+	description: CAPABILITY_INFO.reload_tab.description,
 	parameters: {
 		type: "object",
 		properties: {

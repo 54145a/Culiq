@@ -29,7 +29,7 @@ function extractSearchResults(): ExtractOutcome {
 export const searchTool: AgentTool = {
 	name: "search",
 	description:
-		"Search the web using the configured search engine (Settings → Search engine, default Bing). Opens the results in a new tab, extracts the organic result list as text, then closes the tab. Use this for a quick web search instead of navigating to a search engine manually.",
+		"Search the web using the configured search engine (Settings → Search engine, default Bing). Always opens the results in a new tab — never operates on the current page. Extracts the organic result list and closes the tab. Use this for quick web searches instead of navigating to a search engine manually.",
 	parameters: {
 		type: "object",
 		properties: {

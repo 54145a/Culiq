@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
-import { SYSTEM_PROMPT_PARTS } from "@shared/agent/system-prompt";
 import {
+	CAPABILITY_INFO,
 	loadSettings,
 	PROVIDER_DEFAULTS,
 	type Capability,
@@ -139,7 +139,7 @@ function CapabilitiesGroup({ settings, dirty }: { settings: CurioSettings; dirty
 			<summary className="settings-header">Capabilities</summary>
 			<p className="settings-hint">Tools the agent is allowed to use.</p>
 			<div className="capability-list">
-				{Object.entries(SYSTEM_PROMPT_PARTS.capabilities).map(([key, description]) => (
+				{Object.entries(CAPABILITY_INFO).map(([key, { description }]) => (
 					<label className="capability" key={key}>
 						<input
 							type="checkbox"

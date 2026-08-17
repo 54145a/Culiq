@@ -1,3 +1,4 @@
+import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 import { waitForTabComplete } from "./wait";
 
@@ -33,13 +34,13 @@ async function probeContentType(url: string, signal?: AbortSignal): Promise<stri
 
 export const fetchUrlTool: AgentTool = {
 	name: "fetch_url",
-	description:
-		"Fetch a URL for a one-shot read: opens it in a new foreground tab, waits for it to load, reads the rendered page content (text or HTML), then closes the tab. Suitable for API endpoints or static pages you only need to view once. NOT for interactive browsing — if you need to click, type, or navigate onward, use `navigate` plus the DOM tools instead. By default a HEAD request first checks the content type and refuses binary files (images, PDFs, downloads); set `probeMime: false` to fetch anyway. Note: if the URL responds with a file download (Content-Disposition: attachment), the browser downloads the file instead of rendering it, so nothing is returned.",
+	description: CAPABILITY_INFO.fetch_url.description,
 	parameters: {
 		type: "object",
 		properties: {
 			url: { type: "string", description: "Absolute http(s) URL to fetch." },
-			mode: { type: "string", enum: ["text", "html"], description: "Read as page text (default) or raw HTML." },
+			mode: { type: "string", enum: ["text", "html", "outline"], description: "Output mode: `text` (innerText, default), `html` (raw markup), or `outline` (headings, links, forms)." },
+			afterLoad: { type: "string", enum: ["close", "open"], description: "Close the tab after reading (default `"close"`, one-shot) or leave it open (`"open"`) so follow-up tools can use it." },
 			maxChars: { type: "number", description: "Truncate the result to this many chars. Default 200000." },
 			probeMime: { type: "boolean", description: "HEAD-probe the URL first and refuse non-textual content types. Default true; set false to fetch anyway." },
 		},
@@ -49,7 +50,8 @@ export const fetchUrlTool: AgentTool = {
 	executionMode: "sequential",
 	async execute(args, signal) {
 		const url = String(args.url);
-		const mode = args.mode === "html" ? "html" : "text";
+		const afterLoad = args.afterLoad === "open" ? "open" : "close";
+		const mode = (args.mode as "text" | "html" | "outline") ?? "text";
 		const maxChars = typeof args.maxChars === "number" ? Math.max(100, Math.floor(args.maxChars)) : 200_000;
 		const probeMime = args.probeMime !== false;
 
@@ -104,12 +106,14 @@ export const fetchUrlTool: AgentTool = {
 						type: "text",
 						text:
 							`fetched: ${outcome.url || url}\ntitle: ${outcome.title || "(no title)"}` +
-							`\nmode: ${mode} · chars: ${text.length}${truncated ? " (truncated)" : ""}\n\n${text}`,
+							`\nmode: ${mode} · chars: ${text.length}${truncated ? " (truncated)" : ""}` +
+							(afterLoad === "open" ? `\ntabId: ${tabId}` : "") +
+							`\n\n${text}`,
 					},
 				],
 			};
 		} finally {
-			chrome.tabs.remove(tabId).catch(() => {});
+			if (afterLoad === "close") chrome.tabs.remove(tabId).catch(() => {});
 		}
 	},
 };
@@ -122,6 +126,20 @@ function extractPage(mode: string): ExtractOutcome {
 		let content: string;
 		if (mode === "html") {
 			content = doc.documentElement?.outerHTML ?? "";
+		} else if (mode === "outline") {
+			const lines: string[] = [];
+			doc.querySelectorAll("h1, h2, h3, h4, h5, h6").forEach((h) => {
+				lines.push(`${h.tagName.toLowerCase()} "${(h.textContent || "").trim()}"`);
+			});
+			doc.querySelectorAll("a[href]").forEach((a) => {
+				const text = (a.textContent || "").trim();
+				const href = a.getAttribute("href");
+				if (href && text) lines.push(`link: ${text} — ${href}`);
+			});
+			doc.querySelectorAll("form").forEach((f) => {
+				lines.push(`form: action=${f.getAttribute("action") || "self"} method=${f.getAttribute("method") || "GET"}`);
+			});
+			content = lines.join("\n") || "(no headings, links, or forms found)";
 		} else {
 			content =
 				doc.body?.innerText ??
