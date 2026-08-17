@@ -13,20 +13,24 @@ export function isProtectedUrl(url: string): boolean {
 }
 
 /**
- * The tab the tools would operate on: focused window's active tab, falling back
- * to any non-protected active tab. Never throws — returns undefined when no tab
- * exists. getActiveTab() adds the protected-URL guard on top.
+ * The tab the tools would operate on: focused normal window's active tab,
+ * falling back to any non-protected active tab in a normal window. Never
+ * throws — returns undefined when no usable tab exists. getActiveTab() adds
+ * the protected-URL guard on top.
  */
 export async function findTargetTab(): Promise<chrome.tabs.Tab | undefined> {
 	// lastFocusedWindow can be our own pop-out window (whose tab is the extension
-	// page) when it is focused — never operate on it. Prefer the focused window's
-	// active tab, then any non-protected active tab across windows.
+	// page) when it is focused — never operate on it. PWA standalone windows and
+	// popups are non-"normal" windows, so their tabs are also excluded as the
+	// default target (switch_tab can still reach them explicitly). Prefer the
+	// focused normal window's active tab, then any non-protected one.
 	const windows = await chrome.windows.getAll();
 	const byWindow = new Map<number | undefined, chrome.windows.Window>();
 	for (const w of windows) byWindow.set(w.id, w);
 	const activeTabs = await chrome.tabs.query({ active: true });
-	activeTabs.sort((a, b) => Number(byWindow.get(b.windowId)?.focused) - Number(byWindow.get(a.windowId)?.focused));
-	return activeTabs.find((t) => t.url && !PROTECTED_URL.test(t.url)) ?? activeTabs[0];
+	const candidates = activeTabs.filter((t) => byWindow.get(t.windowId)?.type === "normal");
+	candidates.sort((a, b) => Number(byWindow.get(b.windowId)?.focused) - Number(byWindow.get(a.windowId)?.focused));
+	return candidates.find((t) => t.url && !PROTECTED_URL.test(t.url)) ?? candidates[0];
 }
 
 export async function getActiveTab(): Promise<chrome.tabs.Tab> {
