@@ -2,6 +2,7 @@ import { SYSTEM_PROMPT_PARTS } from "./agent/system-prompt";
 
 export type ProviderId = "anthropic" | "openai";
 export type ThemePreference = "system" | "light" | "dark";
+export type SearchEngineId = "bing";
 export type Capability = keyof typeof SYSTEM_PROMPT_PARTS.capabilities;
 
 export interface ContextManagementConfig {
@@ -21,7 +22,7 @@ export interface ProviderConfig {
 	model: string;
 }
 
-const CURIO_SETTINGS_VERSION = 3;
+const CURIO_SETTINGS_VERSION = 4;
 
 export interface CurioSettings {
 	version: typeof CURIO_SETTINGS_VERSION;
@@ -30,6 +31,8 @@ export interface CurioSettings {
 	providers: Record<ProviderId, ProviderConfig>;
 	capabilities: Capability[];
 	contextManagement: ContextManagementConfig;
+	/** Search engine used by the `search` tool. */
+	searchEngine: SearchEngineId;
 }
 
 export const CONTEXT_MANAGEMENT_DEFAULTS: ContextManagementConfig = {
@@ -65,6 +68,7 @@ export function defaultSettings(): CurioSettings {
 		},
 		capabilities: Object.keys(SYSTEM_PROMPT_PARTS.capabilities) as Capability[],
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
+		searchEngine: "bing",
 	};
 }
 
@@ -80,12 +84,13 @@ interface StoredSettings {
 	providers?: Partial<Record<ProviderId, Partial<ProviderConfig>>>;
 	capabilities?: Capability[];
 	contextManagement?: Partial<ContextManagementConfig>;
+	searchEngine?: unknown;
 }
 
 export async function loadSettings(): Promise<CurioSettings> {
 	const raw = await chrome.storage.local.get(STORAGE_KEY);
 	const stored = raw[STORAGE_KEY] as StoredSettings | undefined;
-	if (!stored || (stored.version !== 2 && stored.version !== 3)) return defaultSettings();
+	if (!stored || (stored.version !== 2 && stored.version !== 3 && stored.version !== 4)) return defaultSettings();
 	const base = defaultSettings();
 	return {
 		version: CURIO_SETTINGS_VERSION,
@@ -97,6 +102,7 @@ export async function loadSettings(): Promise<CurioSettings> {
 		},
 		capabilities: stored.capabilities ?? base.capabilities,
 		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
+		searchEngine: stored.searchEngine === "bing" ? "bing" : base.searchEngine,
 	};
 }
 

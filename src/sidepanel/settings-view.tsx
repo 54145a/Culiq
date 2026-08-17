@@ -6,6 +6,7 @@ import {
 	type Capability,
 	type CurioSettings,
 	type ProviderId,
+	type SearchEngineId,
 	saveSettings,
 } from "@shared/config";
 import { buildUserSkill, deleteUserSkill, listSkills, saveUserSkill, setSkillEnabled, type Skill } from "@shared/skills";
@@ -518,6 +519,34 @@ function McpServersGroup() {
 	);
 }
 
+function SearchGroup({ settings, dirty }: { settings: CurioSettings; dirty: () => void }) {
+	const engines: [SearchEngineId, string][] = [["bing", "Bing"]];
+
+	return (
+		<details className="settings-group">
+			<summary className="settings-header">Search engine</summary>
+			<p className="settings-hint">Engine used by the `search` tool.</p>
+			<label className="capability">
+				<span>Engine</span>
+				<select
+					value={settings.searchEngine}
+					onClick={(e) => e.stopPropagation()}
+					onChange={(e) => {
+						settings.searchEngine = (e.target as HTMLSelectElement).value as SearchEngineId;
+						dirty();
+					}}
+				>
+					{engines.map(([id, label]) => (
+						<option key={id} value={id}>
+							{label}
+						</option>
+					))}
+				</select>
+			</label>
+		</details>
+	);
+}
+
 export function SettingsView() {
 	const [settings, setSettings] = useState<CurioSettings | null>(null);
 	const [saveState, setSaveState] = useState<"idle" | "saving" | "ok" | "err">("idle");
@@ -548,6 +577,7 @@ export function SettingsView() {
 			<ProvidersGroup settings={settings} dirty={dirty} />
 			<CapabilitiesGroup settings={settings} dirty={dirty} />
 			<ContextGroup settings={settings} dirty={dirty} />
+			<SearchGroup settings={settings} dirty={dirty} />
 			<SkillsGroup />
 			<McpServersGroup />
 			<div className="settings-actions">

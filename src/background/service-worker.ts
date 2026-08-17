@@ -38,7 +38,7 @@ chrome.windows.onRemoved.addListener((id) => {
 	if (id === popupWindowId) popupWindowId = undefined;
 });
 
-async function openPopupWindow(): Promise<void> {
+async function openPopupWindow(send: (m: BgToPanel) => void): Promise<void> {
 	if (popupWindowId !== undefined) {
 		try {
 			await chrome.windows.update(popupWindowId, { focused: true });
@@ -50,6 +50,7 @@ async function openPopupWindow(): Promise<void> {
 	const url = chrome.runtime.getURL("src/sidepanel/index.html?window=1");
 	const win = await chrome.windows.create({ url, type: "popup", width: 440, height: 720 });
 	popupWindowId = win.id;
+	send({ type: "panel_transfer" });
 	void closeSidebar();
 }
 
@@ -83,7 +84,7 @@ chrome.runtime.onConnect.addListener((port) => {
 				return;
 			}
 			case "open_window":
-				void openPopupWindow();
+				void openPopupWindow(send);
 				return;
 		}
 	});

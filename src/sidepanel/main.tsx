@@ -31,7 +31,7 @@ if (isPopupWindow) document.body.dataset.mode = "window";
 // also makes the sandbox iframe broadcast-safe (exactly one listener exists).
 const PANEL_KEY = "curio.panel.active";
 const PANEL_TTL_MS = 30_000;
-const HEARTBEAT_MS = 20_000;
+const HEARTBEAT_MS = 5_000;
 
 interface PanelFlag {
 	id: string;
@@ -167,6 +167,13 @@ function App() {
 
 	useEffect(() => {
 		return onSessionChange(() => refreshSessions());
+	}, []);
+
+	// Handle panel_transfer from SW: the pop-out window is taking over, so yield.
+	useEffect(() => {
+		return connection.onMessage((msg) => {
+			if (msg.type === "panel_transfer") yieldPanelRef.current();
+		});
 	}, []);
 
 	useEffect(() => {

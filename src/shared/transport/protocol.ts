@@ -13,6 +13,7 @@ export type PanelToBg =
 export type BgToPanel =
 	| { type: "pong"; nonce: string }
 	| { type: "log"; level: "info" | "warn" | "error"; text: string }
-	| { type: "agent_event"; turnId: string; event: AgentEvent };
+	| { type: "agent_event"; turnId: string; event: AgentEvent }
+	| { type: "panel_transfer" };
 
 export const PANEL_PORT = "curio.panel";
