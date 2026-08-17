@@ -31,7 +31,7 @@ if (isPopupWindow) document.body.dataset.mode = "window";
 // also makes the sandbox iframe broadcast-safe (exactly one listener exists).
 const PANEL_KEY = "culiq.panel.active";
 const PANEL_TTL_MS = 30_000;
-const HEARTBEAT_MS = 5_000;
+const HEARTBEAT_MS = 3_000;
 
 interface PanelFlag {
 	id: string;
