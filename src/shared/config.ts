@@ -78,7 +78,7 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	},
 	search: {
 		description:
-			"Search the web using the configured search engine (Settings → Search engine, default Bing). Always opens the results in a new tab — never operates on the current page. Extracts the organic result list and closes the tab. Use this for quick web searches instead of navigating to a search engine manually.",
+			"Search the web using the configured search engine (Settings → Search engine, default Bing). Opens the results in a new tab (the tab stays open for follow-up tools like read_dom, query, or click). Equivalent to navigating to the search results page and reading it with a preset result selector, but in a single tool call. Use this for quick web searches instead of navigating to a search engine manually.",
 	},
 	noop: {
 		description: "Echoes input. For testing only.",

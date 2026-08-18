@@ -29,7 +29,7 @@ function extractSearchResults(): ExtractOutcome {
 export const searchTool: AgentTool = {
 	name: "search",
 	description:
-		"Search the web using the configured search engine (Settings → Search engine, default Bing). Always opens the results in a new tab — never operates on the current page. Extracts the organic result list and closes the tab. Use this for quick web searches instead of navigating to a search engine manually.",
+		"Search the web using the configured search engine (Settings → Search engine, default Bing). Opens the results in a new tab (the tab stays open for follow-up tools like `read_dom`, `query`, or `click`). Equivalent to navigating to the search results page and reading it with a preset result selector — but in a single tool call. Use this for quick web searches instead of navigating to a search engine manually.",
 	parameters: {
 		type: "object",
 		properties: {
@@ -72,12 +72,12 @@ export const searchTool: AgentTool = {
 				content: [
 					{
 						type: "text",
-						text: `search: ${query}\nengine: ${engine} · chars: ${text.length}${truncated ? " (truncated)" : ""}\n\n${text}`,
+						text: `search: ${query}\nengine: ${engine}\ntabId: ${tabId}\nchars: ${text.length}${truncated ? " (truncated)" : ""}\n\n${text}`,
 					},
 				],
 			};
 		} finally {
-			chrome.tabs.remove(tabId).catch(() => {});
+			chrome.tabs.update(tabId, { active: false }).catch(() => {});
 		}
 	},
 };
