@@ -1,7 +1,7 @@
 import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
-import { buildAvailableSkillsBlock, listEnabledSkills } from "@shared/skills";
-import { closeSandbox, generateSandboxDts } from "@shared/agent/tools/sandbox";
+import { listEnabledSkills } from "@shared/skills";
+import { closeSandbox } from "@shared/agent/tools/sandbox";
 import { getActiveProvider, loadSettings, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
 import { getPanelWindowTab, isProtectedUrl, setPanelWindow } from "@shared/transport/tab-rpc";
@@ -130,16 +130,30 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		try {
 			setPanelWindow(msg.windowId);
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
-			const sandboxDts = enabled.has("sandbox_exec") ? `\n\n${generateSandboxDts()}` : "";
 			const context = await buildSendTimeContext(msg.contextMode);
-			const systemPrompt =
-				getSystemPrompt() + buildAvailableSkillsBlock(skills) + sandboxDts + (context ? `\n\n${context}` : "");
+			const systemPrompt = getSystemPrompt({
+				skills,
+				sandboxEnabled: enabled.has("sandbox_exec"),
+				context,
+			});
 			const mcpTools = await createMcpTools(controller.signal);
+
+			// Append current time so the agent knows the session timestamp.
+			const messages = [...msg.messages];
+			const last = messages[messages.length - 1];
+			if (last && last.role === "user") {
+				const ts = `\n\n[current time: ${new Date().toISOString()}]`;
+				if (typeof last.content === "string") {
+					messages[messages.length - 1] = { ...last, content: last.content + ts };
+				} else {
+					messages[messages.length - 1] = { ...last, content: [...last.content, { type: "text", text: ts }] };
+				}
+			}
 
 			await runAgentLoop(
 				{
 					systemPrompt,
-					messages: msg.messages,
+					messages,
 					tools: [...getTools().filter((tool) => enabled.has(tool.name as Capability)), ...mcpTools],
 				},
 				{
