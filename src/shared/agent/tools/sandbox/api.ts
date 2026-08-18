@@ -207,7 +207,7 @@ function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
 			clearTimeout(timer);
 			err ? reject(err) : resolve();
 		};
-		const onUpdate = (id: number, info: chrome.tabs.TabChangeInfo) => {
+		const onUpdate = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
 			if (id === tabId && info.status === "complete") finish();
 		};
 		const timer = setTimeout(() => finish(new Error(`waitForLoad timed out after ${timeoutMs / 1000}s`)), timeoutMs);

@@ -14,7 +14,7 @@ export function waitForTabComplete(tabId: number, signal?: AbortSignal): Promise
 			else resolve();
 		};
 
-		const onUpdated = (id: number, info: chrome.tabs.TabChangeInfo) => {
+		const onUpdated = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
 			if (id === tabId && info.status === "complete") finish();
 		};
 		const onRemoved = (id: number) => {

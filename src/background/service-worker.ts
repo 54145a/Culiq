@@ -49,6 +49,7 @@ async function openPopupWindow(send: (m: BgToPanel) => void): Promise<void> {
 	}
 	const url = chrome.runtime.getURL("src/sidepanel/index.html?window=1");
 	const win = await chrome.windows.create({ url, type: "popup", width: 440, height: 720 });
+	if (!win?.id) return;
 	popupWindowId = win.id;
 	send({ type: "panel_transfer" });
 	void closeSidebar();
