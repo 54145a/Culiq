@@ -5,7 +5,7 @@ import {
 	PROVIDER_DEFAULTS,
 	type Capability,
 	type CuliqSettings,
-	type ProviderId,
+	type ProviderConfig,
 	type SearchEngineId,
 	saveSettings,
 } from "@shared/config";
@@ -17,8 +17,6 @@ import {
 	type McpServerConfig,
 	type McpTransport,
 } from "@shared/mcp";
-
-const PROVIDERS: ProviderId[] = ["openai", "anthropic"];
 
 function Field({
 	label,
@@ -48,82 +46,77 @@ function Field({
 }
 
 function ProviderCard({
-	id,
-	settings,
-	activate,
+	provider,
+	isDefault,
+	setDefault,
 	dirty,
 }: {
-	id: ProviderId;
-	settings: CuliqSettings;
-	activate: () => void;
+	provider: ProviderConfig;
+	isDefault: boolean;
+	setDefault: () => void;
 	dirty: () => void;
 }) {
-	const config = settings.providers[id];
-	const def = PROVIDER_DEFAULTS[id];
-	const isActive = settings.activeProvider === id;
-
-	const setField = (field: "apiKey" | "baseUrl" | "model", value: string) => {
-		if (field === "apiKey") config.apiKey = value;
-		else config[field] = value || def[field];
+	const def = PROVIDER_DEFAULTS.find((d) => d.id === provider.id);
+	const setField = (field: "name" | "apiKey" | "baseUrl" | "model", value: string) => {
+		if (field === "name") provider.name = value;
+		else if (field === "apiKey") provider.apiKey = value;
+		else provider[field] = (value || def?.[field]) ?? "";
 		dirty();
 	};
 
 	return (
 		<div
 			className="provider-card"
-			data-active={String(isActive)}
+			data-active={String(isDefault)}
 			role="button"
 			tabIndex={0}
-			aria-pressed={isActive}
+			aria-pressed={isDefault}
 			onClick={(e) => {
 				if ((e.target as HTMLElement).closest("label, input, button")) return;
-				activate();
+				setDefault();
 			}}
 			onKeyDown={(e) => {
 				if (e.key !== "Enter" && e.key !== " ") return;
 				if ((e.target as HTMLElement).closest("input, button")) return;
 				e.preventDefault();
-				activate();
+				setDefault();
 			}}
 		>
 			<header>
-				<h3>{def.label}</h3>
-				<span className="active-badge">{isActive ? "active" : "click to activate"}</span>
+				<h3>{provider.name || provider.id}</h3>
+				<span className="active-badge">{isDefault ? "default" : "click to set default"}</span>
 			</header>
-			<Field
-				label="API key"
-				type="password"
-				value={config.apiKey}
-				placeholder={id === "anthropic" ? "sk-ant-..." : "sk-..."}
-				onInput={(v) => setField("apiKey", v)}
-			/>
-			<Field label="Base URL" type="text" value={config.baseUrl} placeholder={def.baseUrl} onInput={(v) => setField("baseUrl", v)} />
-			<Field label="Model" type="text" value={config.model} placeholder={def.model} onInput={(v) => setField("model", v)} />
+			<Field label="Name" type="text" value={provider.name} placeholder={provider.id} onInput={(v) => setField("name", v)} />
+			<Field label="API key" type="password" value={provider.apiKey} placeholder="sk-..." onInput={(v) => setField("apiKey", v)} />
+			<Field label="Base URL" type="text" value={provider.baseUrl} placeholder={def?.baseUrl ?? ""} onInput={(v) => setField("baseUrl", v)} />
+			<Field label="Model" type="text" value={provider.model} placeholder={def?.model ?? ""} onInput={(v) => setField("model", v)} />
 		</div>
 	);
 }
 
 function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
-	const activate = (id: ProviderId) => {
-		if (settings.activeProvider === id) return;
-		settings.activeProvider = id;
+	const setDefault = (id: string) => { settings.defaultProviderId = id; dirty(); };
+	const addProvider = () => {
+		const id = `provider-${Date.now()}`;
+		settings.providers.push({ id, name: id, apiKey: "", baseUrl: "", model: "" });
 		dirty();
 	};
 
 	return (
 		<details className="settings-group">
-			<summary className="settings-header">
-				Providers
-				<span className="summary-badge">{PROVIDER_DEFAULTS[settings.activeProvider].label}</span>
-			</summary>
-			<p className="settings-hint">Click a provider to make it active.</p>
-			{PROVIDERS.map((id) => (
-				<ProviderCard key={id} id={id} settings={settings} activate={() => activate(id)} dirty={dirty} />
-			))}
+			<summary className="settings-header">Providers</summary>
+			<p className="settings-hint">Configure model providers. Click a card to set as default.</p>
+			<div className="settings-actions">
+				<button type="button" onClick={addProvider}>Add provider</button>
+			</div>
+			<div className="capability-list">
+				{settings.providers.map((p) => (
+					<ProviderCard key={p.id} provider={p} isDefault={settings.defaultProviderId === p.id} setDefault={() => setDefault(p.id)} dirty={dirty} />
+				))}
+			</div>
 		</details>
 	);
 }
-
 function CapabilitiesGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const toggle = (key: Capability, checked: boolean) => {
 		if (checked) {

@@ -1,4 +1,4 @@
-import { loadSettings, getActiveProvider } from "@shared/config";
+import { loadSettings, getDefaultProvider } from "@shared/config";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { runAgentLoop } from "@shared/agent";
 import type { AgentContext, AgentTool } from "@shared/agent/types";
@@ -30,7 +30,7 @@ export const subtaskTool: AgentTool = {
 		const maxTurns = typeof args.maxTurns === "number" ? Math.max(1, Math.floor(args.maxTurns)) : 5;
 
 		const settings = await loadSettings();
-		const mainProvider = getActiveProvider(settings);
+		const mainProvider = getDefaultProvider(settings);
 		const subModel =
 			settings.subAgentModel && settings.subAgentModel.trim() !== ""
 				? settings.subAgentModel.trim()

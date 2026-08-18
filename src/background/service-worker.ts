@@ -2,7 +2,7 @@ import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { listEnabledSkills } from "@shared/skills";
 import { closeSandbox } from "@shared/agent/tools/sandbox";
-import { getActiveProvider, loadSettings, type Capability } from "@shared/config";
+import { getDefaultProvider, loadSettings, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
 import { getPanelWindowTab, isProtectedUrl, setPanelWindow } from "@shared/transport/tab-rpc";
 import { type ChatContextMode } from "@shared/transport/protocol";
@@ -115,7 +115,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 
 	try {
 		const settings = await loadSettings();
-		const provider = getActiveProvider(settings);
+		const provider = getDefaultProvider(settings);
 
 		if (!provider.apiKey) {
 			sendErrorEnd(`${provider.id}: API key not configured. Open Settings.`);

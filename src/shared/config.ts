@@ -1,4 +1,3 @@
-export type ProviderId = "anthropic" | "openai";
 export type ThemePreference = "system" | "light" | "dark";
 export type SearchEngineId = "bing";
 
@@ -97,24 +96,23 @@ export interface ContextManagementConfig {
 }
 
 export interface ProviderConfig {
-	id: ProviderId;
+	id: string;
+	name: string;
 	apiKey: string;
 	baseUrl: string;
 	model: string;
 }
 
-const CULIQ_SETTINGS_VERSION = 4;
+const CULIQ_SETTINGS_VERSION = 5;
 
 export interface CuliqSettings {
 	version: typeof CULIQ_SETTINGS_VERSION;
 	theme: ThemePreference;
-	activeProvider: ProviderId;
-	providers: Record<ProviderId, ProviderConfig>;
+	providers: ProviderConfig[];
+	defaultProviderId: string;
 	capabilities: Capability[];
 	contextManagement: ContextManagementConfig;
-	/** Search engine used by the `search` tool. */
 	searchEngine: SearchEngineId;
-	/** Model name for the subtask tool's sub-agent. Empty = use the main model. */
 	subAgentModel: string;
 }
 
@@ -125,18 +123,20 @@ export const CONTEXT_MANAGEMENT_DEFAULTS: ContextManagementConfig = {
 	windowOverride: undefined,
 };
 
-export const PROVIDER_DEFAULTS: Record<ProviderId, { label: string; baseUrl: string; model: string }> = {
-	anthropic: {
-		label: "Anthropic",
+export const PROVIDER_DEFAULTS: Array<{ id: string; name: string; baseUrl: string; model: string }> = [
+	{
+		id: "anthropic",
+		name: "Anthropic",
 		baseUrl: "https://api.anthropic.com",
 		model: "claude-sonnet-4-5-20250929",
 	},
-	openai: {
-		label: "OpenAI",
+	{
+		id: "openai",
+		name: "OpenAI",
 		baseUrl: "https://api.openai.com/v1",
 		model: "gpt-4o-mini",
 	},
-};
+];
 
 const STORAGE_KEY = `culiq.settings.v${CULIQ_SETTINGS_VERSION}`;
 
@@ -144,11 +144,8 @@ export function defaultSettings(): CuliqSettings {
 	return {
 		version: CULIQ_SETTINGS_VERSION,
 		theme: "system",
-		activeProvider: "openai",
-		providers: {
-			anthropic: { id: "anthropic", apiKey: "", ...mapDefault("anthropic") },
-			openai: { id: "openai", apiKey: "", ...mapDefault("openai") },
-		},
+		providers: PROVIDER_DEFAULTS.map((d) => ({ id: d.id, name: d.name, apiKey: "", baseUrl: d.baseUrl, model: d.model })),
+		defaultProviderId: "openai",
 		capabilities: Object.keys(CAPABILITY_INFO) as Capability[],
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
 		searchEngine: "bing",
@@ -156,35 +153,53 @@ export function defaultSettings(): CuliqSettings {
 	};
 }
 
-function mapDefault(id: ProviderId) {
-	const d = PROVIDER_DEFAULTS[id];
-	return { baseUrl: d.baseUrl, model: d.model };
-}
-
 interface StoredSettings {
 	version?: number;
 	theme?: unknown;
-	activeProvider?: ProviderId;
-	providers?: Partial<Record<ProviderId, Partial<ProviderConfig>>>;
+	activeProvider?: string;
+	providers?: Record<string, Partial<ProviderConfig>> | ProviderConfig[];
+	defaultProviderId?: string;
 	capabilities?: Capability[];
 	contextManagement?: Partial<ContextManagementConfig>;
 	searchEngine?: unknown;
 	subAgentModel?: unknown;
 }
 
+/** Migrate old v2-v4 settings (Record<ProviderId, ProviderConfig>) to v5 (ProviderConfig[]). */
+function migrateProviders(stored: StoredSettings, base: CuliqSettings): { providers: ProviderConfig[]; defaultProviderId: string } {
+	// New format: array + defaultProviderId
+	if (Array.isArray(stored.providers) && typeof stored.defaultProviderId === "string") {
+		return { providers: stored.providers, defaultProviderId: stored.defaultProviderId };
+	}
+	// Old format: Record<string, ProviderConfig> + activeProvider
+	const oldProviders = stored.providers;
+	if (oldProviders && typeof oldProviders === "object" && !Array.isArray(oldProviders)) {
+		const providers = Object.entries(oldProviders)
+			.filter(([, v]) => v && typeof v === "object")
+			.map(([id, v]) => ({
+				id,
+				name: PROVIDER_DEFAULTS.find((d) => d.id === id)?.name ?? id,
+				apiKey: (v as Partial<ProviderConfig>).apiKey ?? "",
+				baseUrl: (v as Partial<ProviderConfig>).baseUrl ?? PROVIDER_DEFAULTS.find((d) => d.id === id)?.baseUrl ?? "",
+				model: (v as Partial<ProviderConfig>).model ?? PROVIDER_DEFAULTS.find((d) => d.id === id)?.model ?? "",
+			}));
+		const defaultId = typeof stored.activeProvider === "string" ? stored.activeProvider : "openai";
+		return { providers, defaultProviderId: defaultId };
+	}
+	return { providers: base.providers, defaultProviderId: base.defaultProviderId };
+}
+
 export async function loadSettings(): Promise<CuliqSettings> {
 	const raw = await chrome.storage.local.get(STORAGE_KEY);
 	const stored = raw[STORAGE_KEY] as StoredSettings | undefined;
-	if (!stored || (stored.version !== 2 && stored.version !== 3 && stored.version !== 4)) return defaultSettings();
+	if (!stored || stored.version === undefined) return defaultSettings();
 	const base = defaultSettings();
+	const { providers, defaultProviderId } = migrateProviders(stored, base);
 	return {
 		version: CULIQ_SETTINGS_VERSION,
 		theme: isThemePreference(stored.theme) ? stored.theme : base.theme,
-		activeProvider: stored.activeProvider ?? base.activeProvider,
-		providers: {
-			anthropic: { ...base.providers.anthropic, ...stored.providers?.anthropic },
-			openai: { ...base.providers.openai, ...stored.providers?.openai },
-		},
+		providers,
+		defaultProviderId,
 		capabilities: stored.capabilities ?? base.capabilities,
 		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
 		searchEngine: stored.searchEngine === "bing" ? "bing" : base.searchEngine,
@@ -205,6 +220,8 @@ function isThemePreference(value: unknown): value is ThemePreference {
 	return value === "system" || value === "light" || value === "dark";
 }
 
-export function getActiveProvider(settings: CuliqSettings): ProviderConfig {
-	return settings.providers[settings.activeProvider];
+export function getDefaultProvider(settings: CuliqSettings): ProviderConfig {
+	const def = settings.providers.find((p) => p.id === settings.defaultProviderId);
+	if (!def) throw new Error(`Default provider "${settings.defaultProviderId}" not found.`);
+	return def;
 }

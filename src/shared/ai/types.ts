@@ -1,5 +1,4 @@
-import type { ProviderId } from "../config";
-
+export type ProviderId = string;
 export type StopReason = "end" | "toolUse" | "length" | "error" | "aborted";
 
 export interface TextContent {
