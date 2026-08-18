@@ -1,4 +1,4 @@
-import { getActiveTab } from "@shared/transport/tab-rpc";
+import { getActiveTab, callContent } from "@shared/transport/tab-rpc";
 
 /**
  * Single source of truth for the sandbox's extension bridge. Each entry
@@ -80,6 +80,62 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 			"Evaluate JavaScript in every frame of a tab (allFrames: true), piercing iframes. Returns one entry per frame with the serialized result or error.",
 		invoke: async ([tabId, world, code]) =>
 			evalInAllFrames(Number(tabId), world === "main" ? "MAIN" : "ISOLATED", String(code)),
+	},
+	readDom: {
+		signature:
+			"readDom(options?: { mode?: string; selector?: string; maxChars?: number }): Promise<{ url: string; title: string; mode: string; scope: string; chars: number; truncated: boolean; content: string }>",
+		description: "Read the active page's DOM (mirrors the read_dom tool).",
+		invoke: async ([options]) => {
+			const o = (options ?? {}) as Record<string, unknown>;
+			return callContent({
+				method: "read_dom",
+				...(o.mode !== undefined ? { mode: o.mode as "text" | "html" | "outline" } : {}),
+				...(o.selector !== undefined ? { selector: String(o.selector) } : {}),
+				...(o.maxChars !== undefined ? { maxChars: Number(o.maxChars) } : {}),
+			});
+		},
+	},
+	click: {
+		signature: "click(selector: string): Promise<{ target: object }>",
+		description: "Click an element on the active page (mirrors the click tool).",
+		invoke: async ([selector]) => callContent({ method: "click", selector: String(selector) }),
+	},
+	type: {
+		signature:
+			"type(selector: string, text: string, options?: { submit?: boolean; clear?: boolean }): Promise<{ target: object; finalValue: string; submitted: boolean }>",
+		description: "Type text into an input on the active page (mirrors the type tool).",
+		invoke: async ([selector, text, options]) => {
+			const o = (options ?? {}) as Record<string, unknown>;
+			return callContent({
+				method: "type",
+				selector: String(selector),
+				text: String(text),
+				...(o.submit !== undefined ? { submit: Boolean(o.submit) } : {}),
+				...(o.clear !== undefined ? { clear: Boolean(o.clear) } : {}),
+			});
+		},
+	},
+	navigate: {
+		signature:
+			"navigate(url: string, options?: { newTab?: boolean; waitForLoad?: boolean }): Promise<{ url: string; title: string }>",
+		description: "Navigate to a URL on the active tab or a new tab (mirrors the navigate tool).",
+		invoke: async ([url, options]) => {
+			const o = (options ?? {}) as Record<string, unknown>;
+			let tabId: number;
+			if (o.newTab) {
+				const created = await chrome.tabs.create({ url: String(url), active: false });
+				if (!created.id) throw new Error("Failed to create tab.");
+				tabId = created.id;
+			} else {
+				const tab = await getActiveTab();
+				const updated = await chrome.tabs.update(tab.id as number, { url: String(url) });
+				if (!updated?.id) throw new Error("Failed to update tab.");
+				tabId = updated.id;
+			}
+			if (o.waitForLoad !== false) await waitForTabLoad(tabId, 30_000);
+			const final = await chrome.tabs.get(tabId);
+			return { url: final.url ?? "", title: final.title ?? "" };
+		},
 	},
 	docs: {
 		signature: "docs(name?: string): Promise<string>",
