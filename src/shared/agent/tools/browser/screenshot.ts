@@ -1,5 +1,5 @@
 import { getActiveTab } from "@shared/transport/tab-rpc";
-import { CAPABILITY_INFO } from "@shared/config";
+import { CAPABILITY_INFO } from "@shared/agent/system-prompt";
 import type { AgentTool } from "../../types";
 
 const PNG_PREFIX = "data:image/png;base64,";

@@ -2,45 +2,38 @@ import { getActiveTab, callContent } from "@shared/transport/tab-rpc";
 
 /**
  * Single source of truth for the sandbox's extension bridge. Each entry
- * declares the public signature (used to generate the .d.ts injected into the
+ * declares the public API surface (used to generate the .d.ts injected into the
  * system prompt and the worker-side shims) plus the SW-side `invoke` handler
  * that calls the real chrome.* API. The three derivations never drift.
  */
 export interface BridgeSpecEntry {
-	signature: string;
 	description: string;
 	invoke: (args: unknown[]) => Promise<unknown>;
 }
 
 export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 	"tabs.query": {
-		signature: "query(queryInfo?: object): Promise<Tab[]>",
 		description: "Query open tabs (mirrors chrome.tabs.query).",
 		invoke: async ([queryInfo]) => chrome.tabs.query(queryInfo as chrome.tabs.QueryInfo),
 	},
 	"tabs.get": {
-		signature: "get(tabId: number): Promise<Tab>",
 		description: "Get a tab by id.",
 		invoke: async ([tabId]) => chrome.tabs.get(Number(tabId)),
 	},
 	"tabs.update": {
-		signature: "update(tabId: number, updateProperties: object): Promise<Tab>",
 		description: "Update a tab, e.g. { active: true } to focus or { url } to navigate.",
 		invoke: async ([tabId, updateProperties]) =>
 			chrome.tabs.update(Number(tabId), updateProperties as chrome.tabs.UpdateProperties),
 	},
 	"tabs.create": {
-		signature: "create(createProperties: object): Promise<Tab>",
 		description: "Open a new tab (non-destructive).",
 		invoke: async ([createProperties]) => chrome.tabs.create(createProperties as chrome.tabs.CreateProperties),
 	},
 	"tabs.duplicate": {
-		signature: "duplicate(tabId: number): Promise<Tab>",
 		description: "Duplicate a tab (non-destructive).",
 		invoke: async ([tabId]) => chrome.tabs.duplicate(Number(tabId)),
 	},
 	"tabs.reload": {
-		signature: "reload(tabId?: number, reloadProperties?: object): Promise<void>",
 		description: "Reload a tab; defaults to the active tab.",
 		invoke: async ([tabId, reloadProperties]) => {
 			if (tabId === undefined) {
@@ -51,39 +44,31 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 		},
 	},
 	"tabs.waitForLoad": {
-		signature: "waitForLoad(tabId: number, timeoutMs?: number): Promise<void>",
 		description: "Wait for a tab to finish loading (status 'complete'). Default timeout 30s.",
 		invoke: ([tabId, timeoutMs]) => waitForTabLoad(Number(tabId), timeoutMs != null ? Number(timeoutMs) : 30_000),
 	},
 	"windows.get": {
-		signature: "get(windowId: number, queryOptions?: object): Promise<Window>",
 		description: "Get a window.",
 		invoke: async ([windowId, queryOptions]) =>
 			chrome.windows.get(Number(windowId), queryOptions as chrome.windows.QueryOptions),
 	},
 	"windows.update": {
-		signature: "update(windowId: number, updateInfo: object): Promise<Window>",
 		description: "Update a window, e.g. { focused: true }.",
 		invoke: async ([windowId, updateInfo]) =>
 			chrome.windows.update(Number(windowId), updateInfo as chrome.windows.UpdateInfo),
 	},
 	evalInTab: {
-		signature: "evalInTab(tabId: number, world: 'main' | 'isolated', code: string): Promise<string>",
 		description:
 			"Evaluate JavaScript in a tab's MAIN or ISOLATED world (mirrors the eval_js tool). Returns the serialized result; throws on error. Combine with sandbox.fs to store page content.",
 		invoke: async ([tabId, world, code]) => evalInTab(Number(tabId), world === "main" ? "MAIN" : "ISOLATED", String(code)),
 	},
 	evalInAllFrames: {
-		signature:
-			"evalInAllFrames(tabId: number, world: 'main' | 'isolated', code: string): Promise<{frameId: number, ok: boolean, value?: string, error?: string}[]>",
 		description:
 			"Evaluate JavaScript in every frame of a tab (allFrames: true), piercing iframes. Returns one entry per frame with the serialized result or error.",
 		invoke: async ([tabId, world, code]) =>
 			evalInAllFrames(Number(tabId), world === "main" ? "MAIN" : "ISOLATED", String(code)),
 	},
 	readDom: {
-		signature:
-			"readDom(options?: { mode?: string; selector?: string; maxChars?: number }): Promise<{ url: string; title: string; mode: string; scope: string; chars: number; truncated: boolean; content: string }>",
 		description: "Read the active page's DOM (mirrors the read_dom tool).",
 		invoke: async ([options]) => {
 			const o = (options ?? {}) as Record<string, unknown>;
@@ -96,13 +81,10 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 		},
 	},
 	click: {
-		signature: "click(selector: string): Promise<{ target: object }>",
 		description: "Click an element on the active page (mirrors the click tool).",
 		invoke: async ([selector]) => callContent({ method: "click", selector: String(selector) }),
 	},
 	type: {
-		signature:
-			"type(selector: string, text: string, options?: { submit?: boolean; clear?: boolean }): Promise<{ target: object; finalValue: string; submitted: boolean }>",
 		description: "Type text into an input on the active page (mirrors the type tool).",
 		invoke: async ([selector, text, options]) => {
 			const o = (options ?? {}) as Record<string, unknown>;
@@ -116,8 +98,6 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 		},
 	},
 	navigate: {
-		signature:
-			"navigate(url: string, options?: { newTab?: boolean; waitForLoad?: boolean }): Promise<{ url: string; title: string }>",
 		description: "Navigate to a URL on the active tab or a new tab (mirrors the navigate tool).",
 		invoke: async ([url, options]) => {
 			const o = (options ?? {}) as Record<string, unknown>;
@@ -138,7 +118,6 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 		},
 	},
 	docs: {
-		signature: "docs(name?: string): Promise<string>",
 		description: "Return the sandbox API declarations for a namespace (e.g. 'tabs'), a method (e.g. 'tabs.query'), or everything when omitted.",
 		invoke: async ([name]) => (name ? sandboxDocs(String(name)) : generateSandboxDts()),
 	},
@@ -199,24 +178,30 @@ export function generateSandboxDts(): string {
 	const out: string[] = ["declare const sandbox: {", "  chrome: {"];
 	for (const [ns, methods] of namespaceMap()) {
 		out.push(`    ${ns}: {`);
-		for (const m of methods) out.push(`      ${BRIDGE_SPEC[`${ns}.${m}`].signature};`);
-		out.push(`    },`);
+		for (const m of methods) {
+			const desc = BRIDGE_SPEC[`${ns}.${m}`].description;
+			out.push(`    // ${desc}`);
+			out.push(`    ${m}(args: any[]): Promise<any>`);
+		}
+		out.push("    },");
 	}
 	out.push("  },");
 	for (const path of Object.keys(BRIDGE_SPEC)) {
 		if (path.includes(".")) continue;
-		out.push(`  ${BRIDGE_SPEC[path].signature};`);
+		const desc = BRIDGE_SPEC[path].description;
+		out.push(`  // ${desc}`);
+		out.push(`  ${path}(args: any[]): Promise<any>`);
 	}
 	out.push("};");
 	return out.join("\n");
 }
 
-/** On-demand declarations with one-line descriptions for `sandbox.docs(name)`. */
+/** On-demand declarations for `sandbox.docs(name)`. */
 export function sandboxDocs(name: string): string {
 	if (name.includes(".")) {
 		const entry = BRIDGE_SPEC[name];
 		if (!entry) return `Unknown API: ${name}. Available: ${Object.keys(BRIDGE_SPEC).join(", ")}`;
-		return `/* ${entry.description} */\n${entry.signature};`;
+		return `// ${entry.description}\n${name.replace(/\./, "_")}(args: any[]): Promise<any>;`;
 	}
 
 	const methods = namespaceMap().get(name);
@@ -225,8 +210,8 @@ export function sandboxDocs(name: string): string {
 		out.push(`declare const sandbox: { chrome: { ${name}: {`);
 		for (const m of methods) {
 			const entry = BRIDGE_SPEC[`${name}.${m}`];
-			out.push(`  /* ${entry.description} */`);
-			out.push(`  ${entry.signature};`);
+			out.push(`  // ${entry.description}`);
+			out.push(`  ${m}(args: any[]): Promise<any>;`);
 		}
 		out.push(`} } };`);
 	}

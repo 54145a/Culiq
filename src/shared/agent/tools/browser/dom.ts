@@ -1,6 +1,6 @@
 import type { ElementSummary } from "@shared/transport/content-rpc";
 import { callContent } from "@shared/transport/tab-rpc";
-import { CAPABILITY_INFO } from "@shared/config";
+import { CAPABILITY_INFO } from "@shared/agent/system-prompt";
 import type { AgentTool } from "../../types";
 
 function describe(el: ElementSummary): string {
