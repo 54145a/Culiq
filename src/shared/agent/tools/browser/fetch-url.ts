@@ -1,4 +1,4 @@
-import { CAPABILITY_INFO } from "@shared/agent/system-prompt";
+import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 import { waitForTabComplete } from "./wait";
 

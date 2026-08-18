@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
-import { CAPABILITY_INFO } from "@shared/agent/system-prompt";
 import {
+	CAPABILITY_INFO,
 	loadSettings,
 	PROVIDER_DEFAULTS,
 	type Capability,

@@ -1,5 +1,5 @@
 import { getActiveTab } from "@shared/transport/tab-rpc";
-import { CAPABILITY_INFO } from "@shared/agent/system-prompt";
+import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 
 const EVAL_TIMEOUT_MS = 30_000;

@@ -1,5 +1,5 @@
 import type { AgentTool } from "../../types";
-import { CAPABILITY_INFO } from "@shared/agent/system-prompt";
+import { CAPABILITY_INFO } from "@shared/config";
 import { BRIDGE_SPEC } from "./api";
 
 const TIMEOUT_MS = 60_000;
