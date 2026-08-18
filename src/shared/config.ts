@@ -19,6 +19,7 @@ export type Capability =
 	| "use_skill"
 	| "sandbox_exec"
 	| "search"
+	| "subtask"
 	| "noop";
 
 /**
@@ -74,11 +75,15 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	},
 	sandbox_exec: {
 		description:
-			"Run JavaScript in a restricted sandbox worker hosted in the panel's hidden iframe. Exposed APIs (see the `sandbox` type declarations in the system prompt; `sandbox.docs(name)` returns details): `sandbox.fs.{read,write,list,delete,mkdir}` over OPFS (relative paths, no '..'), `sandbox.fetch(url, init)` (extension-origin, CORS-free), a chrome bridge `sandbox.chrome.tabs.{query,get,update,reload,waitForLoad}` and `sandbox.chrome.windows.{get,update}` (whitelisted, non-destructive), and `sandbox.evalInTab(tabId, world, code)` to run JS in a page. No DOM and no direct chrome.* inside the worker; bridge calls are proxied through the background and validated. State persists within the turn. Top-level await supported; `return X` to send a value back.",
+			"Run JavaScript in a restricted sandbox worker hosted in the panel's hidden iframe. Exposes `sandbox.fs.{read,write,list,delete,mkdir}` over OPFS, `sandbox.fetch`, and a chrome bridge including `sandbox.chrome.tabs.*`, `sandbox.chrome.windows.*`, `sandbox.readDom`, `sandbox.click`, `sandbox.type`, `sandbox.navigate`, and `sandbox.evalInTab`. No DOM and no direct chrome.* inside the worker; bridge calls are proxied through the background and validated. State persists within the turn. Top-level await supported; `return X` to send a value back.",
 	},
 	search: {
 		description:
 			"Search the web using the configured search engine (Settings → Search engine, default Bing). Opens the results in a new tab (the tab stays open for follow-up tools like read_dom, query, or click). Equivalent to navigating to the search results page and reading it with a preset result selector, but in a single tool call. Use this for quick web searches instead of navigating to a search engine manually.",
+	},
+	subtask: {
+		description:
+			"Delegate a simple, well-defined task (e.g. 'find the submit button', 'summarize the page') to a small sub-agent that runs autonomously using the same browser tools. Use for single-purpose tasks where multi-step tool usage is needed but one model roundtrip would suffice.",
 	},
 	noop: {
 		description: "Echoes input. For testing only.",
@@ -113,6 +118,8 @@ export interface CuliqSettings {
 	contextManagement: ContextManagementConfig;
 	/** Search engine used by the `search` tool. */
 	searchEngine: SearchEngineId;
+	/** Model name for the subtask tool's sub-agent. Empty = use the main model. */
+	subAgentModel: string;
 }
 
 export const CONTEXT_MANAGEMENT_DEFAULTS: ContextManagementConfig = {
@@ -149,6 +156,7 @@ export function defaultSettings(): CuliqSettings {
 		capabilities: Object.keys(CAPABILITY_INFO) as Capability[],
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
 		searchEngine: "bing",
+		subAgentModel: "",
 	};
 }
 
@@ -165,6 +173,7 @@ interface StoredSettings {
 	capabilities?: Capability[];
 	contextManagement?: Partial<ContextManagementConfig>;
 	searchEngine?: unknown;
+	subAgentModel?: unknown;
 }
 
 export async function loadSettings(): Promise<CuliqSettings> {
@@ -183,6 +192,7 @@ export async function loadSettings(): Promise<CuliqSettings> {
 		capabilities: stored.capabilities ?? base.capabilities,
 		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
 		searchEngine: stored.searchEngine === "bing" ? "bing" : base.searchEngine,
+		subAgentModel: typeof stored.subAgentModel === "string" ? stored.subAgentModel : base.subAgentModel,
 	};
 }
 

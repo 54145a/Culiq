@@ -519,15 +519,17 @@ function McpServersGroup() {
 	);
 }
 
-function SearchGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
+function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const engines: [SearchEngineId, string][] = [["bing", "Bing"]];
 
 	return (
 		<details className="settings-group">
-			<summary className="settings-header">Search engine</summary>
-			<p className="settings-hint">Engine used by the `search` tool.</p>
+			<summary className="settings-header">Search & Sub-agent</summary>
+			<p className="settings-hint">
+				Engine used by the `search` tool, and optional model for the `subtask` sub-agent.
+			</p>
 			<label className="capability">
-				<span>Engine</span>
+				<span>Search engine</span>
 				<select
 					value={settings.searchEngine}
 					onClick={(e) => e.stopPropagation()}
@@ -543,6 +545,16 @@ function SearchGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 					))}
 				</select>
 			</label>
+			<Field
+				label="Sub-agent model"
+				type="text"
+				value={settings.subAgentModel}
+				placeholder="Leave empty to use main model"
+				onInput={(v) => {
+					settings.subAgentModel = v;
+					dirty();
+				}}
+			/>
 		</details>
 	);
 }
@@ -577,7 +589,7 @@ export function SettingsView() {
 			<ProvidersGroup settings={settings} dirty={dirty} />
 			<CapabilitiesGroup settings={settings} dirty={dirty} />
 			<ContextGroup settings={settings} dirty={dirty} />
-			<SearchGroup settings={settings} dirty={dirty} />
+			<SearchAndSubAgentGroup settings={settings} dirty={dirty} />
 			<SkillsGroup />
 			<McpServersGroup />
 			<div className="settings-actions">
