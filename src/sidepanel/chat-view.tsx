@@ -264,13 +264,28 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 		if (status !== "streaming" && status !== "submitted") inputRef.current?.focus();
 	}, [status]);
 
+	// Capture actual context text from data-context parts in assistant messages
+	useEffect(() => {
+		for (const msg of messages) {
+			if (msg.role === "assistant") {
+				for (const part of msg.parts) {
+					if (part.type === "data-context" && typeof (part as { data: unknown }).data === "string") {
+						setPendingContext((part as { data: string }).data);
+						return;
+					}
+				}
+			}
+		}
+	}, [messages]);
+
 	const busy = status === "streaming" || status === "submitted";
 
 	const handleSubmit = useCallback((text: string) => {
 		const mode = contextMode === "none" ? undefined : contextMode;
 		extensionTransport.setContextMode(mode);
 		extensionTransport.setWindowId(getPanelWindowId());
-		setPendingContext(mode === "tabs" ? "All open tabs" : mode === "current" ? "Current tab" : "");
+		// Show placeholder until actual context text arrives from data-context part
+		if (mode) setPendingContext("loading context…");
 		sendMessage({ text });
 		setContextMode("none");
 	}, [sendMessage, contextMode, extensionTransport]);
@@ -361,6 +376,12 @@ function MessageView({ msg, contextLabel }: { msg: UIMessage; contextLabel?: str
 			const part = msg.parts[i];
 			if (part.type === "text") {
 				textContent += part.text;
+			} else if (part.type === "data-context" && typeof (part as { data: unknown }).data === "string") {
+				if (textContent) {
+					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+					textContent = "";
+				}
+				elements.push(<ContextCard key={`ctx-${i}`} text={(part as { data: string }).data} />);
 			} else if (part.type === "data-compress" && typeof (part as { data: unknown }).data === "object") {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
@@ -381,14 +402,14 @@ function MessageView({ msg, contextLabel }: { msg: UIMessage; contextLabel?: str
 			elements.push(<div className="text md" key="t-end" dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
 		}
 		if (elements.length === 0) return null;
-		const hasNonText = elements.some((e) => e.type === ToolCardView || e.type === CompressNotice);
+		const hasNonText = elements.some((e) => e.type === ToolCardView || e.type === ContextCard || e.type === CompressNotice);
 		if (!hasNonText) {
 			return <li className="msg assistant">{elements}</li>;
 		}
 		return (
 			<>
 				{elements.map((el, i) =>
-					(el.type === ToolCardView || el.type === CompressNotice)
+					(el.type === ToolCardView || el.type === ContextCard || el.type === CompressNotice)
 						? el
 						: <li className="msg assistant" key={`a-${i}`}>{el}</li>,
 				)}
