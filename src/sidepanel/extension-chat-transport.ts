@@ -14,6 +14,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 	private onMessageFn: OnMessageFn;
 	private contextMode?: ChatContextMode;
 	private windowId?: number;
+	private unsubLast?: () => void;
 
 	constructor(sendFn: SendFn, onMessageFn: OnMessageFn) {
 		this.sendFn = sendFn;
@@ -68,6 +69,9 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					}
 				};
 
+				// Cancel any previous listener to prevent duplicate event processing
+				this.unsubLast?.();
+
 				const unsub = this.onMessageFn((bgMsg: BgToPanel) => {
 					if (closed) return;
 					if (bgMsg.type !== "agent_event" || bgMsg.turnId !== turnId) return;
@@ -100,10 +104,13 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 								closed = true;
 								controller.close();
 								unsub();
+								this.unsubLast = undefined;
 							}
 						}, 50);
 					}
 				});
+
+				this.unsubLast = unsub;
 
 				if (options.abortSignal) {
 					options.abortSignal.addEventListener("abort", () => {

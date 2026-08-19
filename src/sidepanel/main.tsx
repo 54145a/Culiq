@@ -30,7 +30,7 @@ if (isPopupWindow) document.body.dataset.mode = "window";
 // panel seeing a fresh foreign id shows a placeholder instead of the UI. This
 // also makes the sandbox iframe broadcast-safe (exactly one listener exists).
 const PANEL_KEY = "culiq.panel.active";
-const PANEL_TTL_MS = 30_000;
+const PANEL_TTL_MS = 10_000;
 const HEARTBEAT_MS = 3_000;
 
 interface PanelFlag {
@@ -66,6 +66,7 @@ function App() {
 	const blockedRef = useRef(false);
 	const panelIdRef = useRef(crypto.randomUUID());
 	const yieldPanelRef = useRef<() => void>(() => {});
+	const heartbeatRef = useRef<number | undefined>(undefined);
 
 	const setBlocked = (b: boolean) => {
 		blockedRef.current = b;
@@ -75,7 +76,6 @@ function App() {
 
 	useEffect(() => {
 		const myId = panelIdRef.current;
-		let heartbeat: number | undefined;
 
 		const clearOwnFlag = async () => {
 			const raw = await chrome.storage.session.get(PANEL_KEY);
@@ -84,20 +84,24 @@ function App() {
 		};
 
 		const stopHeartbeat = () => {
-			if (heartbeat !== undefined) {
-				window.clearInterval(heartbeat);
-				heartbeat = undefined;
+			if (heartbeatRef.current !== undefined) {
+				window.clearInterval(heartbeatRef.current);
+				heartbeatRef.current = undefined;
+			}
+		};
+
+		const startHeartbeat = () => {
+			if (heartbeatRef.current === undefined) {
+				heartbeatRef.current = window.setInterval(() => {
+					void chrome.storage.session.set({ [PANEL_KEY]: { id: myId, ts: Date.now() } });
+				}, HEARTBEAT_MS);
 			}
 		};
 
 		const takeOver = async () => {
 			await chrome.storage.session.set({ [PANEL_KEY]: { id: myId, ts: Date.now() } });
 			setBlocked(false);
-			if (heartbeat === undefined) {
-				heartbeat = window.setInterval(() => {
-					void chrome.storage.session.set({ [PANEL_KEY]: { id: myId, ts: Date.now() } });
-				}, HEARTBEAT_MS);
-			}
+			startHeartbeat();
 		};
 
 		// Yield to the pop-out window: stop heartbeating, clear our flag, show placeholder.
@@ -115,7 +119,6 @@ function App() {
 				stopHeartbeat();
 				setBlocked(true);
 			} else if (blockedRef.current) {
-				// The other panel closed or went stale; take over.
 				void takeOver();
 			}
 		};
@@ -143,6 +146,27 @@ function App() {
 			stopHeartbeat();
 		};
 	}, []);
+
+	// When blocked (another panel active), poll session storage to detect
+	// when that panel closes or crashes so we can take over immediately.
+	useEffect(() => {
+		if (!blocked) return;
+		const poll = window.setInterval(async () => {
+			const raw = await chrome.storage.session.get(PANEL_KEY);
+			const flag = raw[PANEL_KEY];
+			if (!isPanelFlag(flag) || flag.ts <= Date.now() - PANEL_TTL_MS) {
+				// Other panel gone or stale — take over.
+				await chrome.storage.session.set({ [PANEL_KEY]: { id: panelIdRef.current, ts: Date.now() } });
+				setBlocked(false);
+				if (heartbeatRef.current === undefined) {
+					heartbeatRef.current = window.setInterval(() => {
+						void chrome.storage.session.set({ [PANEL_KEY]: { id: panelIdRef.current, ts: Date.now() } });
+					}, HEARTBEAT_MS);
+				}
+			}
+		}, HEARTBEAT_MS);
+		return () => window.clearInterval(poll);
+	}, [blocked]);
 
 	// Hidden iframe hosts the sandbox worker; only the active panel creates one.
 	useEffect(() => {
