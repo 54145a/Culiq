@@ -1,8 +1,9 @@
+import { setupProviderRegistry } from "@shared/ai/sdk";
 import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { listEnabledSkills } from "@shared/skills";
 import { closeSandbox } from "@shared/agent/tools/sandbox";
-import { getDefaultProvider, loadSettings, type Capability } from "@shared/config";
+import { loadSettings, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
 import { getPanelWindowTab, isProtectedUrl, setPanelWindow } from "@shared/transport/tab-rpc";
 import { type ChatContextMode } from "@shared/transport/protocol";
@@ -115,10 +116,11 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 
 	try {
 		const settings = await loadSettings();
-		const provider = getDefaultProvider(settings);
+		setupProviderRegistry(settings.providers);
+		const provider = settings.providers.find((p) => p.id === settings.defaultProviderId);
 
-		if (!provider.apiKey) {
-			sendErrorEnd(`${provider.id}: API key not configured. Open Settings.`);
+		if (!provider?.apiKey) {
+			sendErrorEnd(`${provider?.id ?? "default"}: API key not configured. Open Settings.`);
 			return;
 		}
 
@@ -131,6 +133,9 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			setPanelWindow(msg.windowId);
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
 			const context = await buildSendTimeContext(msg.contextMode);
+			if (context) {
+				send({ type: "agent_event", turnId, event: { type: "context_sent", text: context } });
+			}
 			const systemPrompt = getSystemPrompt({
 				skills,
 				sandboxEnabled: enabled.has("sandbox_exec"),
@@ -142,7 +147,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			const messages = [...msg.messages];
 			const last = messages[messages.length - 1];
 			if (last && last.role === "user") {
-				const ts = `\n\n[current time: ${new Date().toISOString()}]`;
+				const ts = `\n\n[current time: ${new Date().toLocaleString()}]`;
 				if (typeof last.content === "string") {
 					messages[messages.length - 1] = { ...last, content: last.content + ts };
 				} else {
@@ -157,9 +162,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 					tools: [...getTools().filter((tool) => enabled.has(tool.name as Capability)), ...mcpTools],
 				},
 				{
-					model: { id: provider.model, provider: provider.id },
-					apiKey: provider.apiKey,
-					baseUrl: provider.baseUrl,
+					model: { id: provider.defaultModel, provider: provider.id },
 					contextManagement: settings.contextManagement,
 				},
 				(event) => send({ type: "agent_event", turnId, event }),

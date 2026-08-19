@@ -49,20 +49,16 @@ function ProviderCard({
 	provider,
 	isDefault,
 	setDefault,
+	remove,
 	dirty,
 }: {
 	provider: ProviderConfig;
 	isDefault: boolean;
 	setDefault: () => void;
+	remove: () => void;
 	dirty: () => void;
 }) {
 	const def = PROVIDER_DEFAULTS.find((d) => d.id === provider.id);
-	const setField = (field: "name" | "apiKey" | "baseUrl" | "model", value: string) => {
-		if (field === "name") provider.name = value;
-		else if (field === "apiKey") provider.apiKey = value;
-		else provider[field] = (value || def?.[field]) ?? "";
-		dirty();
-	};
 
 	return (
 		<div
@@ -72,12 +68,12 @@ function ProviderCard({
 			tabIndex={0}
 			aria-pressed={isDefault}
 			onClick={(e) => {
-				if ((e.target as HTMLElement).closest("label, input, button")) return;
+				if ((e.target as HTMLElement).closest("label, input, select, button")) return;
 				setDefault();
 			}}
 			onKeyDown={(e) => {
 				if (e.key !== "Enter" && e.key !== " ") return;
-				if ((e.target as HTMLElement).closest("input, button")) return;
+				if ((e.target as HTMLElement).closest("input, select, button")) return;
 				e.preventDefault();
 				setDefault();
 			}}
@@ -86,37 +82,70 @@ function ProviderCard({
 				<h3>{provider.name || provider.id}</h3>
 				<span className="active-badge">{isDefault ? "default" : "click to set default"}</span>
 			</header>
-			<Field label="Name" type="text" value={provider.name} placeholder={provider.id} onInput={(v) => setField("name", v)} />
-			<Field label="API key" type="password" value={provider.apiKey} placeholder="sk-..." onInput={(v) => setField("apiKey", v)} />
-			<Field label="Base URL" type="text" value={provider.baseUrl} placeholder={def?.baseUrl ?? ""} onInput={(v) => setField("baseUrl", v)} />
-			<Field label="Model" type="text" value={provider.model} placeholder={def?.model ?? ""} onInput={(v) => setField("model", v)} />
+			<Field label="Name" type="text" value={provider.name} placeholder={provider.id} onInput={(v) => { provider.name = v; dirty(); }} />
+			<label>
+				<span>Type</span>
+				<select
+					value={provider.type}
+					onClick={(e) => e.stopPropagation()}
+					onChange={(e) => { provider.type = (e.target as HTMLSelectElement).value as "openai" | "anthropic"; dirty(); }}
+				>
+					<option value="openai">OpenAI-compatible</option>
+					<option value="anthropic">Anthropic</option>
+				</select>
+			</label>
+			<Field label="API key" type="password" value={provider.apiKey} placeholder="sk-..." onInput={(v) => { provider.apiKey = v; dirty(); }} />
+			<Field label="Base URL" type="text" value={provider.baseUrl} placeholder={def?.baseUrl ?? ""} onInput={(v) => { provider.baseUrl = v; dirty(); }} />
+			<Field label="Available models" type="text" value={provider.models.join(", ")} placeholder="claude-sonnet-4-5, gpt-4o-mini, ..." onInput={(v) => { provider.models = v.split(",").map((s) => s.trim()).filter(Boolean); dirty(); }} />
+			<button type="button" className="provider-delete" onClick={(e) => { e.stopPropagation(); remove(); }}>Delete</button>
 		</div>
 	);
 }
-
 function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const setDefault = (id: string) => { settings.defaultProviderId = id; dirty(); };
-	const addProvider = () => {
-		const id = `provider-${Date.now()}`;
-		settings.providers.push({ id, name: id, apiKey: "", baseUrl: "", model: "" });
+	const removeProvider = (id: string) => {
+		settings.providers = settings.providers.filter((p) => p.id !== id);
+		if (settings.defaultProviderId === id && settings.providers.length > 0) {
+			settings.defaultProviderId = settings.providers[0].id;
+		}
 		dirty();
 	};
+	const addProvider = () => {
+		const id = `provider-${Date.now()}`;
+		settings.providers.push({ id, name: id, type: "openai", apiKey: "", baseUrl: "", defaultModel: "", models: [] });
+		dirty();
+	};
+	const defaultProvider = settings.providers.find((p) => p.id === settings.defaultProviderId);
 
 	return (
 		<details className="settings-group">
 			<summary className="settings-header">Providers</summary>
 			<p className="settings-hint">Configure model providers. Click a card to set as default.</p>
-			<div className="settings-actions">
-				<button type="button" onClick={addProvider}>Add provider</button>
-			</div>
 			<div className="capability-list">
 				{settings.providers.map((p) => (
-					<ProviderCard key={p.id} provider={p} isDefault={settings.defaultProviderId === p.id} setDefault={() => setDefault(p.id)} dirty={dirty} />
+					<ProviderCard key={p.id} provider={p} isDefault={settings.defaultProviderId === p.id} setDefault={() => setDefault(p.id)} remove={() => removeProvider(p.id)} dirty={dirty} />
 				))}
+			</div>
+			<div className="settings-actions">
+				<label>
+					<span>Default model</span>
+					<select
+						value={defaultProvider?.defaultModel ?? ""}
+						onClick={(e) => e.stopPropagation()}
+						onChange={(e) => { if (defaultProvider) { defaultProvider.defaultModel = (e.target as HTMLSelectElement).value; dirty(); } }}
+					>
+						<option value="">Select model…</option>
+						{defaultProvider?.models.map((m) => (
+							<option key={m} value={m}>{m}</option>
+						))}
+					</select>
+				</label>
+				<button type="button" onClick={addProvider}>Add provider</button>
 			</div>
 		</details>
 	);
 }
+
 function CapabilitiesGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const toggle = (key: Capability, checked: boolean) => {
 		if (checked) {
@@ -321,7 +350,7 @@ function SkillsGroup() {
 			</div>
 			<div className="capability-list">
 				{skills === null ? null : skills.length === 0 ? (
-					<p className="settings-hint">No skills installed yet.</p>
+					<p>No skills installed yet.</p>
 				) : (
 					skills.map((skill) => (
 						<label className="capability" key={skill.name}>
@@ -468,7 +497,7 @@ function McpServersGroup() {
 			</div>
 			<div className="capability-list">
 				{servers === null ? null : servers.length === 0 ? (
-					<p className="settings-hint">No MCP servers configured yet.</p>
+					<p>No MCP servers configured yet.</p>
 				) : (
 					servers.map((server) => (
 						<label className="capability" key={server.name}>
@@ -538,16 +567,21 @@ function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; 
 					))}
 				</select>
 			</label>
-			<Field
-				label="Sub-agent model"
-				type="text"
-				value={settings.subAgentModel}
-				placeholder="Leave empty to use main model"
-				onInput={(v) => {
-					settings.subAgentModel = v;
-					dirty();
-				}}
-			/>
+			<label>
+				<span>Sub-agent model</span>
+				<select
+					value={settings.subAgentModel}
+					onClick={(e) => e.stopPropagation()}
+					onChange={(e) => { settings.subAgentModel = (e.target as HTMLSelectElement).value; dirty(); }}
+				>
+					<option value="">Use main model</option>
+					{settings.providers.flatMap((p) => p.models.map((m) => (
+						<option key={`${p.id}:${m}`} value={`${p.id}:${m}`}>
+							{p.name || p.id}: {m}
+						</option>
+					)))}
+				</select>
+			</label>
 		</details>
 	);
 }
@@ -585,7 +619,7 @@ export function SettingsView() {
 			<SearchAndSubAgentGroup settings={settings} dirty={dirty} />
 			<SkillsGroup />
 			<McpServersGroup />
-			<div className="settings-actions">
+			<div className="settings-actions settings-save-bar">
 				<span className="status" data-state={saveState === "ok" ? "ok" : saveState === "err" ? "err" : undefined}>
 					{saveMsg}
 				</span>

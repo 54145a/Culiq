@@ -95,12 +95,16 @@ export interface ContextManagementConfig {
 	windowOverride?: number;
 }
 
+export type ProviderType = "openai" | "anthropic";
+
 export interface ProviderConfig {
 	id: string;
 	name: string;
+	type: ProviderType;
 	apiKey: string;
 	baseUrl: string;
-	model: string;
+	defaultModel: string;
+	models: string[];
 }
 
 const CULIQ_SETTINGS_VERSION = 5;
@@ -123,18 +127,29 @@ export const CONTEXT_MANAGEMENT_DEFAULTS: ContextManagementConfig = {
 	windowOverride: undefined,
 };
 
-export const PROVIDER_DEFAULTS: Array<{ id: string; name: string; baseUrl: string; model: string }> = [
+export const PROVIDER_DEFAULTS: Array<{
+	id: string;
+	name: string;
+	type: ProviderType;
+	baseUrl: string;
+	defaultModel: string;
+	models: string[];
+}> = [
 	{
 		id: "anthropic",
 		name: "Anthropic",
+		type: "anthropic",
 		baseUrl: "https://api.anthropic.com",
-		model: "claude-sonnet-4-5-20250929",
+		defaultModel: "claude-sonnet-4-5-20250929",
+		models: ["claude-sonnet-4-5-20250929", "claude-haiku-3-5", "claude-3-5-sonnet"],
 	},
 	{
 		id: "openai",
 		name: "OpenAI",
+		type: "openai",
 		baseUrl: "https://api.openai.com/v1",
-		model: "gpt-4o-mini",
+		defaultModel: "gpt-4o-mini",
+		models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
 	},
 ];
 
@@ -144,7 +159,15 @@ export function defaultSettings(): CuliqSettings {
 	return {
 		version: CULIQ_SETTINGS_VERSION,
 		theme: "system",
-		providers: PROVIDER_DEFAULTS.map((d) => ({ id: d.id, name: d.name, apiKey: "", baseUrl: d.baseUrl, model: d.model })),
+		providers: PROVIDER_DEFAULTS.map((d) => ({
+			id: d.id,
+			name: d.name,
+			type: d.type,
+			apiKey: "",
+			baseUrl: d.baseUrl,
+			defaultModel: d.defaultModel,
+			models: d.models,
+		})),
 		defaultProviderId: "openai",
 		capabilities: Object.keys(CAPABILITY_INFO) as Capability[],
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
@@ -179,9 +202,11 @@ function migrateProviders(stored: StoredSettings, base: CuliqSettings): { provid
 			.map(([id, v]) => ({
 				id,
 				name: PROVIDER_DEFAULTS.find((d) => d.id === id)?.name ?? id,
+				type: PROVIDER_DEFAULTS.find((d) => d.id === id)?.type ?? "openai",
 				apiKey: (v as Partial<ProviderConfig>).apiKey ?? "",
 				baseUrl: (v as Partial<ProviderConfig>).baseUrl ?? PROVIDER_DEFAULTS.find((d) => d.id === id)?.baseUrl ?? "",
-				model: (v as Partial<ProviderConfig>).model ?? PROVIDER_DEFAULTS.find((d) => d.id === id)?.model ?? "",
+				defaultModel: PROVIDER_DEFAULTS.find((d) => d.id === id)?.defaultModel ?? "",
+				models: PROVIDER_DEFAULTS.find((d) => d.id === id)?.models ?? [],
 			}));
 		const defaultId = typeof stored.activeProvider === "string" ? stored.activeProvider : "openai";
 		return { providers, defaultProviderId: defaultId };

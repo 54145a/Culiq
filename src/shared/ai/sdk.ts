@@ -1,32 +1,9 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import {
-	jsonSchema,
-	streamText,
-	tool as defineTool,
-	type LanguageModel,
-	type ModelMessage,
-	type ToolSet,
-} from "ai";
+import { createProviderRegistry, jsonSchema, streamText, tool as defineTool } from "ai";
+import type { LanguageModel, ModelMessage, ProviderRegistryProvider, ToolSet } from "ai";
 import { EventStream } from "./stream";
-import type {
-	AssistantMessage,
-	Context,
-	Message,
-	Model,
-	StopReason,
-	StreamOptions,
-	ToolCallContent,
-	ToolResultContent,
-} from "./types";
-
-/**
- * Provider integration backed by the Vercel AI SDK. The `streamSimple` boundary
- * (signature, EventStream, StreamEvent protocol) is unchanged, so the agent
- * loop, panel streaming, and context compression are untouched. Provider
- * differences (OpenAI-compatible vs Anthropic, reasoning content, thinking
- * signatures) are handled here.
- */
+import type { AssistantMessage, Context, Model, StopReason, StreamOptions, ToolCallContent, ToolResultContent } from "./types";
 
 function toSdkContent(blocks: ToolResultContent[]): Array<Record<string, unknown>> {
 	const out: Array<Record<string, unknown>> = [];
@@ -40,7 +17,7 @@ function toSdkContent(blocks: ToolResultContent[]): Array<Record<string, unknown
 	return out;
 }
 
-function toAISdkMessages(messages: Message[], provider: Model["provider"]): ModelMessage[] {
+function toAISdkMessages(messages: Context["messages"]): ModelMessage[] {
 	const out: ModelMessage[] = [];
 
 	const toolNameById = new Map<string, string>();
@@ -58,7 +35,7 @@ function toAISdkMessages(messages: Message[], provider: Model["provider"]): Mode
 			out.push({ role: "user", content: text ? [{ type: "text", text }] : [] } as unknown as ModelMessage);
 		} else if (m.role === "assistant") {
 			const content: Array<Record<string, unknown>> = [];
-			if (m.reasoningContent && provider === "openai") {
+			if (m.reasoningContent) {
 				content.push({ type: "reasoning", text: m.reasoningContent });
 			}
 			for (const block of m.content) {
@@ -101,36 +78,48 @@ function toAISdkMessages(messages: Message[], provider: Model["provider"]): Mode
 	return out;
 }
 
-function createModel(model: Model, options: StreamOptions): LanguageModel {
-	if (model.provider === "anthropic") {
-		const provider = createAnthropic({
-			apiKey: options.apiKey,
-			...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
-			headers: { "anthropic-dangerous-direct-browser-access": "true" },
-		});
-		return provider.languageModel(model.id);
+/**
+ * Multi-provider routing via the AI SDK's built-in Provider Registry.
+ * Providers are registered once from settings; `getModel` resolves
+ * `"providerId:modelId"` strings to `LanguageModel` instances.
+ */
+let providerRegistry: ProviderRegistryProvider | null = null;
+
+export function setupProviderRegistry(
+	providers: Array<{ id: string; type: "openai" | "anthropic"; apiKey: string; baseUrl: string }>,
+): void {
+	const entries: Record<string, ReturnType<typeof createOpenAICompatible> | ReturnType<typeof createAnthropic>> = {};
+	for (const p of providers) {
+		if (p.type === "anthropic") {
+			entries[p.id] = createAnthropic({
+				apiKey: p.apiKey,
+				baseURL: p.baseUrl || undefined,
+				headers: { "anthropic-dangerous-direct-browser-access": "true" },
+			});
+		} else {
+			entries[p.id] = createOpenAICompatible({
+				name: p.id,
+				apiKey: p.apiKey,
+				baseURL: p.baseUrl?.replace(/\/+$/, "") || "https://api.openai.com/v1",
+			});
+		}
 	}
-	const provider = createOpenAICompatible({
-		name: "openai-compatible",
-		apiKey: options.apiKey,
-		baseURL: options.baseUrl?.replace(/\/+$/, "") || "https://api.openai.com/v1",
-	});
-	return provider.languageModel(model.id);
+	providerRegistry = createProviderRegistry(entries);
+}
+
+export function getModel(id: string): LanguageModel {
+	if (!providerRegistry) throw new Error("Provider registry not initialised");
+	return providerRegistry.languageModel(id as never);
 }
 
 function mapFinishReason(reason: string | undefined, signal?: AbortSignal): StopReason {
 	if (signal?.aborted) return "aborted";
 	switch (reason) {
-		case "stop":
-			return "end";
-		case "tool-calls":
-			return "toolUse";
-		case "length":
-			return "length";
-		case "error":
-			return "error";
-		default:
-			return "end";
+		case "stop": return "end";
+		case "tool-calls": return "toolUse";
+		case "length": return "length";
+		case "error": return "error";
+		default: return "end";
 	}
 }
 
@@ -156,10 +145,11 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 				});
 			}
 
+			const modelInstance = getModel(`${model.provider}:${model.id}`);
 			const result = streamText({
-				model: createModel(model, options),
+				model: modelInstance,
 				...(context.systemPrompt ? { system: context.systemPrompt } : {}),
-				messages: toAISdkMessages(context.messages, model.provider),
+				messages: toAISdkMessages(context.messages),
 				...(Object.keys(tools).length > 0 ? { tools } : {}),
 				...(options.maxTokens !== undefined ? { maxOutputTokens: options.maxTokens } : {}),
 				...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
@@ -207,8 +197,7 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 							const block = partial.content[ci];
 							if (block.type !== "thinking") break;
 							block.thinking += part.text;
-							const sig = (part.providerMetadata as { anthropic?: { signature?: string } } | undefined)?.anthropic
-								?.signature;
+							const sig = (part.providerMetadata as { anthropic?: { signature?: string } } | undefined)?.anthropic?.signature;
 							if (sig) block.signature = (block.signature ?? "") + sig;
 						} else {
 							partial.reasoningContent = (partial.reasoningContent ?? "") + part.text;

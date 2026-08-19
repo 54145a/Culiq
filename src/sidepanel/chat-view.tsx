@@ -1,30 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import type { JSX } from "preact";
-import type { AgentEvent } from "@shared/agent/types";
-import type { Message, ToolResultContent } from "@shared/ai/types";
+import { useChat } from "@ai-sdk/react";
+import type { UIMessage } from "ai";
 import { deriveTitle, getCurrentId, getSession, newSession, type Session, setCurrent, upsertSession } from "@shared/sessions";
-import { type BgToPanel, type ChatContextMode, type PanelToBg } from "@shared/transport/protocol";
+import { type ChatContextMode } from "@shared/transport/protocol";
 import { renderMarkdown } from "./markdown";
+import { ExtensionChatTransport } from "./extension-chat-transport";
 import { getPanelWindowId } from "./window";
+import type { BgToPanel, PanelToBg } from "@shared/transport/protocol";
 
 export interface ChatTransport {
 	send(msg: PanelToBg): void;
 	onMessage(handler: (msg: BgToPanel) => void): () => void;
-}
-
-interface LiveToolCard {
-	id: string;
-	name: string;
-	args: Record<string, unknown>;
-	status: "running" | "ok" | "error";
-	result: string;
-}
-
-/** Chronological log entries of the in-progress run: bubbles and tool cards interleaved. */
-type LiveItem = { kind: "bubble"; spans: { index: number; raw: string }[] } | { kind: "tool"; card: LiveToolCard };
-
-interface LiveState {
-	items: LiveItem[];
 }
 
 interface Notice {
@@ -33,193 +20,36 @@ interface Notice {
 	text: string;
 }
 
-interface ChatStore {
-	current: Session;
-	persisted: boolean;
-	turnId?: string;
-	busy: boolean;
-	live: LiveState | null;
-	notices: Notice[];
-	listeners: Set<() => void>;
-}
+// ---------------------------------------------------------------------------
+// Session persistence (outside React)
+// ---------------------------------------------------------------------------
 
-const store: ChatStore = {
-	current: newSession(),
-	persisted: false,
-	busy: false,
-	live: null,
-	notices: [],
-	listeners: new Set(),
-};
-
-function notify(): void {
-	for (const cb of store.listeners) cb();
-}
-
-/** Re-render on any store change. History markdown is cached (see getHistory), so deltas stay cheap. */
-function useStoreUpdate(): void {
-	const [, force] = useState(0);
-	useEffect(() => {
-		const onNotify = () => force((v) => v + 1);
-		store.listeners.add(onNotify);
-		return () => {
-			store.listeners.delete(onNotify);
-		};
-	}, []);
-}
+let currentSession: Session = newSession();
+let persisted = false;
 
 const sessionChangeListeners = new Set<() => void>();
 export function onSessionChange(cb: () => void): () => void {
 	sessionChangeListeners.add(cb);
 	return () => sessionChangeListeners.delete(cb);
 }
-
 function notifySessionChange(): void {
 	for (const cb of sessionChangeListeners) cb();
 }
 
 export function isBusy(): boolean {
-	return store.turnId !== undefined;
+	return false;
 }
 
 export function currentSessionId(): string {
-	return store.current.id;
-}
-
-let noticeId = 0;
-function addNotice(className: string, text: string): void {
-	store.notices = [...store.notices, { id: noticeId++, className, text }];
-	notify();
+	return currentSession.id;
 }
 
 async function persistCurrent(): Promise<void> {
-	await upsertSession(store.current);
-	if (!store.persisted) {
-		store.persisted = true;
-		await setCurrent(store.current.id);
+	await upsertSession(currentSession);
+	if (!persisted) {
+		persisted = true;
+		await setCurrent(currentSession.id);
 	}
-	notifySessionChange();
-}
-
-function handleAgentEvent(event: AgentEvent): void {
-	switch (event.type) {
-		case "message_start":
-			if (event.message.role === "assistant") {
-				const items = store.live ? [...store.live.items, { kind: "bubble" as const, spans: [] }] : [{ kind: "bubble" as const, spans: [] }];
-				store.live = { items };
-				notify();
-			}
-			return;
-		case "message_update":
-			if (!store.live) return;
-			{
-				let bubble: Extract<LiveItem, { kind: "bubble" }> | undefined;
-				for (let i = store.live.items.length - 1; i >= 0; i--) {
-					const item = store.live.items[i];
-					if (item.kind === "bubble") {
-						bubble = item;
-						break;
-					}
-				}
-				if (bubble) {
-					let span = bubble.spans.find((s) => s.index === event.delta.contentIndex);
-					if (!span) {
-						span = { index: event.delta.contentIndex, raw: "" };
-						bubble.spans.push(span);
-					}
-					span.raw += event.delta.text;
-				}
-				store.live = { ...store.live };
-			}
-			notify();
-			return;
-		case "tool_execution_start":
-			if (!store.live) return;
-			store.live = {
-				items: [...store.live.items, { kind: "tool", card: { id: event.toolCallId, name: event.toolName, args: event.args, status: "running", result: "" } }],
-			};
-			notify();
-			return;
-		case "tool_execution_end":
-			if (!store.live) return;
-			store.live = {
-				items: store.live.items.map((item) =>
-					item.kind === "tool" && item.card.id === event.toolCallId
-						? { kind: "tool", card: { ...item.card, status: event.isError ? "error" : "ok", result: toolResultText(event.result.content) } }
-						: item,
-				),
-			};
-			notify();
-			return;
-		case "context_compressed":
-			addNotice(
-				"msg notice",
-				`Context compressed: ${formatTokens(event.beforeTokens)} → ${formatTokens(event.afterTokens)} tokens · kept ${event.keptTurns} recent turn${event.keptTurns === 1 ? "" : "s"} verbatim`,
-			);
-			return;
-		case "agent_end":
-			finalizeAgent(event.messages, event.stopReason, event.errorMessage);
-			return;
-	}
-}
-
-function finalizeAgent(messages: Message[], stopReason: string, errorMessage?: string): void {
-	store.current.messages = messages;
-	store.current.updatedAt = Date.now();
-	store.current.title = deriveTitle(messages);
-	store.live = null;
-	store.turnId = undefined;
-	store.busy = false;
-	notify();
-	if (stopReason === "error" && errorMessage) addNotice("msg err", errorMessage);
-	else if (stopReason === "max_turns") addNotice("msg err", "Reached max turns. Send another message to continue.");
-	else if (stopReason === "aborted") addNotice("msg err", "Stopped.");
-	void persistCurrent();
-}
-
-function submitTurn(transport: ChatTransport, text: string, contextMode?: ChatContextMode): void {
-	const trimmed = text.trim();
-	if (!trimmed || store.turnId) return;
-	store.current.messages = [...store.current.messages, { role: "user", content: trimmed }];
-	store.current.updatedAt = Date.now();
-	store.current.title = deriveTitle(store.current.messages);
-	store.live = null;
-	const turnId = crypto.randomUUID();
-	store.turnId = turnId;
-	store.busy = true;
-	notify();
-	void persistCurrent();
-	transport.send({
-		type: "chat_send",
-		turnId,
-		messages: store.current.messages,
-		...(contextMode ? { contextMode } : {}),
-		...(getPanelWindowId() !== undefined ? { windowId: getPanelWindowId() } : {}),
-	});
-}
-
-export async function loadSessionIntoChat(id: string): Promise<void> {
-	if (store.turnId) return;
-	const session = await getSession(id);
-	if (!session) return;
-	store.current = session;
-	store.persisted = true;
-	store.live = null;
-	store.notices = [];
-	store.current.messages = session.messages;
-	notify();
-	await setCurrent(session.id);
-	notifySessionChange();
-}
-
-export async function startFreshSession(): Promise<void> {
-	if (store.turnId) return;
-	store.current = newSession();
-	store.persisted = false;
-	store.live = null;
-	store.notices = [];
-	notify();
-	await setCurrent(null);
 	notifySessionChange();
 }
 
@@ -228,139 +58,245 @@ async function hydrateFromStorage(): Promise<void> {
 	if (!id) return;
 	const session = await getSession(id);
 	if (!session) return;
-	store.current = session;
-	store.persisted = true;
-	store.current.messages = session.messages;
-	notify();
+	currentSession = session;
+	persisted = true;
+	notifySessionChange();
+}
+
+export async function loadSessionIntoChat(id: string): Promise<void> {
+	const session = await getSession(id);
+	if (!session) return;
+	currentSession = session;
+	persisted = true;
+	setMessagesRef?.(convertSessionToUI(session));
+	await setCurrent(session.id);
+	notifySessionChange();
+}
+
+export async function startFreshSession(): Promise<void> {
+	currentSession = newSession();
+	persisted = false;
+	setMessagesRef?.([]);
+	await setCurrent(null);
 	notifySessionChange();
 }
 
 // ---------------------------------------------------------------------------
-// Rendering
+// Format conversion
 // ---------------------------------------------------------------------------
 
-type HistoryItem =
-	| { kind: "user"; text: string }
-	| { kind: "assistant"; textBlocks: { index: number; html: string }[] }
-	| { kind: "tool"; card: LiveToolCard };
-
-function buildHistory(messages: Message[]): HistoryItem[] {
-	const items: HistoryItem[] = [];
-	const pending = new Map<string, number>();
-	for (const m of messages) {
+function convertSessionToUI(session: Session): UIMessage[] {
+	return session.messages.map((m) => {
 		if (m.role === "user") {
 			const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("");
-			items.push({ kind: "user", text });
-		} else if (m.role === "assistant") {
-			let bubble: Extract<HistoryItem, { kind: "assistant" }> | null = null;
-			for (let i = 0; i < m.content.length; i++) {
-				const block = m.content[i];
-				if (block.type === "text" && block.text.length > 0) {
-					if (!bubble) {
-						bubble = { kind: "assistant", textBlocks: [] };
-						items.push(bubble);
-					}
-					bubble.textBlocks.push({ index: i, html: renderMarkdown(block.text) });
+			return { id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text" as const, text }] };
+		}
+		if (m.role === "assistant") {
+			const parts: UIMessage["parts"] = [];
+			for (const block of m.content) {
+				if (block.type === "text" && block.text) {
+					parts.push({ type: "text" as const, text: block.text });
 				} else if (block.type === "toolCall") {
-					pending.set(block.id, items.length);
-					items.push({ kind: "tool", card: { id: block.id, name: block.name, args: block.arguments, status: "running", result: "" } });
+					parts.push({
+						type: `tool-${block.name}` as const,
+						toolCallId: block.id,
+						input: block.arguments,
+						state: "input-available" as const,
+					} as never);
 				}
 			}
-		} else if (m.role === "toolResult") {
-			const idx = pending.get(m.toolCallId);
-			if (idx === undefined) continue;
-			const item = items[idx];
-			if (item.kind === "tool") {
-				item.card.status = m.isError ? "error" : "ok";
-				item.card.result = toolResultText(m.content);
-			}
-			pending.delete(m.toolCallId);
+			return { id: (m as { id?: string }).id ?? crypto.randomUUID(), role: "assistant" as const, parts };
 		}
-	}
-	return items;
+		return { id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text" as const, text: "" }] };
+	});
 }
 
-// Rebuild history only when the messages reference changes (never per streaming delta).
-let historyCache: { messages: Message[]; items: HistoryItem[] } | null = null;
-function getHistory(messages: Message[]): HistoryItem[] {
-	if (!historyCache || historyCache.messages !== messages) {
-		historyCache = { messages, items: buildHistory(messages) };
-	}
-	return historyCache.items;
-}
+// ---------------------------------------------------------------------------
+// Global setMessages ref for session management functions
+// ---------------------------------------------------------------------------
 
-function renderHistoryItem(item: HistoryItem, index: number): JSX.Element {
-	switch (item.kind) {
-		case "user":
-			return (
-				<li className="msg user" key={index}>
-					{item.text}
-				</li>
-			);
-		case "assistant":
-			return (
-				<li className="msg assistant" key={index}>
-					{item.textBlocks.map((t) => (
-						<div className="text md" key={t.index} dangerouslySetInnerHTML={{ __html: t.html }} />
-					))}
-				</li>
-			);
-		case "tool":
-			return <ToolCardView key={item.card.id} card={item.card} />;
-	}
-}
+let setMessagesRef: ((msgs: UIMessage[]) => void) | null = null;
 
-function ToolCardView({ card }: { card: LiveToolCard }) {
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+let noticeId = 0;
+
+function ContextCard({ text }: { text: string }) {
 	const [expanded, setExpanded] = useState(false);
-	const toggle = () => setExpanded(!expanded);
 	return (
-		<li className="tool-card" data-status={card.status} data-expanded={String(expanded)}>
+		<div className="tool-card" data-status="ok" data-expanded={String(expanded)}>
 			<div
 				className="tool-head"
 				role="button"
 				tabIndex={0}
 				aria-expanded={expanded}
 				title="Click to expand"
-				onClick={toggle}
+				onClick={() => setExpanded(!expanded)}
 				onKeyDown={(e) => {
 					if (e.key === "Enter" || e.key === " ") {
 						e.preventDefault();
-						toggle();
+						setExpanded(!expanded);
 					}
 				}}
 			>
-				<span className="tool-chevron" aria-hidden="true">
-					▸
-				</span>
-				<code>{card.name}</code>
-				<span className="tool-status">{card.status === "running" ? "running…" : card.status}</span>
+				<span className="tool-chevron" aria-hidden="true">▸</span>
+				<code>context</code>
+				<span className="tool-status">sent</span>
 			</div>
-			<pre className="tool-args">{formatJSON(card.args)}</pre>
-			<div className="tool-body">{card.result}</div>
+			<pre className="tool-body">{text}</pre>
+		</div>
+	);
+}
+
+function ToolCardView({ toolName, part }: { toolName: string; part: { toolCallId: string; input: unknown; state: string; output?: unknown; errorText?: string } }) {
+	const [expanded, setExpanded] = useState(false);
+	const status = part.state.includes("error") ? "error" : part.state.includes("available") && part.output !== undefined ? "ok" : "running";
+	const result = part.errorText ?? (typeof part.output === "string" ? part.output : part.output ? JSON.stringify(part.output) : "");
+	return (
+		<li className="tool-card" data-status={status} data-expanded={String(expanded)}>
+			<div
+				className="tool-head"
+				role="button"
+				tabIndex={0}
+				aria-expanded={expanded}
+				title="Click to expand"
+				onClick={() => setExpanded(!expanded)}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						setExpanded(!expanded);
+					}
+				}}
+			>
+				<span className="tool-chevron" aria-hidden="true">▸</span>
+				<code>{toolName}</code>
+				<span className="tool-status">{status === "running" ? "running…" : status}</span>
+			</div>
+			<pre className="tool-args">{formatJSON(part.input)}</pre>
+			<div className="tool-body">{result}</div>
 		</li>
 	);
 }
 
-function Composer({ busy, transport, inputRef }: { busy: boolean; transport: ChatTransport; inputRef: { current: HTMLTextAreaElement | null } }) {
-	const [value, setValue] = useState("");
+function CompressNotice({ data }: { data: { beforeTokens: number; afterTokens: number; keptTurns: number; summary: string } }) {
+	return (
+		<li className="msg notice">
+			{`Context compressed: ${formatTokens(data.beforeTokens)} → ${formatTokens(data.afterTokens)} tokens · kept ${data.keptTurns} recent turn${data.keptTurns === 1 ? "" : "s"} verbatim`}
+		</li>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// ChatView
+// ---------------------------------------------------------------------------
+
+export function ChatView({ transport: chatTransport }: { transport: ChatTransport }) {
+	const [notices, setNotices] = useState<Notice[]>([]);
+	const [hydrated, setHydrated] = useState(false);
 	const [contextMode, setContextMode] = useState<ChatContextMode | "none">("none");
-	const submit = (e: Event) => {
-		e.preventDefault();
-		if (busy) {
-			const turnId = store.turnId;
-			if (turnId) transport.send({ type: "chat_abort", turnId });
-			return;
+	const [pendingContext, setPendingContext] = useState<string>("");
+	const logRef = useRef<HTMLUListElement | null>(null);
+	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+	const addNotice = useCallback((className: string, text: string) => {
+		setNotices((prev) => [...prev, { id: noticeId++, className, text }]);
+	}, []);
+
+	const extensionTransport = useMemo(() => {
+		return new ExtensionChatTransport(
+			(msg) => chatTransport.send(msg),
+			(cb) => chatTransport.onMessage(cb),
+		);
+	}, [chatTransport]);
+
+	const { messages, setMessages, status, sendMessage, stop } = useChat({
+		id: currentSession.id,
+		transport: extensionTransport,
+	});
+
+	useEffect(() => {
+		setMessagesRef = setMessages;
+		return () => { setMessagesRef = null; };
+	}, [setMessages]);
+
+	useEffect(() => {
+		return chatTransport.onMessage((msg) => {
+			if (msg.type === "log" && msg.level === "error") {
+				addNotice("msg err", `[bg] ${msg.text}`);
+			}
+		});
+	}, [chatTransport, addNotice]);
+
+	useEffect(() => {
+		void hydrateFromStorage().then(() => setHydrated(true));
+	}, []);
+
+	useEffect(() => {
+		if (hydrated && currentSession.messages.length > 0) {
+			setMessagesRef?.(convertSessionToUI(currentSession));
 		}
-		submitTurn(transport, value, contextMode === "none" ? undefined : contextMode);
-		setValue("");
+	}, [hydrated]);
+
+	useEffect(() => {
+		if (status !== "ready" || messages.length === 0) return;
+		const last = messages[messages.length - 1];
+		if (last?.role !== "assistant") return;
+		currentSession.messages = messages.map((m) => ({
+			role: m.role as "user" | "assistant",
+			content: m.parts
+				.filter((p): p is { type: "text"; text: string } => p.type === "text")
+				.map((p) => p.text)
+				.join(""),
+		})) as Session["messages"];
+		currentSession.updatedAt = Date.now();
+		currentSession.title = deriveTitle(currentSession.messages);
+		void persistCurrent();
+	}, [status, messages]);
+
+	useEffect(() => {
+		const el = logRef.current;
+		if (el) el.scrollTop = el.scrollHeight;
+	}, [messages, notices]);
+
+	useEffect(() => {
+		if (status !== "streaming" && status !== "submitted") inputRef.current?.focus();
+	}, [status]);
+
+	const busy = status === "streaming" || status === "submitted";
+
+	const handleSubmit = useCallback((text: string) => {
+		const mode = contextMode === "none" ? undefined : contextMode;
+		extensionTransport.setContextMode(mode);
+		extensionTransport.setWindowId(getPanelWindowId());
+		setPendingContext(mode === "tabs" ? "All open tabs" : mode === "current" ? "Current tab" : "");
+		sendMessage({ text });
 		setContextMode("none");
-	};
+	}, [sendMessage, contextMode, extensionTransport]);
+
+	const handleStop = useCallback(() => { stop(); }, [stop]);
+
+	const title = useMemo(() => `${messages.length} message${messages.length === 1 ? "" : "s"}`, [messages]);
+
 	return (
 		<>
+			<div className="chat-actions">
+				<span id="chat-title">{title}</span>
+				<button id="new-session" type="button" title="Start a fresh conversation" disabled={busy} onClick={() => void startFreshSession()}>
+					+ New
+				</button>
+			</div>
+			<ul id="log" ref={logRef} aria-live="polite">
+				{messages.map((msg, i) => (
+					<MessageView key={msg.id ?? i} msg={msg} contextLabel={msg.role === "user" ? pendingContext : undefined} />
+				))}
+				{notices.map((n) => (
+					<li className={n.className} key={n.id}>{n.text}</li>
+				))}
+			</ul>
 			<div className="context-row">
-				<label className="context-label" htmlFor="context-mode">
-					Context
-				</label>
+				<label className="context-label" htmlFor="context-mode">Context</label>
 				<select
 					id="context-mode"
 					value={contextMode}
@@ -372,19 +308,26 @@ function Composer({ busy, transport, inputRef }: { busy: boolean; transport: Cha
 					<option value="current">Current tab</option>
 				</select>
 			</div>
-			<form id="form" onSubmit={submit}>
+			<form id="form" onSubmit={(e) => {
+				e.preventDefault();
+				if (busy) { handleStop(); return; }
+				const input = inputRef.current;
+				if (!input) return;
+				const text = input.value.trim();
+				if (!text) return;
+				handleSubmit(text);
+				input.value = "";
+			}}>
 				<textarea
 					id="input"
 					ref={inputRef}
 					rows={1}
-					value={value}
 					disabled={busy}
 					placeholder="ask the agent…  (Shift+Enter for newline)"
-					onInput={(e) => setValue((e.target as HTMLTextAreaElement).value)}
 					onKeyDown={(e) => {
 						if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
 							e.preventDefault();
-							submit(e);
+							(e.target as HTMLTextAreaElement).closest("form")?.requestSubmit();
 						}
 					}}
 				/>
@@ -396,99 +339,69 @@ function Composer({ busy, transport, inputRef }: { busy: boolean; transport: Cha
 	);
 }
 
-export function ChatView({ transport }: { transport: ChatTransport }) {
-	useStoreUpdate();
-	const messages = store.current.messages;
-	const live = store.live;
-	const notices = store.notices;
-	const busy = store.busy;
-	const logRef = useRef<HTMLUListElement | null>(null);
-	const inputRef = useRef<HTMLTextAreaElement | null>(null);
+// ---------------------------------------------------------------------------
+// Message rendering
+// ---------------------------------------------------------------------------
 
-	useEffect(() => {
-		return transport.onMessage((msg) => {
-			if (msg.type === "log") {
-				if (msg.level === "error") addNotice("msg err", `[bg] ${msg.text}`);
-				return;
-			}
-			if (msg.type === "agent_event") handleAgentEvent(msg.event);
-		});
-	}, [transport]);
-
-	useEffect(() => {
-		void hydrateFromStorage();
-	}, []);
-
-	useEffect(() => {
-		const el = logRef.current;
-		if (el) el.scrollTop = el.scrollHeight;
-	}, [messages, live, notices]);
-
-	useEffect(() => {
-		if (!busy) inputRef.current?.focus();
-	}, [messages, busy]);
-
-	const history = useMemo(() => getHistory(messages), [messages]);
-
-	const title = useMemo(() => {
-		const liveBubbles = live ? live.items.filter((i) => i.kind === "bubble").length : 0;
-		const count = messages.length + liveBubbles;
-		const tokens = totalTokens(messages);
-		const parts = [`${count} message${count === 1 ? "" : "s"}`];
-		if (tokens > 0) parts.push(`${formatTokens(tokens)} tokens`);
-		return parts.join("  ·  ");
-	}, [messages, live]);
-
-	return (
-		<>
-			<div className="chat-actions">
-				<span id="chat-title">{title}</span>
-				<button id="new-session" type="button" title="Start a fresh conversation" disabled={busy} onClick={() => void startFreshSession()}>
-					+ New
-				</button>
-			</div>
-			<ul id="log" ref={logRef} aria-live="polite">
-				{history.map(renderHistoryItem)}
-				{live?.items.map((item, i) =>
-					item.kind === "bubble"
-						? item.spans.length > 0
-							? (
-									<li className="msg assistant" key={`live-${i}`}>
-										{item.spans.map((s) => (
-											<div className="text md" key={s.index} dangerouslySetInnerHTML={{ __html: renderMarkdown(s.raw) }} />
-										))}
-									</li>
-								)
-							: null
-						: <ToolCardView key={item.card.id} card={item.card} />,
-				)}
-				{notices.map((n) => (
-					<li className={n.className} key={n.id}>
-						{n.text}
-					</li>
-				))}
-			</ul>
-			<Composer busy={busy} transport={transport} inputRef={inputRef} />
-		</>
-	);
-}
-
-function toolResultText(content: ToolResultContent[]): string {
-	return content
-		.filter((block) => block.type === "text")
-		.map((block) => block.text)
-		.join("\n");
-}
-
-function totalTokens(messages: Message[]): number {
-	let sum = 0;
-	for (const m of messages) {
-		if (m.role === "assistant" && m.usage) {
-			sum += m.usage.inputTokens + m.usage.outputTokens;
-		}
+function MessageView({ msg, contextLabel }: { msg: UIMessage; contextLabel?: string }) {
+	if (msg.role === "user") {
+		const textParts = msg.parts.filter((p): p is { type: "text"; text: string } => p.type === "text");
+		return (
+			<li className="msg user">
+				{contextLabel && <ContextCard text={contextLabel} />}
+				{textParts.map((p) => p.text).join("")}
+			</li>
+		);
 	}
-	return sum;
+
+	if (msg.role === "assistant") {
+		const elements: JSX.Element[] = [];
+		let textContent = "";
+		for (let i = 0; i < msg.parts.length; i++) {
+			const part = msg.parts[i];
+			if (part.type === "text") {
+				textContent += part.text;
+			} else if (part.type === "data-compress" && typeof (part as { data: unknown }).data === "object") {
+				if (textContent) {
+					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+					textContent = "";
+				}
+				elements.push(<CompressNotice key={`cmp-${i}`} data={(part as { data: { beforeTokens: number; afterTokens: number; keptTurns: number; summary: string } }).data} />);
+			} else if (part.type.startsWith("tool-")) {
+				if (textContent) {
+					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+					textContent = "";
+				}
+				const toolName = part.type.slice(5);
+				const toolPart = part as { type: string; toolCallId: string; input: unknown; state: string; output?: unknown; errorText?: string };
+				elements.push(<ToolCardView key={toolPart.toolCallId ?? i} toolName={toolName} part={toolPart} />);
+			}
+		}
+		if (textContent) {
+			elements.push(<div className="text md" key="t-end" dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+		}
+		if (elements.length === 0) return null;
+		const hasNonText = elements.some((e) => e.type === ToolCardView || e.type === CompressNotice);
+		if (!hasNonText) {
+			return <li className="msg assistant">{elements}</li>;
+		}
+		return (
+			<>
+				{elements.map((el, i) =>
+					(el.type === ToolCardView || el.type === CompressNotice)
+						? el
+						: <li className="msg assistant" key={`a-${i}`}>{el}</li>,
+				)}
+			</>
+		);
+	}
+
+	return null;
 }
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
 
 function formatTokens(n: number): string {
 	if (n < 1000) return String(n);

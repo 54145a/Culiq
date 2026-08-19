@@ -95,21 +95,19 @@ async function streamAssistantResponse(
 
 	await maybeCompressContext(context, config, emit, signal);
 
-	const stream = streamSimple(
-		config.model,
-		{
-			...(context.systemPrompt ? { systemPrompt: context.systemPrompt } : {}),
-			messages: context.messages,
-			...(tools ? { tools } : {}),
-		},
-		{
-			apiKey: config.apiKey,
-			...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
-			...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
-			...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
-			...(signal ? { signal } : {}),
-		},
-	);
+		const stream = streamSimple(
+			config.model,
+			{
+				...(context.systemPrompt ? { systemPrompt: context.systemPrompt } : {}),
+				messages: context.messages,
+				...(tools ? { tools } : {}),
+			},
+			{
+				...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
+				...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
+				...(signal ? { signal } : {}),
+			},
+		);
 
 	let started = false;
 	for await (const event of stream) {
@@ -314,8 +312,6 @@ async function summarizeTurns(turns: Message[][], config: AgentLoopConfig, signa
 			messages: [{ role: "user", content: capped }],
 		},
 		{
-			apiKey: config.apiKey,
-			...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
 			maxTokens: SUMMARY_MAX_TOKENS,
 			...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
 			...(signal ? { signal } : {}),

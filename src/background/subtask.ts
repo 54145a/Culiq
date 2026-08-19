@@ -1,4 +1,4 @@
-import { loadSettings, getDefaultProvider } from "@shared/config";
+import { loadSettings } from "@shared/config";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { runAgentLoop } from "@shared/agent";
 import type { AgentContext, AgentTool } from "@shared/agent/types";
@@ -30,11 +30,32 @@ export const subtaskTool: AgentTool = {
 		const maxTurns = typeof args.maxTurns === "number" ? Math.max(1, Math.floor(args.maxTurns)) : 5;
 
 		const settings = await loadSettings();
-		const mainProvider = getDefaultProvider(settings);
-		const subModel =
-			settings.subAgentModel && settings.subAgentModel.trim() !== ""
-				? settings.subAgentModel.trim()
-				: mainProvider.model;
+		const defaultProvider = settings.providers.find((p) => p.id === settings.defaultProviderId);
+		const raw = settings.subAgentModel.trim();
+
+		let providerId: string;
+		let modelId: string;
+
+		if (raw.includes(":")) {
+			// Explicit "provider:model" format
+			[providerId, modelId] = raw.split(":", 2);
+		} else if (raw) {
+			// Bare model name — search all providers; prefer default if it has the model
+			const candidate = defaultProvider?.models.includes(raw) ? defaultProvider : settings.providers.find((p) => p.models.includes(raw));
+			if (!candidate) {
+				return { content: [{ type: "text", text: `Model "${raw}" not found in any provider's Available models. Add it in Settings → Providers.` }], isError: true };
+			}
+			providerId = candidate.id;
+			modelId = raw;
+		} else {
+			// Empty — fall back to default provider's default model
+			providerId = defaultProvider?.id ?? "";
+			modelId = defaultProvider?.defaultModel ?? "";
+		}
+
+		if (!providerId || !modelId) {
+			return { content: [{ type: "text", text: "No sub-agent model configured. Set Sub-agent model in Settings → Providers." }], isError: true };
+		}
 
 		const context: AgentContext = {
 			systemPrompt: getSystemPrompt(),
@@ -42,13 +63,10 @@ export const subtaskTool: AgentTool = {
 			tools: getTools(),
 		};
 
-		// Run the sub-agent loop silently — no panel events, no turn tracking.
 		await runAgentLoop(
 			context,
 			{
-				model: { id: subModel, provider: mainProvider.id },
-				apiKey: mainProvider.apiKey,
-				baseUrl: mainProvider.baseUrl,
+				model: { id: modelId, provider: providerId },
 				maxTurns,
 			},
 			() => {},

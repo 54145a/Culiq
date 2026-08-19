@@ -29,9 +29,7 @@ export interface AgentContext {
 }
 
 export interface AgentLoopConfig {
-	model: { id: string; provider: ProviderId };
-	apiKey: string;
-	baseUrl?: string;
+	model: { id: string; provider: string };
 	maxTokens?: number;
 	temperature?: number;
 	maxTurns?: number;
@@ -41,6 +39,7 @@ export interface AgentLoopConfig {
 export type AgentEvent =
 	| { type: "agent_start" }
 	| { type: "turn_start"; turnIndex: number }
+	| { type: "context_sent"; text: string }
 	| { type: "message_start"; message: Message }
 	| { type: "message_update"; message: AssistantMessage; delta: { kind: "text"; contentIndex: number; text: string } }
 	| { type: "message_end"; message: Message }

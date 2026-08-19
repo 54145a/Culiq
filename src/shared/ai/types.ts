@@ -71,8 +71,6 @@ export interface Context {
 }
 
 export interface StreamOptions {
-	apiKey: string;
-	baseUrl?: string;
 	signal?: AbortSignal;
 	maxTokens?: number;
 	temperature?: number;
