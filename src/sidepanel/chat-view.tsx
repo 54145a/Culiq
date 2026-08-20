@@ -196,7 +196,6 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 	const [notices, setNotices] = useState<Notice[]>([]);
 	const [hydrated, setHydrated] = useState(false);
 	const [contextMode, setContextMode] = useState<ChatContextMode | "none">("none");
-	const [pendingContext, setPendingContext] = useState<string>("");
 	const logRef = useRef<HTMLUListElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -264,28 +263,12 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 		if (status !== "streaming" && status !== "submitted") inputRef.current?.focus();
 	}, [status]);
 
-	// Capture actual context text from data-context parts in assistant messages
-	useEffect(() => {
-		for (const msg of messages) {
-			if (msg.role === "assistant") {
-				for (const part of msg.parts) {
-					if (part.type === "data-context" && typeof (part as { data: unknown }).data === "string") {
-						setPendingContext((part as { data: string }).data);
-						return;
-					}
-				}
-			}
-		}
-	}, [messages]);
-
 	const busy = status === "streaming" || status === "submitted";
 
 	const handleSubmit = useCallback((text: string) => {
 		const mode = contextMode === "none" ? undefined : contextMode;
 		extensionTransport.setContextMode(mode);
 		extensionTransport.setWindowId(getPanelWindowId());
-		// Show placeholder until actual context text arrives from data-context part
-		if (mode) setPendingContext("loading context…");
 		sendMessage({ text });
 		setContextMode("none");
 	}, [sendMessage, contextMode, extensionTransport]);
@@ -304,7 +287,7 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 			</div>
 			<ul id="log" ref={logRef} aria-live="polite">
 				{messages.map((msg, i) => (
-					<MessageView key={msg.id ?? i} msg={msg} contextLabel={msg.role === "user" ? pendingContext : undefined} />
+					<MessageView key={msg.id ?? i} msg={msg} />
 				))}
 				{notices.map((n) => (
 					<li className={n.className} key={n.id}>{n.text}</li>
@@ -358,12 +341,11 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 // Message rendering
 // ---------------------------------------------------------------------------
 
-function MessageView({ msg, contextLabel }: { msg: UIMessage; contextLabel?: string }) {
+function MessageView({ msg }: { msg: UIMessage }) {
 	if (msg.role === "user") {
 		const textParts = msg.parts.filter((p): p is { type: "text"; text: string } => p.type === "text");
 		return (
 			<li className="msg user">
-				{contextLabel && <ContextCard text={contextLabel} />}
 				{textParts.map((p) => p.text).join("")}
 			</li>
 		);
