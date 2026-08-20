@@ -217,8 +217,13 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 
 	useEffect(() => {
 		setMessagesRef = setMessages;
+		// Immediately load session messages if available (handles the case where
+		// loadSessionIntoChat was called before ChatView mounted)
+		if (hydrated && currentSession.messages.length > 0) {
+			setMessages(convertSessionToUI(currentSession));
+		}
 		return () => { setMessagesRef = null; };
-	}, [setMessages]);
+	}, [setMessages, hydrated]);
 
 	useEffect(() => {
 		return chatTransport.onMessage((msg) => {
@@ -231,12 +236,6 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 	useEffect(() => {
 		void hydrateFromStorage().then(() => setHydrated(true));
 	}, []);
-
-	useEffect(() => {
-		if (hydrated && currentSession.messages.length > 0) {
-			setMessagesRef?.(convertSessionToUI(currentSession));
-		}
-	}, [hydrated]);
 
 	useEffect(() => {
 		if (status !== "ready" || messages.length === 0) return;
