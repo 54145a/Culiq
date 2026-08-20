@@ -71,8 +71,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 
 				// Cancel any previous listener to prevent duplicate event processing
 				this.unsubLast?.();
-
-				const unsub = this.onMessageFn((bgMsg: BgToPanel) => {
+				this.unsubLast = this.onMessageFn((bgMsg: BgToPanel) => {
 					if (closed) return;
 					if (bgMsg.type !== "agent_event" || bgMsg.turnId !== turnId) return;
 
@@ -103,21 +102,20 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 							if (!closed) {
 								closed = true;
 								controller.close();
-								unsub();
+								this.unsubLast?.();
 								this.unsubLast = undefined;
 							}
 						}, 50);
 					}
 				});
 
-				this.unsubLast = unsub;
-
 				if (options.abortSignal) {
 					options.abortSignal.addEventListener("abort", () => {
 						if (!closed) {
 							closed = true;
 							controller.close();
-							unsub();
+							this.unsubLast?.();
+							this.unsubLast = undefined;
 							this.sendFn({ type: "chat_abort", turnId });
 						}
 					}, { once: true });
