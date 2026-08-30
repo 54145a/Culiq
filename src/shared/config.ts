@@ -109,12 +109,20 @@ export interface ProviderConfig {
 
 const CULIQ_SETTINGS_VERSION = 5;
 
+/** Per-model capability overrides. Keyed by `${providerId}:${modelId}`. */
+export interface ModelCapabilityConfig {
+	/** Capabilities explicitly turned OFF for this model (e.g. `["screenshot"]`). */
+	disabledCapabilities: Capability[];
+}
+
 export interface CuliqSettings {
 	version: typeof CULIQ_SETTINGS_VERSION;
 	theme: ThemePreference;
 	providers: ProviderConfig[];
 	defaultProviderId: string;
-	capabilities: Capability[];
+	/** Capability overrides per model. The only user-toggleable capability is `screenshot`;
+	 * everything else (including sandbox-exposed tools) is always enabled. */
+	modelCapabilities: Record<string, ModelCapabilityConfig>;
 	contextManagement: ContextManagementConfig;
 	searchEngine: SearchEngineId;
 	subAgentModel: string;
@@ -169,7 +177,7 @@ export function defaultSettings(): CuliqSettings {
 			models: d.models,
 		})),
 		defaultProviderId: "openai",
-		capabilities: Object.keys(CAPABILITY_INFO) as Capability[],
+		modelCapabilities: {},
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
 		searchEngine: "bing",
 		subAgentModel: "",
@@ -182,7 +190,7 @@ interface StoredSettings {
 	activeProvider?: string;
 	providers?: Record<string, Partial<ProviderConfig>> | ProviderConfig[];
 	defaultProviderId?: string;
-	capabilities?: Capability[];
+	modelCapabilities?: Record<string, ModelCapabilityConfig>;
 	contextManagement?: Partial<ContextManagementConfig>;
 	searchEngine?: unknown;
 	subAgentModel?: unknown;
@@ -225,7 +233,7 @@ export async function loadSettings(): Promise<CuliqSettings> {
 		theme: isThemePreference(stored.theme) ? stored.theme : base.theme,
 		providers,
 		defaultProviderId,
-		capabilities: stored.capabilities ?? base.capabilities,
+		modelCapabilities: stored.modelCapabilities ?? {},
 		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
 		searchEngine: stored.searchEngine === "bing" ? "bing" : base.searchEngine,
 		subAgentModel: typeof stored.subAgentModel === "string" ? stored.subAgentModel : base.subAgentModel,

@@ -118,7 +118,7 @@ export const fetchUrlTool: AgentTool = {
 	},
 };
 
-function extractPage(mode: string): ExtractOutcome {
+export function extractPage(mode: string): ExtractOutcome {
 	try {
 		const doc = document;
 		const title = doc.title ?? "";

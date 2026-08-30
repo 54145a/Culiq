@@ -60,6 +60,7 @@ async function hydrateFromStorage(): Promise<void> {
 	if (!session) return;
 	currentSession = session;
 	persisted = true;
+	notifyActiveId?.(session.id);
 	notifySessionChange();
 }
 
@@ -68,7 +69,7 @@ export async function loadSessionIntoChat(id: string): Promise<void> {
 	if (!session) return;
 	currentSession = session;
 	persisted = true;
-	setMessagesRef?.(convertSessionToUI(session));
+	notifyActiveId?.(session.id);
 	await setCurrent(session.id);
 	notifySessionChange();
 }
@@ -76,7 +77,7 @@ export async function loadSessionIntoChat(id: string): Promise<void> {
 export async function startFreshSession(): Promise<void> {
 	currentSession = newSession();
 	persisted = false;
-	setMessagesRef?.([]);
+	notifyActiveId?.(currentSession.id);
 	await setCurrent(null);
 	notifySessionChange();
 }
@@ -86,36 +87,93 @@ export async function startFreshSession(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function convertSessionToUI(session: Session): UIMessage[] {
-	return session.messages.map((m) => {
-		if (m.role === "user") {
-			const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("");
-			return { id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text" as const, text }] };
+	// Collect tool results keyed by toolCallId so they can be merged into the
+	// matching tool-call part (the stored format keeps them as separate messages).
+	const resultText = new Map<string, string>();
+	for (const m of session.messages) {
+		if (m.role === "toolResult") {
+			resultText.set(m.toolCallId, m.content.filter((c) => c.type === "text").map((c) => c.text).join(""));
 		}
-		if (m.role === "assistant") {
+	}
+	return session.messages
+		.filter((m) => m.role !== "toolResult")
+		.map((m) => {
+			if (m.role === "user") {
+				const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("");
+				return { id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text" as const, text }] };
+			}
+			// assistant
+			const blocks = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 			const parts: UIMessage["parts"] = [];
-			for (const block of m.content) {
+			for (const block of blocks) {
 				if (block.type === "text" && block.text) {
 					parts.push({ type: "text" as const, text: block.text });
 				} else if (block.type === "toolCall") {
+					const output = resultText.get(block.id);
 					parts.push({
 						type: `tool-${block.name}` as const,
 						toolCallId: block.id,
 						input: block.arguments,
-						state: "input-available" as const,
+						state: output ? ("output-available" as const) : ("input-available" as const),
+						...(output ? { output } : {}),
 					} as never);
+				} else if (block.type === "context" && block.text) {
+					parts.push({ type: "data-context" as const, id: "context", data: block.text } as never);
 				}
 			}
 			return { id: (m as { id?: string }).id ?? crypto.randomUUID(), role: "assistant" as const, parts };
+		});
+}
+
+function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
+	if (m.role === "user") {
+		const text = m.parts
+			.filter((p): p is { type: "text"; text: string } => p.type === "text")
+			.map((p) => p.text)
+			.join("");
+		return [{ role: "user", content: text }];
+	}
+	const blocks: Array<
+		| { type: "text"; text: string }
+		| { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> }
+		| { type: "context"; text: string }
+	> = [];
+	const out: Session["messages"] = [];
+	for (const part of m.parts) {
+		if (part.type === "text" && part.text) {
+			blocks.push({ type: "text", text: part.text });
+		} else if (part.type.startsWith("tool-")) {
+			const tp = part as { toolCallId: string; input: unknown; output?: unknown };
+			const name = part.type.slice(5);
+			blocks.push({ type: "toolCall", id: tp.toolCallId, name, arguments: (tp.input ?? {}) as Record<string, unknown> });
+			if (tp.output != null) {
+				out.push({
+					role: "toolResult",
+					toolCallId: tp.toolCallId,
+					content: [{ type: "text", text: typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output) }],
+				});
+			}
+		} else if (part.type === "data-context") {
+			const data = (part as { data: unknown }).data;
+			if (typeof data === "string" && data) blocks.push({ type: "context", text: data });
 		}
-		return { id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text" as const, text: "" }] };
-	});
+	}
+	out.unshift({ role: "assistant", content: blocks as never, stopReason: "end" });
+	return out;
 }
 
 // ---------------------------------------------------------------------------
 // Global setMessages ref for session management functions
 // ---------------------------------------------------------------------------
 
-let setMessagesRef: ((msgs: UIMessage[]) => void) | null = null;
+// Notifies the panel (main.tsx) of the active session id so it can remount
+// ChatView via a `key`, which (re)creates the useChat instance with the loaded
+// history as its initial `messages`. This is the only reliable way to load
+// history: useChat's setMessages does not notify its snapshot store.
+let notifyActiveId: ((id: string) => void) | null = null;
+export function setActiveIdNotifier(cb: (id: string) => void): void {
+	notifyActiveId = cb;
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -125,8 +183,8 @@ let noticeId = 0;
 
 function ContextCard({ text }: { text: string }) {
 	const [expanded, setExpanded] = useState(false);
-	return (
-		<div className="tool-card" data-status="ok" data-expanded={String(expanded)}>
+		return (
+		<li className="tool-card" data-status="ok" data-expanded={String(expanded)}>
 			<div
 				className="tool-head"
 				role="button"
@@ -146,7 +204,7 @@ function ContextCard({ text }: { text: string }) {
 				<span className="tool-status">sent</span>
 			</div>
 			<pre className="tool-body">{text}</pre>
-		</div>
+		</li>
 	);
 }
 
@@ -192,9 +250,8 @@ function CompressNotice({ data }: { data: { beforeTokens: number; afterTokens: n
 // ChatView
 // ---------------------------------------------------------------------------
 
-export function ChatView({ transport: chatTransport }: { transport: ChatTransport }) {
+export function ChatView({ transport, chatTransport }: { transport: ChatTransport; chatTransport: ExtensionChatTransport }) {
 	const [notices, setNotices] = useState<Notice[]>([]);
-	const [hydrated, setHydrated] = useState(false);
 	const [contextMode, setContextMode] = useState<ChatContextMode | "none">("none");
 	const logRef = useRef<HTMLUListElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -203,30 +260,17 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 		setNotices((prev) => [...prev, { id: noticeId++, className, text }]);
 	}, []);
 
-	const extensionTransport = useMemo(() => {
-		return new ExtensionChatTransport(
-			(msg) => chatTransport.send(msg),
-			(cb) => chatTransport.onMessage(cb),
-		);
-	}, [chatTransport]);
-
-	const { messages, setMessages, status, sendMessage, stop } = useChat({
+	const { messages, status, sendMessage, stop } = useChat({
 		id: currentSession.id,
-		transport: extensionTransport,
+		// Initial messages for THIS chat id. Because ChatView is remounted per
+		// session (via `key` in main.tsx), useChat re-initializes with the loaded
+		// history here — the only reliable way to populate old messages.
+		messages: convertSessionToUI(currentSession),
+		transport: chatTransport,
 	});
 
 	useEffect(() => {
-		setMessagesRef = setMessages;
-		// Immediately load session messages if available (handles the case where
-		// loadSessionIntoChat was called before ChatView mounted)
-		if (hydrated && currentSession.messages.length > 0) {
-			setMessages(convertSessionToUI(currentSession));
-		}
-		return () => { setMessagesRef = null; };
-	}, [setMessages, hydrated]);
-
-	useEffect(() => {
-		return chatTransport.onMessage((msg) => {
+		return transport.onMessage((msg) => {
 			if (msg.type === "log" && msg.level === "error") {
 				addNotice("msg err", `[bg] ${msg.text}`);
 			}
@@ -234,20 +278,14 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 	}, [chatTransport, addNotice]);
 
 	useEffect(() => {
-		void hydrateFromStorage().then(() => setHydrated(true));
+		void hydrateFromStorage();
 	}, []);
 
 	useEffect(() => {
 		if (status !== "ready" || messages.length === 0) return;
 		const last = messages[messages.length - 1];
 		if (last?.role !== "assistant") return;
-		currentSession.messages = messages.map((m) => ({
-			role: m.role as "user" | "assistant",
-			content: m.parts
-				.filter((p): p is { type: "text"; text: string } => p.type === "text")
-				.map((p) => p.text)
-				.join(""),
-		})) as Session["messages"];
+		currentSession.messages = messages.flatMap(uiMessageToSessionMessage);
 		currentSession.updatedAt = Date.now();
 		currentSession.title = deriveTitle(currentSession.messages);
 		void persistCurrent();
@@ -266,11 +304,11 @@ export function ChatView({ transport: chatTransport }: { transport: ChatTranspor
 
 	const handleSubmit = useCallback((text: string) => {
 		const mode = contextMode === "none" ? undefined : contextMode;
-		extensionTransport.setContextMode(mode);
-		extensionTransport.setWindowId(getPanelWindowId());
+		chatTransport.setContextMode(mode);
+		chatTransport.setWindowId(getPanelWindowId());
 		sendMessage({ text });
 		setContextMode("none");
-	}, [sendMessage, contextMode, extensionTransport]);
+	}, [sendMessage, contextMode, chatTransport]);
 
 	const handleStop = useCallback(() => { stop(); }, [stop]);
 

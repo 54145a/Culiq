@@ -1,4 +1,5 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
+import type { AgentEvent } from "@shared/agent/types";
 import type { BgToPanel, ChatContextMode, PanelToBg } from "@shared/transport/protocol";
 import { agentEventToChunk } from "@shared/ai/agent-event-to-chunk";
 
@@ -11,14 +12,18 @@ type OnMessageFn = (cb: (msg: BgToPanel) => void) => () => void;
  */
 export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 	private sendFn: SendFn;
-	private onMessageFn: OnMessageFn;
 	private contextMode?: ChatContextMode;
 	private windowId?: number;
-	private unsubLast?: () => void;
+	private handlers = new Map<string, (event: AgentEvent) => void>();
 
 	constructor(sendFn: SendFn, onMessageFn: OnMessageFn) {
 		this.sendFn = sendFn;
-		this.onMessageFn = onMessageFn;
+		// One lifetime listener: route each agent_event to the active stream for
+		// its turnId. This guarantees no listener accumulation across sends.
+		onMessageFn((bgMsg: BgToPanel) => {
+			if (bgMsg.type !== "agent_event") return;
+			this.handlers.get(bgMsg.turnId)?.(bgMsg.event);
+		});
 	}
 
 	setContextMode(mode: ChatContextMode | undefined): void {
@@ -59,23 +64,26 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 				let closed = false;
 				const textStartSent = new Set<string>();
 
-			const safeEnqueue = (chunk: UIMessageChunk) => {
-				if (!closed) {
-					try {
-						controller.enqueue(chunk);
+				const safeEnqueue = (chunk: UIMessageChunk) => {
+					if (!closed) {
+						try {
+							controller.enqueue(chunk);
 						} catch {
 							closed = true;
 						}
 					}
 				};
 
-				// Cancel any previous listener to prevent duplicate event processing
-				this.unsubLast?.();
-				this.unsubLast = this.onMessageFn((bgMsg: BgToPanel) => {
-					if (closed) return;
-					if (bgMsg.type !== "agent_event" || bgMsg.turnId !== turnId) return;
+				const finish = () => {
+					this.handlers.delete(turnId);
+					if (!closed) {
+						closed = true;
+						controller.close();
+					}
+				};
 
-					const event = bgMsg.event;
+				this.handlers.set(turnId, (event: AgentEvent) => {
+					if (closed) return;
 
 					// Handle text-delta: ensure text-start is sent first
 					if (event.type === "message_update" && event.delta.kind === "text") {
@@ -98,27 +106,19 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					}
 
 					if (event.type === "agent_end") {
-						setTimeout(() => {
-							if (!closed) {
-								closed = true;
-								controller.close();
-								this.unsubLast?.();
-								this.unsubLast = undefined;
-							}
-						}, 50);
+						setTimeout(finish, 50);
 					}
 				});
 
 				if (options.abortSignal) {
-					options.abortSignal.addEventListener("abort", () => {
-						if (!closed) {
-							closed = true;
-							controller.close();
-							this.unsubLast?.();
-							this.unsubLast = undefined;
+					options.abortSignal.addEventListener(
+						"abort",
+						() => {
+							finish();
 							this.sendFn({ type: "chat_abort", turnId });
-						}
-					}, { once: true });
+						},
+						{ once: true },
+					);
 				}
 
 				this.sendFn(msg);

@@ -1,7 +1,7 @@
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { loadSettings, saveTheme, type ThemePreference } from "@shared/config";
-import { type PanelToBg } from "@shared/transport/protocol";
+import { type BgToPanel, type PanelToBg } from "@shared/transport/protocol";
 import { BgConnection, type ConnectionState } from "./bg-connection";
 import {
 	ChatView,
@@ -10,8 +10,10 @@ import {
 	isBusy,
 	loadSessionIntoChat,
 	onSessionChange,
+	setActiveIdNotifier,
 	startFreshSession,
 } from "./chat-view";
+import { ExtensionChatTransport } from "./extension-chat-transport";
 import { refreshSessions, SessionsView, type SessionsViewOptions } from "./sessions-view";
 import { SettingsView } from "./settings-view";
 import { setPanelWindowId } from "./window";
@@ -54,10 +56,21 @@ const transport: ChatTransport = {
 	send: (msg) => connection.send(msg),
 	onMessage: (handler) => connection.onMessage(handler),
 };
+// Singleton transport for the chat. Created once (not per ChatView mount) so that
+// switching sessions (which remounts ChatView via `key`) does not accumulate
+// BgConnection listeners — the constructor registers a listener on each build.
+const chatTransport = new ExtensionChatTransport(
+	(msg: PanelToBg) => connection.send(msg),
+	(cb: (msg: BgToPanel) => void) => connection.onMessage(cb),
+);
 
 function App() {
 	const [view, setView] = useState<ViewName>("chat");
 	const [visited, setVisited] = useState<{ sessions: boolean; settings: boolean }>({ sessions: false, settings: false });
+	// Drives ChatView's `key`: changing it remounts ChatView, which (re)creates the
+	// useChat instance with the selected session's history as its initial messages.
+	const [activeSessionKey, setActiveSessionKey] = useState<string>("none");
+	setActiveIdNotifier(setActiveSessionKey);
 	const [conn, setConn] = useState<{ state: ConnectionState; rtt?: number }>({ state: "connecting" });
 	const [pref, setPref] = useState<ThemePreference>("system");
 	const [, setSystemTick] = useState(0);
@@ -168,14 +181,38 @@ function App() {
 		return () => window.clearInterval(poll);
 	}, [blocked]);
 
-	// Hidden iframe hosts the sandbox worker; only the active panel creates one.
+	// Hidden iframe hosts the sandbox; only the active panel creates one. The
+	// page is declared in manifest `sandbox.pages`, so Chrome serves it from a
+	// unique origin with the sandbox CSP (eval allowed, no chrome.* access).
 	useEffect(() => {
 		if (blocked) return;
 		const iframe = document.createElement("iframe");
 		iframe.className = "sandbox-frame";
 		iframe.src = chrome.runtime.getURL("sandbox-frame.html");
+
+		// The iframe is opaque-origin (no chrome.* access), so relay its sandbox
+		// traffic to/from the background service worker over runtime messaging.
+		const onRuntimeMessage = (msg: { type?: string; sessionId?: string; data?: unknown }) => {
+			if (msg?.type === "sandbox_send") {
+				iframe.contentWindow?.postMessage({ __culiq: "sandbox", sessionId: msg.sessionId, data: msg.data }, "*");
+			} else if (msg?.type === "sandbox_close") {
+				iframe.contentWindow?.postMessage({ __culiq: "sandbox", sessionId: msg.sessionId, data: { kind: "close" } }, "*");
+			}
+			return false;
+		};
+		chrome.runtime.onMessage.addListener(onRuntimeMessage);
+		const onWindowMessage = (e: MessageEvent) => {
+			if (e.source !== iframe.contentWindow || !e.data || e.data.__culiq !== "sandbox") return;
+			void chrome.runtime.sendMessage({ type: "sandbox_msg", sessionId: e.data.sessionId, data: e.data.data });
+		};
+		window.addEventListener("message", onWindowMessage);
+
 		document.body.appendChild(iframe);
-		return () => iframe.remove();
+		return () => {
+			chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+			window.removeEventListener("message", onWindowMessage);
+			iframe.remove();
+		};
 	}, [blocked]);
 
 	useEffect(() => {
@@ -297,7 +334,7 @@ function App() {
 				</nav>
 			</header>
 			<section id="view-chat" className="view" data-active={view === "chat" ? "true" : "false"}>
-				<ChatView transport={transport} />
+				<ChatView key={activeSessionKey} transport={transport} chatTransport={chatTransport} />
 			</section>
 			<section id="view-sessions" className="view" data-active={view === "sessions" ? "true" : "false"}>
 				{(visited.sessions || view === "sessions") && <SessionsView options={sessionsOptions} />}

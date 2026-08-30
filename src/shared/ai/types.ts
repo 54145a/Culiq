@@ -28,7 +28,12 @@ export interface ToolCallContent {
 	arguments: Record<string, unknown>;
 }
 
-export type AssistantContent = TextContent | ThinkingContent | ToolCallContent;
+export interface ContextContent {
+	type: "context";
+	text: string;
+}
+
+export type AssistantContent = TextContent | ThinkingContent | ToolCallContent | ContextContent;
 
 export interface UserMessage {
 	role: "user";

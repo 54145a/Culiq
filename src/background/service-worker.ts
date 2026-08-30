@@ -2,8 +2,9 @@ import { setupProviderRegistry } from "@shared/ai/sdk";
 import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { listEnabledSkills } from "@shared/skills";
-import { closeSandbox } from "@shared/agent/tools/sandbox";
-import { loadSettings, type Capability } from "@shared/config";
+import { closeSandbox, setSandboxContext } from "@shared/agent/tools/sandbox";
+import { runSubagent } from "@shared/agent/subagent";
+import { CAPABILITY_INFO, loadSettings, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
 import { getPanelWindowTab, isProtectedUrl, setPanelWindow } from "@shared/transport/tab-rpc";
 import { type ChatContextMode } from "@shared/transport/protocol";
@@ -127,15 +128,18 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		const controller = new AbortController();
 		activeTurns.set(turnId, { controller, port });
 
-		const enabled = new Set<Capability>(settings.capabilities);
+		// Per-model capability overrides. All capabilities are enabled by default
+		// (including every sandbox-exposed tool); only the model's own disabled list
+		// (currently only `screenshot` is user-toggleable) is subtracted.
+		const modelKey = `${provider.id}:${provider.defaultModel}`;
+		const disabled = settings.modelCapabilities[modelKey]?.disabledCapabilities ?? [];
+		const enabled = new Set<Capability>(Object.keys(CAPABILITY_INFO) as Capability[]);
+		for (const d of disabled) enabled.delete(d);
 
 		try {
 			setPanelWindow(msg.windowId);
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
 			const context = await buildSendTimeContext(msg.contextMode);
-			if (context) {
-				send({ type: "agent_event", turnId, event: { type: "context_sent", text: context } });
-			}
 			const systemPrompt = getSystemPrompt({
 				skills,
 				sandboxEnabled: enabled.has("sandbox_exec"),
@@ -155,6 +159,14 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				}
 			}
 
+			const sandboxToolsForSubagent = getTools().filter(
+				(tool) => enabled.has(tool.name as Capability) && tool.name !== "subtask" && tool.name !== "sandbox_exec",
+			);
+			setSandboxContext(controller.signal, {
+				enabled,
+				subagent: (task) => runSubagent(task, sandboxToolsForSubagent, systemPrompt, controller.signal),
+				eventSink: (event) => send({ type: "agent_event", turnId, event }),
+			});
 			await runAgentLoop(
 				{
 					systemPrompt,
@@ -167,6 +179,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				},
 				(event) => send({ type: "agent_event", turnId, event }),
 				controller.signal,
+				context || undefined,
 			);
 		} finally {
 			closeSandbox(controller.signal);

@@ -43,6 +43,12 @@ export default defineConfig({
 		sourcemap: true,
 		outDir: `dist-${target}`,
 		emptyOutDir: true,
+		// CRXJS injects <link rel="modulepreload"> for shared chunks (e.g. the
+		// `protocol` module imported across entry-points). Chrome warns when such a
+		// preload is unused shortly after load. We rely on static import graphs
+		// (no runtime dynamic import()), so the prefetch links are pure noise —
+		// disable them to silence the console warning.
+		modulePreload: false,
 		rollupOptions:
 			target === "firefox"
 				? {

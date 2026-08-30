@@ -26,6 +26,38 @@ function extractSearchResults(): ExtractOutcome {
 	}
 }
 
+/** Run a web search and return the extracted result text. Shared by the `search` tool and the sandbox bridge. */
+export async function runSearch(query: string, maxChars = 200_000, signal?: AbortSignal): Promise<string> {
+	const engine = (await loadSettings()).searchEngine;
+	const build = SEARCH_ENGINES[engine];
+	if (!build) throw new Error(`Unsupported search engine: ${engine}`);
+	const url = build(query);
+
+	const tab = await chrome.tabs.create({ url, active: true });
+	if (tab.id === undefined) throw new Error("Failed to create tab.");
+	const tabId = tab.id;
+
+	try {
+		await waitForTabComplete(tabId, signal);
+		if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+
+		const results = await chrome.scripting.executeScript({
+			target: { tabId },
+			world: "ISOLATED",
+			func: extractSearchResults,
+		});
+		const outcome = (results[0]?.result as ExtractOutcome | undefined) ?? { ok: false, text: "", error: "no result" };
+
+		let text = outcome.ok ? outcome.text : `extraction failed: ${outcome.error ?? "unknown"}`;
+		const truncated = text.length > maxChars;
+		if (truncated) text = `${text.slice(0, maxChars)}\n…[truncated ${text.length - maxChars} more chars]`;
+
+		return `search: ${query}\nengine: ${engine}\ntabId: ${tabId}\nchars: ${text.length}${truncated ? " (truncated)" : ""}\n\n${text}`;
+	} finally {
+		chrome.tabs.update(tabId, { active: false }).catch(() => {});
+	}
+}
+
 export const searchTool: AgentTool = {
 	name: "search",
 	description:
@@ -43,41 +75,7 @@ export const searchTool: AgentTool = {
 	async execute(args, signal) {
 		const query = String(args.query);
 		const maxChars = typeof args.maxChars === "number" ? Math.max(100, Math.floor(args.maxChars)) : 200_000;
-
-		const engine = (await loadSettings()).searchEngine;
-		const build = SEARCH_ENGINES[engine];
-		if (!build) throw new Error(`Unsupported search engine: ${engine}`);
-		const url = build(query);
-
-		const tab = await chrome.tabs.create({ url, active: true });
-		if (tab.id === undefined) throw new Error("Failed to create tab.");
-		const tabId = tab.id;
-
-		try {
-			await waitForTabComplete(tabId, signal);
-			if (signal?.aborted) throw new DOMException("aborted", "AbortError");
-
-			const results = await chrome.scripting.executeScript({
-				target: { tabId },
-				world: "ISOLATED",
-				func: extractSearchResults,
-			});
-			const outcome = (results[0]?.result as ExtractOutcome | undefined) ?? { ok: false, text: "", error: "no result" };
-
-			let text = outcome.ok ? outcome.text : `extraction failed: ${outcome.error ?? "unknown"}`;
-			const truncated = text.length > maxChars;
-			if (truncated) text = `${text.slice(0, maxChars)}\n…[truncated ${text.length - maxChars} more chars]`;
-
-			return {
-				content: [
-					{
-						type: "text",
-						text: `search: ${query}\nengine: ${engine}\ntabId: ${tabId}\nchars: ${text.length}${truncated ? " (truncated)" : ""}\n\n${text}`,
-					},
-				],
-			};
-		} finally {
-			chrome.tabs.update(tabId, { active: false }).catch(() => {});
-		}
+		const text = await runSearch(query, maxChars, signal);
+		return { content: [{ type: "text", text }] };
 	},
 };

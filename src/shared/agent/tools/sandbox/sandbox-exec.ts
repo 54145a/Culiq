@@ -1,9 +1,10 @@
-import type { AgentTool } from "../../types";
-import { CAPABILITY_INFO } from "@shared/config";
-import { BRIDGE_SPEC } from "./api";
+import type { AgentEvent, AgentTool } from "../../types";
+import { CAPABILITY_INFO, type Capability } from "@shared/config";
+import { BRIDGE_SPEC, isPathEnabled } from "./api";
 
 const TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_CHARS = 8_000;
+const BRIDGE_HINT_MAX_CHARS = 2_000;
 
 type SandboxOutcome = { ok: true; value: string } | { ok: false; error: string };
 
@@ -12,10 +13,31 @@ interface PendingCall {
 	timer: number;
 }
 
+/** Per-turn context for the sandbox, set by the service worker when a turn starts. */
+interface SandboxContext {
+	enabled: Set<Capability>;
+	subagent?: (task: string) => Promise<string>;
+	eventSink?: (event: AgentEvent) => void;
+}
+
 interface SandboxSession {
 	transport: SandboxTransport;
 	nextId: number;
 	pending: Map<number, PendingCall>;
+	signal: AbortSignal;
+	enabled: Set<Capability>;
+	subagent?: (task: string) => Promise<string>;
+	eventSink?: (event: AgentEvent) => void;
+}
+
+/**
+ * Per-turn sandbox context (enabled capabilities, sub-agent runner, event sink),
+ * keyed by the turn's AbortSignal. Set by the service worker before a turn runs.
+ */
+const pendingContext = new Map<AbortSignal, SandboxContext>();
+
+export function setSandboxContext(signal: AbortSignal, ctx: SandboxContext): void {
+	pendingContext.set(signal, ctx);
 }
 
 /** Message pipe between the SW and the sandbox worker (init/eval/bridge/eval-result). */
@@ -58,9 +80,10 @@ class IframeTransport implements SandboxTransport {
 	}
 }
 
-function createSandboxTransport(): SandboxTransport {
+function createSandboxTransport(enabled: Set<Capability>): SandboxTransport {
 	const transport = new IframeTransport(crypto.randomUUID());
-	transport.postMessage({ kind: "init", paths: Object.keys(BRIDGE_SPEC) });
+	const paths = Object.keys(BRIDGE_SPEC).filter((p) => isPathEnabled(p, enabled));
+	transport.postMessage({ kind: "init", paths });
 	return transport;
 }
 
@@ -75,13 +98,24 @@ export function closeSandbox(signal: AbortSignal): void {
 	const session = sessions.get(signal);
 	if (!session) return;
 	sessions.delete(signal);
+	pendingContext.delete(signal);
 	session.transport.close();
 }
 
 function getSession(signal: AbortSignal): SandboxSession {
 	let session = sessions.get(signal);
 	if (!session) {
-		const created: SandboxSession = { transport: createSandboxTransport(), nextId: 1, pending: new Map() };
+		const ctx = pendingContext.get(signal);
+		const enabled = ctx?.enabled ?? new Set<Capability>();
+		const created: SandboxSession = {
+			transport: createSandboxTransport(enabled),
+			nextId: 1,
+			pending: new Map(),
+			signal,
+			enabled,
+			subagent: ctx?.subagent,
+			eventSink: ctx?.eventSink,
+		};
 		sessions.set(signal, created);
 		signal.addEventListener("abort", () => closeSandbox(signal), { once: true });
 		created.transport.onMessage((data) => onWorkerMessage(created, data));
@@ -113,18 +147,43 @@ function onWorkerMessage(session: SandboxSession, data: unknown): void {
 }
 
 async function handleBridge(session: SandboxSession, id: number, path: string, args: unknown[]): Promise<void> {
+	const toolCallId = `sb-${id}`;
+	const toolName = `sandbox.${path}`;
+	const sink = session.eventSink;
+	const ctx = { subagent: session.subagent };
+	if (sink) sink({ type: "tool_execution_start", toolCallId, toolName, args: args as unknown as Record<string, unknown> });
 	try {
+		if (!isPathEnabled(path, session.enabled)) {
+			throw new Error(`capability for ${path} is disabled`);
+		}
 		const entry = BRIDGE_SPEC[path];
 		if (!entry) throw new Error(`sandbox bridge: unknown API ${path}`);
-		const value = await entry.invoke(args);
-		session.transport.postMessage({ kind: "bridge-result", id, ok: true, value: serializeBridgeValue(value) });
+		const value = await entry.invoke(args, ctx);
+		const serialized = serializeBridgeValue(value);
+		if (sink) {
+			const raw = typeof value === "string" ? value : serialized;
+			const preview = typeof raw === "string" ? raw : JSON.stringify(raw);
+			sink({
+				type: "tool_execution_end",
+				toolCallId,
+				toolName,
+				result: { content: [{ type: "text", text: preview.slice(0, BRIDGE_HINT_MAX_CHARS) }] },
+				isError: false,
+			});
+		}
+		session.transport.postMessage({ kind: "bridge-result", id, ok: true, value: serialized });
 	} catch (err) {
-		session.transport.postMessage({
-			kind: "bridge-result",
-			id,
-			ok: false,
-			error: err instanceof Error ? err.message : String(err),
-		});
+		const errorText = err instanceof Error ? (err.stack ?? err.message) : String(err);
+		if (sink) {
+			sink({
+				type: "tool_execution_end",
+				toolCallId,
+				toolName,
+				result: { content: [{ type: "text", text: errorText.slice(0, BRIDGE_HINT_MAX_CHARS) }] },
+				isError: true,
+			});
+		}
+		session.transport.postMessage({ kind: "bridge-result", id, ok: false, error: errorText });
 	}
 }
 

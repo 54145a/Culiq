@@ -1,9 +1,9 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import {
 	CAPABILITY_INFO,
 	loadSettings,
 	PROVIDER_DEFAULTS,
-	type Capability,
 	type CuliqSettings,
 	type ProviderConfig,
 	type SearchEngineId,
@@ -45,18 +45,72 @@ function Field({
 	);
 }
 
+// Keeps the raw text (with commas) in the input while still parsing into the
+// models array on each keystroke. Binding value to models.join() would strip
+// the comma on input, making it impossible to type.
+function ModelListField({ value, placeholder, onModels }: { value: string[]; placeholder?: string; onModels: (v: string[]) => void }) {
+	const [text, setText] = useState(value.join(", "));
+	return (
+		<Field
+			label="Available models"
+			type="text"
+			value={text}
+			placeholder={placeholder}
+			onInput={(v) => {
+				setText(v);
+				onModels(v.split(",").map((s) => s.trim()).filter(Boolean));
+			}}
+		/>
+	);
+}
+
+// A checkbox row with a <code> name and an optional ": " description. Used for
+// every capability / skill / MCP-server list so the code + text spacing and the
+// markup stay consistent (DRY). Extra controls (buttons) go in `children`.
+function CheckRow({
+	code,
+	checked,
+	onToggle,
+	disabled,
+	desc,
+	children,
+}: {
+	code: string;
+	checked: boolean;
+	onToggle?: (v: boolean) => void;
+	disabled?: boolean;
+	desc?: string;
+	children?: ComponentChildren;
+}) {
+	return (
+		<label className="capability">
+			<input
+				type="checkbox"
+				checked={checked}
+				disabled={disabled}
+				onChange={(e) => onToggle?.((e.target as HTMLInputElement).checked)}
+			/>
+			<code>{code}</code>
+			{desc && <span className="capability-desc">: {desc}</span>}
+			{children}
+		</label>
+	);
+}
+
 function ProviderCard({
 	provider,
 	isDefault,
 	setDefault,
 	remove,
 	dirty,
+	settings,
 }: {
 	provider: ProviderConfig;
 	isDefault: boolean;
 	setDefault: () => void;
 	remove: () => void;
 	dirty: () => void;
+	settings: CuliqSettings;
 }) {
 	const def = PROVIDER_DEFAULTS.find((d) => d.id === provider.id);
 
@@ -96,7 +150,37 @@ function ProviderCard({
 			</label>
 			<Field label="API key" type="password" value={provider.apiKey} placeholder="sk-..." onInput={(v) => { provider.apiKey = v; dirty(); }} />
 			<Field label="Base URL" type="text" value={provider.baseUrl} placeholder={def?.baseUrl ?? ""} onInput={(v) => { provider.baseUrl = v; dirty(); }} />
-			<Field label="Available models" type="text" value={provider.models.join(", ")} placeholder="claude-sonnet-4-5, gpt-4o-mini, ..." onInput={(v) => { provider.models = v.split(",").map((s) => s.trim()).filter(Boolean); dirty(); }} />
+			<ModelListField value={provider.models} placeholder="claude-sonnet-4-5, gpt-4o-mini, ..." onModels={(v) => { provider.models = v; dirty(); }} />
+			{provider.models.length > 0 && (
+				<div className="model-capabilities">
+					<p className="settings-hint">Per-model capabilities. Only screenshot (visual analysis) can be disabled — useful for text-only models. All other capabilities are always on.</p>
+					{provider.models.map((model) => {
+						const key = `${provider.id}:${model}`;
+						const disabled = settings.modelCapabilities[key]?.disabledCapabilities ?? [];
+						const screenshotOn = !disabled.includes("screenshot");
+						const setScreenshot = (on: boolean) => {
+							const entry = settings.modelCapabilities[key] ?? { disabledCapabilities: [] };
+							entry.disabledCapabilities = on
+								? entry.disabledCapabilities.filter((c) => c !== "screenshot")
+								: entry.disabledCapabilities.includes("screenshot")
+									? entry.disabledCapabilities
+									: [...entry.disabledCapabilities, "screenshot"];
+							if (entry.disabledCapabilities.length === 0) delete settings.modelCapabilities[key];
+							else settings.modelCapabilities[key] = entry;
+							dirty();
+						};
+						return (
+							<CheckRow
+								key={key}
+								code={model}
+								checked={screenshotOn}
+								onToggle={setScreenshot}
+								desc={CAPABILITY_INFO.screenshot.description}
+							/>
+						);
+					})}
+				</div>
+			)}
 			<button type="button" className="provider-delete" onClick={(e) => { e.stopPropagation(); remove(); }}>Delete</button>
 		</div>
 	);
@@ -123,7 +207,7 @@ function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: (
 			<p className="settings-hint">Configure model providers. Click a card to set as default.</p>
 			<div className="capability-list">
 				{settings.providers.map((p) => (
-					<ProviderCard key={p.id} provider={p} isDefault={settings.defaultProviderId === p.id} setDefault={() => setDefault(p.id)} remove={() => removeProvider(p.id)} dirty={dirty} />
+					<ProviderCard key={p.id} provider={p} isDefault={settings.defaultProviderId === p.id} setDefault={() => setDefault(p.id)} remove={() => removeProvider(p.id)} dirty={dirty} settings={settings} />
 				))}
 			</div>
 			<div className="settings-actions">
@@ -146,37 +230,6 @@ function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: (
 	);
 }
 
-function CapabilitiesGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
-	const toggle = (key: Capability, checked: boolean) => {
-		if (checked) {
-			if (!settings.capabilities.includes(key)) settings.capabilities.push(key);
-		} else {
-			settings.capabilities = settings.capabilities.filter((c) => c !== key);
-		}
-		dirty();
-	};
-
-	return (
-		<details className="settings-group">
-			<summary className="settings-header">Capabilities</summary>
-			<p className="settings-hint">Tools the agent is allowed to use.</p>
-			<div className="capability-list">
-				{Object.entries(CAPABILITY_INFO).map(([key, { description }]) => (
-					<label className="capability" key={key}>
-						<input
-							type="checkbox"
-							checked={settings.capabilities.includes(key as Capability)}
-							onChange={(e) => toggle(key as Capability, (e.target as HTMLInputElement).checked)}
-						/>
-						<code>{key}</code>
-						<span className="capability-desc">{description}</span>
-					</label>
-				))}
-			</div>
-		</details>
-	);
-}
-
 function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const cm = settings.contextManagement;
 
@@ -187,17 +240,14 @@ function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () 
 				Summarize old turns when the conversation nears the model's context window. Fill in the context window size below; if
 				left empty a conservative default is used.
 			</p>
-			<label className="capability">
-				<input
-					type="checkbox"
-					checked={cm.enabled}
-					onChange={(e) => {
-						cm.enabled = (e.target as HTMLInputElement).checked;
-						dirty();
-					}}
-				/>
-				<code>Auto-compress context</code>
-			</label>
+			<CheckRow
+				code="Auto-compress context"
+				checked={cm.enabled}
+				onToggle={(v) => {
+					cm.enabled = v;
+					dirty();
+				}}
+			/>
 			<Field
 				label="Trigger at (% of context window)"
 				type="number"
@@ -353,16 +403,15 @@ function SkillsGroup() {
 					<p>No skills installed yet.</p>
 				) : (
 					skills.map((skill) => (
-						<label className="capability" key={skill.name}>
-							<input
-								type="checkbox"
-								checked={skill.enabled}
-								disabled={skill.source === "builtin"}
-								onChange={(e) => void onToggle(skill.name, (e.target as HTMLInputElement).checked)}
-							/>
-							<code>{skill.name}</code>
-							<span className="capability-desc">{skill.source === "builtin" ? "builtin" : "user"}</span>
-							<span className="capability-desc">{skill.description}</span>
+						<CheckRow
+							key={skill.name}
+							code={skill.name}
+							checked={skill.enabled}
+							disabled={skill.source === "builtin"}
+							onToggle={(v) => void onToggle(skill.name, v)}
+						>
+							<span className="capability-desc">: {skill.source === "builtin" ? "builtin" : "user"}</span>
+							<span className="capability-desc"> {skill.description}</span>
 							{skill.source === "user" && (
 								<button
 									type="button"
@@ -376,7 +425,7 @@ function SkillsGroup() {
 									delete
 								</button>
 							)}
-						</label>
+						</CheckRow>
 					))
 				)}
 			</div>
@@ -500,15 +549,14 @@ function McpServersGroup() {
 					<p>No MCP servers configured yet.</p>
 				) : (
 					servers.map((server) => (
-						<label className="capability" key={server.name}>
-							<input
-								type="checkbox"
-								checked={server.enabled}
-								onChange={(e) => void onToggle(server, (e.target as HTMLInputElement).checked)}
-							/>
-							<code>{server.name}</code>
-							<span className="capability-desc">{server.transport}</span>
-							<span className="capability-desc">{server.url}</span>
+						<CheckRow
+							key={server.name}
+							code={server.name}
+							checked={server.enabled}
+							onToggle={(v) => void onToggle(server, v)}
+						>
+							<span className="capability-desc">: {server.transport}</span>
+							<span className="capability-desc"> {server.url}</span>
 							<button
 								type="button"
 								className="skill-delete"
@@ -533,7 +581,7 @@ function McpServersGroup() {
 							>
 								delete
 							</button>
-						</label>
+						</CheckRow>
 					))
 				)}
 			</div>
@@ -613,9 +661,8 @@ export function SettingsView() {
 
 	return (
 		<>
-			<ProvidersGroup settings={settings} dirty={dirty} />
-			<CapabilitiesGroup settings={settings} dirty={dirty} />
-			<ContextGroup settings={settings} dirty={dirty} />
+		<ProvidersGroup settings={settings} dirty={dirty} />
+		<ContextGroup settings={settings} dirty={dirty} />
 			<SearchAndSubAgentGroup settings={settings} dirty={dirty} />
 			<SkillsGroup />
 			<McpServersGroup />

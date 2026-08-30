@@ -9,12 +9,13 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 		case "agent_start":
 			return { type: "start" };
 
-		case "message_start": {
-			const id = event.message.role === "assistant"
-				? (event.message as { id?: string }).id ?? crypto.randomUUID()
-				: "";
-			return { type: "start", messageId: id };
-		}
+		// message_start/message_end are LLM-internal boundaries. They must NOT map
+		// to UI-stream `start`: the agent loop emits them for every tool result
+		// too, and a mid-run `start` makes the SDK open a new UIMessage, copying
+		// already-completed tool parts into it (duplicate cards). Step boundaries
+		// are expressed solely via turn_start/turn_end below.
+		case "message_start":
+			return null;
 
 		case "message_update": {
 			const delta = event.delta;

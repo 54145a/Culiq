@@ -22,8 +22,13 @@ export async function runAgentLoop(
 	config: AgentLoopConfig,
 	emit: AgentEventSink,
 	signal?: AbortSignal,
+	/** Optional send-time context (e.g. open tabs / current page) surfaced to the UI as a "Context sent" card. */
+	contextSent?: string,
 ): Promise<void> {
 	emit({ type: "agent_start" });
+	// Emit after agent_start so the message body already exists; a data part
+	// arriving before the message starts is dropped by the streaming SDK.
+	if (contextSent) emit({ type: "context_sent", text: contextSent });
 
 	const maxTurns = config.maxTurns;
 	let turnIndex = 0;

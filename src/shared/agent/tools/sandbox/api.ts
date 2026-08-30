@@ -1,4 +1,11 @@
-import { getActiveTab, callContent } from "@shared/transport/tab-rpc";
+import { getActiveTab } from "@shared/transport/tab-rpc";
+import type { Capability } from "@shared/config";
+import { readDomTool, queryTool, clickTool, typeTool } from "../browser/dom";
+import { navigateTool } from "../browser/navigate";
+import { searchTool } from "../browser/search";
+import { fetchUrlTool } from "../browser/fetch-url";
+import { useSkillTool } from "../skills/use-skill";
+import { listTabsTool, switchTabTool, reloadTabTool } from "../browser/tabs";
 
 /**
  * Single source of truth for the sandbox's extension bridge. Each entry
@@ -6,9 +13,44 @@ import { getActiveTab, callContent } from "@shared/transport/tab-rpc";
  * system prompt and the worker-side shims) plus the SW-side `invoke` handler
  * that calls the real chrome.* API. The three derivations never drift.
  */
+/** Per-call context handed to each bridge `invoke` by the sandbox session. */
+export interface SandboxCtx {
+	subagent?: (task: string) => Promise<string>;
+}
+
 export interface BridgeSpecEntry {
 	description: string;
-	invoke: (args: unknown[]) => Promise<unknown>;
+	invoke: (args: unknown[], ctx: SandboxCtx) => Promise<unknown>;
+}
+
+/** Maps a bridge path to the capability that gates it; entries absent here are always enabled (raw chrome.* / meta helpers). */
+const PATH_CAPABILITY: Record<string, Capability> = {
+	readDom: "read_dom",
+	query: "query",
+	click: "click",
+	type: "type",
+	navigate: "navigate",
+	search: "search",
+	fetchUrl: "fetch_url",
+	useSkill: "use_skill",
+	listTabs: "list_tabs",
+	switchTab: "switch_tab",
+	reloadTab: "reload_tab",
+	evalInTab: "eval_js",
+	evalInAllFrames: "eval_js",
+	subtask: "subtask",
+};
+
+/** Whether a bridge path is allowed given the session's enabled capabilities. */
+export function isPathEnabled(path: string, enabled: Set<Capability>): boolean {
+	const cap = PATH_CAPABILITY[path];
+	return cap === undefined ? true : enabled.has(cap);
+}
+
+/** Extract text from a native tool result, throwing if the tool reported an error. */
+function toolText(result: { content: Array<{ type: string; text?: string }>; isError?: boolean }): string {
+	if (result.isError) throw new Error(result.content.map((c) => c.text ?? "").join("\n") || "tool error");
+	return result.content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
 }
 
 export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
@@ -69,52 +111,61 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 			evalInAllFrames(Number(tabId), world === "main" ? "MAIN" : "ISOLATED", String(code)),
 	},
 	readDom: {
-		description: "Read the active page's DOM (mirrors the read_dom tool).",
-		invoke: async ([options]) => {
-			const o = (options ?? {}) as Record<string, unknown>;
-			return callContent({
-				method: "read_dom",
-				...(o.mode !== undefined ? { mode: o.mode as "text" | "html" | "outline" } : {}),
-				...(o.selector !== undefined ? { selector: String(o.selector) } : {}),
-				...(o.maxChars !== undefined ? { maxChars: Number(o.maxChars) } : {}),
-			});
-		},
+		description: "Read the active page's DOM (identical to the read_dom tool).",
+		invoke: ([options]) => readDomTool.execute((options ?? {}) as never).then(toolText),
 	},
 	click: {
-		description: "Click an element on the active page (mirrors the click tool).",
-		invoke: async ([selector]) => callContent({ method: "click", selector: String(selector) }),
+		description: "Click an element on the active page (identical to the click tool).",
+		invoke: ([selector, index]) => clickTool.execute({ selector: String(selector), index: index as number } as never).then(toolText),
 	},
 	type: {
-		description: "Type text into an input on the active page (mirrors the type tool).",
-		invoke: async ([selector, text, options]) => {
-			const o = (options ?? {}) as Record<string, unknown>;
-			return callContent({
-				method: "type",
-				selector: String(selector),
-				text: String(text),
-				...(o.submit !== undefined ? { submit: Boolean(o.submit) } : {}),
-				...(o.clear !== undefined ? { clear: Boolean(o.clear) } : {}),
-			});
-		},
+		description: "Type text into an input on the active page (identical to the type tool).",
+		invoke: ([selector, text, options]) =>
+			typeTool.execute({ selector: String(selector), text: String(text), ...((options ?? {}) as Record<string, unknown>) } as never).then(toolText),
 	},
 	navigate: {
-		description: "Navigate to a URL on the active tab or a new tab (mirrors the navigate tool).",
-		invoke: async ([url, options]) => {
-			const o = (options ?? {}) as Record<string, unknown>;
-			let tabId: number;
-			if (o.newTab) {
-				const created = await chrome.tabs.create({ url: String(url), active: false });
-				if (!created.id) throw new Error("Failed to create tab.");
-				tabId = created.id;
-			} else {
-				const tab = await getActiveTab();
-				const updated = await chrome.tabs.update(tab.id as number, { url: String(url) });
-				if (!updated?.id) throw new Error("Failed to update tab.");
-				tabId = updated.id;
-			}
-			if (o.waitForLoad !== false) await waitForTabLoad(tabId, 30_000);
-			const final = await chrome.tabs.get(tabId);
-			return { url: final.url ?? "", title: final.title ?? "" };
+		description: "Navigate to a URL on the active tab or a new tab (identical to the navigate tool).",
+		invoke: ([url, options]) => navigateTool.execute({ url: String(url), ...((options ?? {}) as Record<string, unknown>) } as never).then(toolText),
+	},
+	search: {
+		description:
+			"Search the web (mirrors the `search` tool). Opens a results tab and returns the extracted result text. Batch several queries in parallel with `await Promise.all([search(q1), search(q2)])`.",
+		invoke: ([query, maxChars]) => searchTool.execute({ query: String(query), maxChars: maxChars as number } as never).then(toolText),
+	},
+	query: {
+		description:
+			"Locate elements by CSS selector (identical to the `query` tool). Returns an array of match summaries (tag, id, classes, text, attributes, rect, visibility, disabled). Pass `{ all: false }` for the first match only; `limit` caps results.",
+		invoke: ([selector, all, limit]) =>
+			queryTool.execute({ selector: String(selector), all: all as boolean, limit: limit as number } as never).then(toolText),
+	},
+	useSkill: {
+		description:
+			"Access a skill's index or a file within it (identical to the `use_skill` tool). Pass `name`; omit `file` for the index, or set `file` (e.g. 'SKILL.md') to read it. `maxChars` truncates file content.",
+		invoke: ([name, file, maxChars]) => useSkillTool.execute({ name: String(name), file: file as string, maxChars: maxChars as number } as never).then(toolText),
+	},
+	fetchUrl: {
+		description:
+			"Fetch a URL, load it in a tab, and extract readable content (identical to the `fetch_url` tool). `mode` is 'text' (default), 'html', or 'outline'. `maxChars` truncates. Returns the extracted text.",
+		invoke: ([url, mode, maxChars]) => fetchUrlTool.execute({ url: String(url), mode: mode as "text" | "html" | "outline", maxChars: maxChars as number } as never).then(toolText),
+	},
+	listTabs: {
+		description: "List open tabs (id, url, title, active state), excluding internal chrome:// URLs (identical to the `list_tabs` tool).",
+		invoke: ([max]) => listTabsTool.execute({ max: max as number } as never).then(toolText),
+	},
+	switchTab: {
+		description: "Activate a tab by id and focus its window (identical to the `switch_tab` tool).",
+		invoke: ([tabId]) => switchTabTool.execute({ tabId: Number(tabId) } as never).then(toolText),
+	},
+	reloadTab: {
+		description: "Reload a tab (defaults to the active tab); optional `bypassCache` (identical to the `reload_tab` tool).",
+		invoke: ([tabId, bypassCache]) => reloadTabTool.execute({ tabId: Number(tabId), bypassCache: bypassCache as boolean } as never).then(toolText),
+	},
+	subtask: {
+		description:
+			"Run a small sub-agent on a self-contained task and return its final answer (identical to the `subtask` tool). The sub-agent carries no main-conversation context, so it is token-efficient for quick goals like 'find the submit button and click it'.",
+		invoke: async ([task], ctx) => {
+			if (!ctx.subagent) throw new Error("sandbox.subtask is not available");
+			return ctx.subagent(String(task));
 		},
 	},
 	docs: {
