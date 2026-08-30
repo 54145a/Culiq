@@ -1,7 +1,83 @@
 import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 import type { AgentEvent } from "@shared/agent/types";
+import type {
+	AssistantContent,
+	ContextContent,
+	Message,
+	TextContent,
+	ToolCallContent,
+	ToolResultContent,
+	ToolResultMessage,
+} from "@shared/ai/types";
 import type { BgToPanel, ChatContextMode, PanelToBg } from "@shared/transport/protocol";
 import { agentEventToChunk } from "@shared/ai/agent-event-to-chunk";
+
+/**
+ * Convert the UI message history (`useChat`'s UIMessage[]) into the agent's
+ * `Message[]` format, preserving every part — especially tool calls/results and
+ * context blocks. The previous implementation joined only `type: "text"` parts,
+ * which silently dropped all tool interactions from the history the agent saw.
+ */
+function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
+	const out: Message[] = [];
+	for (const m of messages) {
+		if (m.role === "user") {
+			const text = m.parts
+				.filter((p): p is { type: "text"; text: string } => (p as { type?: string }).type === "text")
+				.map((p) => p.text)
+				.join("");
+			out.push({ role: "user", content: text });
+			continue;
+		}
+		if (m.role !== "assistant") continue;
+
+		const content: AssistantContent[] = [];
+		for (const part of m.parts) {
+			const type = (part as { type?: string }).type;
+			if (type === "text" && (part as { text?: string }).text) {
+				content.push({ type: "text", text: (part as { text: string }).text } as TextContent);
+			} else if (type === "data-context") {
+				const data = (part as { data?: unknown }).data;
+				if (typeof data === "string" && data) content.push({ type: "context", text: data } as ContextContent);
+			} else if (type === "data-compress") {
+				// Compression metadata is already applied; nothing to send.
+			} else if (type === "tool-invocation") {
+				const tp = part as { toolCallId: string; toolName: string; input?: unknown; output?: unknown };
+				content.push({
+					type: "toolCall",
+					id: tp.toolCallId,
+					name: tp.toolName,
+					arguments: (tp.input ?? {}) as Record<string, unknown>,
+				} as ToolCallContent);
+				if (tp.output != null) {
+					out.push(toolResult(tp.toolCallId, tp.output));
+				}
+			} else if (typeof type === "string" && type.startsWith("tool-")) {
+				const tp = part as { toolCallId: string; input: unknown; output?: unknown };
+				content.push({
+					type: "toolCall",
+					id: tp.toolCallId,
+					name: type.slice(5),
+					arguments: (tp.input ?? {}) as Record<string, unknown>,
+				} as ToolCallContent);
+				if (tp.output != null) {
+					out.push(toolResult(tp.toolCallId, tp.output));
+				}
+			}
+		}
+		out.push({ role: "assistant", content, stopReason: "end" });
+	}
+	return out;
+}
+
+function toolResult(toolCallId: string, output: unknown): ToolResultMessage {
+	const text = typeof output === "string" ? output : JSON.stringify(output);
+	return {
+		role: "toolResult",
+		toolCallId,
+		content: [{ type: "text", text } as ToolResultContent],
+	};
+}
 
 type SendFn = (msg: PanelToBg) => void;
 type OnMessageFn = (cb: (msg: BgToPanel) => void) => () => void;
@@ -43,13 +119,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 	}): Promise<ReadableStream<UIMessageChunk>> {
 		const turnId = crypto.randomUUID();
 
-		const panelMessages = options.messages.map((m) => ({
-			role: m.role as "user" | "assistant",
-			content: m.parts
-				.filter((p): p is { type: "text"; text: string } => p.type === "text")
-				.map((p) => p.text)
-				.join(""),
-		})) as Array<{ role: "user" | "assistant"; content: string }>;
+		const panelMessages = uiMessagesToAgentMessages(options.messages);
 
 		const msg: PanelToBg = {
 			type: "chat_send",

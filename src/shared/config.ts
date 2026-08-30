@@ -1,5 +1,4 @@
 export type ThemePreference = "system" | "light" | "dark";
-export type SearchEngineId = "bing";
 
 /** Every tool the agent can toggle. */
 export type Capability =
@@ -16,7 +15,6 @@ export type Capability =
 	| "fetch_url"
 	| "use_skill"
 	| "sandbox_exec"
-	| "search"
 	| "subtask"
 	| "noop";
 
@@ -28,7 +26,7 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	},
 	read_dom: {
 		description:
-			"Read page content. Modes: `text` (innerText, default; best for content), `html` (raw markup; only when attributes matter), `outline` (structural overview of headings/links/forms/landmarks; best when orienting yourself on a new page). Optionally narrow with a CSS selector.",
+			"Read page content. Modes: `text` (innerText, default; best for content), `html` (raw markup; only when attributes matter), `outline` (structural overview of headings/links/forms/landmarks; best when orienting yourself on a new page). Optionally narrow with a CSS selector. Never invent or guess a CSS selector — only pass a selector you have actually observed (e.g. from a prior `query` tool result); a made-up selector will silently match nothing.",
 	},
 	screenshot: {
 		description:
@@ -71,10 +69,6 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	sandbox_exec: {
 		description:
 			"Run JavaScript in a restricted sandbox worker hosted in the panel's hidden iframe. Exposes `sandbox.fs.{read,write,list,delete,mkdir}` over OPFS, `sandbox.fetch`, and a chrome bridge including `sandbox.chrome.tabs.*`, `sandbox.chrome.windows.*`, `sandbox.readDom`, `sandbox.click`, `sandbox.type`, `sandbox.navigate`, and `sandbox.evalInTab`. No DOM and no direct chrome.* inside the worker; bridge calls are proxied through the background and validated. State persists within the turn. Top-level await supported; `return X` to send a value back.",
-	},
-	search: {
-		description:
-			"Search the web using the configured search engine (Settings → Search engine, default Bing). Opens the results in a new tab (the tab stays open for follow-up tools like read_dom, query, or click). Equivalent to navigating to the search results page and reading it with a preset result selector, but in a single tool call. Use this for quick web searches instead of navigating to a search engine manually.",
 	},
 	subtask: {
 		description:
@@ -124,7 +118,6 @@ export interface CuliqSettings {
 	 * everything else (including sandbox-exposed tools) is always enabled. */
 	modelCapabilities: Record<string, ModelCapabilityConfig>;
 	contextManagement: ContextManagementConfig;
-	searchEngine: SearchEngineId;
 	subAgentModel: string;
 }
 
@@ -179,7 +172,6 @@ export function defaultSettings(): CuliqSettings {
 		defaultProviderId: "openai",
 		modelCapabilities: {},
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
-		searchEngine: "bing",
 		subAgentModel: "",
 	};
 }
@@ -192,7 +184,6 @@ interface StoredSettings {
 	defaultProviderId?: string;
 	modelCapabilities?: Record<string, ModelCapabilityConfig>;
 	contextManagement?: Partial<ContextManagementConfig>;
-	searchEngine?: unknown;
 	subAgentModel?: unknown;
 }
 
@@ -235,7 +226,6 @@ export async function loadSettings(): Promise<CuliqSettings> {
 		defaultProviderId,
 		modelCapabilities: stored.modelCapabilities ?? {},
 		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
-		searchEngine: stored.searchEngine === "bing" ? "bing" : base.searchEngine,
 		subAgentModel: typeof stored.subAgentModel === "string" ? stored.subAgentModel : base.subAgentModel,
 	};
 }

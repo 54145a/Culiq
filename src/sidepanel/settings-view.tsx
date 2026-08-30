@@ -6,7 +6,6 @@ import {
 	PROVIDER_DEFAULTS,
 	type CuliqSettings,
 	type ProviderConfig,
-	type SearchEngineId,
 	saveSettings,
 } from "@shared/config";
 import { buildUserSkill, deleteUserSkill, listSkills, saveUserSkill, setSkillEnabled, type Skill } from "@shared/skills";
@@ -17,6 +16,8 @@ import {
 	type McpServerConfig,
 	type McpTransport,
 } from "@shared/mcp";
+import { listUserCustomTools, saveUserCustomTool, deleteUserCustomTool } from "@shared/custom-tools/storage";
+import type { CustomToolMeta } from "@shared/custom-tools";
 
 function Field({
 	label,
@@ -383,6 +384,10 @@ function SkillsGroup() {
 				are not executed. Import a folder, or download a skill's zip from a ClawHub skill page (then unzip and import it).
 				Treat third-party skills as untrusted code.
 			</p>
+			<p className="settings-note">
+				Skills are reference-only. For executable, typed, distributable capabilities, use <strong>Custom tools</strong> (built
+				with <code>@culiq/sandbox</code>, installed from npm or a folder) — see the Custom tools section above.
+			</p>
 			<div className="settings-actions">
 				<span className="status" data-state={status?.state}>
 					{status?.text ?? ""}
@@ -589,32 +594,136 @@ function McpServersGroup() {
 	);
 }
 
-function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
-	const engines: [SearchEngineId, string][] = [["bing", "Bing"]];
+function LocalToolsGroup() {
+	const [tools, setTools] = useState<CustomToolMeta[] | null>(null);
+	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
+
+	const refresh = async () => {
+		try {
+			setTools(await listUserCustomTools());
+		} catch (err) {
+			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+		}
+	};
+
+	useEffect(() => {
+		void refresh();
+	}, []);
+
+	const onNpmPage = async () => {
+		try {
+			const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+			const url = tab?.url;
+			if (!url) throw new Error("No active tab URL.");
+			const m = /npmjs\.com\/package\/([^/?#]+)(?:\/v\/([^/?#]+))?/.exec(url);
+			if (!m) throw new Error("Open an npm package page (npmjs.com/package/<name>) first.");
+			const pkg = decodeURIComponent(m[1]);
+			const version = m[2] ? `@${m[2]}` : "";
+			const base = `https://cdn.jsdelivr.net/npm/${pkg}${version}`;
+			const [jres, sres] = await Promise.all([fetch(`${base}/culiq-tool.json`), fetch(`${base}/culiq-tool.js`)]);
+			if (!jres.ok) throw new Error(`culiq-tool.json not found in ${pkg} (is this a Culiq tool package?)`);
+			if (!sres.ok) throw new Error(`culiq-tool.js not found in ${pkg}`);
+			const meta = (await jres.json()) as CustomToolMeta;
+			const artifact = await sres.text();
+			await saveUserCustomTool({ ...meta, source: "user", artifact });
+			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
+			setStatus({ state: "ok", text: `imported ${meta.name}` });
+			await refresh();
+		} catch (err) {
+			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+		}
+	};
+
+	const onImport = async () => {
+		const picker = (window as unknown as { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+		if (!picker) {
+			setStatus({ state: "err", text: "Directory picker is not supported in this browser." });
+			return;
+		}
+		try {
+			const dir = await picker();
+			let json: string | undefined;
+			let js: string | undefined;
+			const entries = (dir as unknown as { values: () => AsyncIterableIterator<{ kind: string; name: string; getFile: () => Promise<File> }> }).values();
+			for await (const entry of entries) {
+				if (entry.kind !== "file") continue;
+				if (entry.name === "culiq-tool.json") json = await (await entry.getFile()).text();
+				else if (entry.name === "culiq-tool.js") js = await (await entry.getFile()).text();
+			}
+			if (!json || !js) throw new Error("Folder must contain culiq-tool.json and culiq-tool.js.");
+			const meta = JSON.parse(json) as CustomToolMeta;
+			await saveUserCustomTool({ ...meta, source: "user", artifact: js });
+			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
+			setStatus({ state: "ok", text: `imported ${meta.name}` });
+			await refresh();
+		} catch (err) {
+			if (err instanceof DOMException && err.name === "AbortError") return;
+			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+		}
+	};
+
+	const onDelete = async (name: string) => {
+		await deleteUserCustomTool(name);
+		chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
+		await refresh();
+	};
 
 	return (
 		<details className="settings-group">
-			<summary className="settings-header">Search & Sub-agent</summary>
+			<summary className="settings-header">Custom tools</summary>
 			<p className="settings-hint">
-				Engine used by the `search` tool, and optional model for the `subtask` sub-agent.
+				Executable, typed tools built with <code>@culiq/sandbox</code> and distributed as npm packages. On an npm package page, click
+				"Load from npm page" to install it; or import a folder containing <code>culiq-tool.json</code> + <code>culiq-tool.js</code>. Built-in
+				tools (e.g. <code>bing_search</code>) ship with the extension.
 			</p>
-			<label className="capability">
-				<span>Search engine</span>
-				<select
-					value={settings.searchEngine}
-					onClick={(e) => e.stopPropagation()}
-					onChange={(e) => {
-						settings.searchEngine = (e.target as HTMLSelectElement).value as SearchEngineId;
-						dirty();
-					}}
-				>
-					{engines.map(([id, label]) => (
-						<option key={id} value={id}>
-							{label}
-						</option>
-					))}
-				</select>
-			</label>
+			<div className="settings-actions">
+				<span className="status" data-state={status?.state}>
+					{status?.text ?? ""}
+				</span>
+				<button type="button" onClick={() => void onNpmPage()}>
+					Load from npm page (current tab)
+				</button>
+				<button type="button" onClick={() => void onImport()}>
+					Import folder…
+				</button>
+			</div>
+			<div className="capability-list">
+				{tools === null ? null : tools.length === 0 ? (
+					<p>No custom tools installed yet.</p>
+				) : (
+					tools.map((t) => (
+						<div className="capability" key={t.name}>
+							<code>{t.name}</code>
+							<span className="capability-desc">: {t.source}</span>
+							<span className="capability-desc"> {t.description}</span>
+							{t.source === "user" && (
+								<button
+									type="button"
+									className="skill-delete"
+									onClick={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
+										void onDelete(t.name);
+									}}
+								>
+									delete
+								</button>
+							)}
+						</div>
+					))
+				)}
+			</div>
+		</details>
+	);
+}
+
+function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
+	return (
+		<details className="settings-group">
+			<summary className="settings-header">Sub-agent</summary>
+			<p className="settings-hint">
+				Optional model for the `subtask` sub-agent. Leave empty to use the main model.
+			</p>
 			<label>
 				<span>Sub-agent model</span>
 				<select
@@ -664,6 +773,7 @@ export function SettingsView() {
 		<ProvidersGroup settings={settings} dirty={dirty} />
 		<ContextGroup settings={settings} dirty={dirty} />
 			<SearchAndSubAgentGroup settings={settings} dirty={dirty} />
+			<LocalToolsGroup />
 			<SkillsGroup />
 			<McpServersGroup />
 			<div className="settings-actions settings-save-bar">

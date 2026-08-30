@@ -3,6 +3,7 @@ import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { listEnabledSkills } from "@shared/skills";
 import { closeSandbox, setSandboxContext } from "@shared/agent/tools/sandbox";
+import { ensureCustomToolsLoaded, refreshCustomTools } from "@shared/custom-tools";
 import { runSubagent } from "@shared/agent/subagent";
 import { CAPABILITY_INFO, loadSettings, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
@@ -15,6 +16,14 @@ chrome.runtime.onInstalled.addListener(() => {
 	if (chrome.sidePanel?.setPanelBehavior) {
 		chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 	}
+});
+
+// Preload built-in + user custom tools so the first chat doesn't wait on OPFS.
+void ensureCustomToolsLoaded();
+
+// The settings UI asks the SW to re-scan OPFS after a tool is installed/removed.
+chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
+	if (msg?.type === "reload_custom_tools") void refreshCustomTools();
 });
 
 // Firefox: clicking the toolbar action toggles the sidebar.
@@ -138,14 +147,20 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 
 		try {
 			setPanelWindow(msg.windowId);
+			await ensureCustomToolsLoaded();
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
 			const context = await buildSendTimeContext(msg.contextMode);
+			const mcpTools = await createMcpTools(controller.signal);
+			const allTools = [
+				...getTools().filter((tool) => enabled.has(tool.name as Capability) || tool.custom),
+				...mcpTools,
+			];
 			const systemPrompt = getSystemPrompt({
 				skills,
 				sandboxEnabled: enabled.has("sandbox_exec"),
 				context,
+				tools: allTools,
 			});
-			const mcpTools = await createMcpTools(controller.signal);
 
 			// Append current time so the agent knows the session timestamp.
 			const messages = [...msg.messages];
@@ -159,8 +174,8 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				}
 			}
 
-			const sandboxToolsForSubagent = getTools().filter(
-				(tool) => enabled.has(tool.name as Capability) && tool.name !== "subtask" && tool.name !== "sandbox_exec",
+			const sandboxToolsForSubagent = allTools.filter(
+				(tool) => !tool.custom && tool.name !== "subtask" && tool.name !== "sandbox_exec",
 			);
 			setSandboxContext(controller.signal, {
 				enabled,
@@ -171,7 +186,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				{
 					systemPrompt,
 					messages,
-					tools: [...getTools().filter((tool) => enabled.has(tool.name as Capability)), ...mcpTools],
+					tools: allTools,
 				},
 				{
 					model: { id: provider.defaultModel, provider: provider.id },

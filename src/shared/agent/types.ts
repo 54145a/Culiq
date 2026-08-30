@@ -19,6 +19,8 @@ export interface AgentTool {
 	description: string;
 	parameters: Record<string, unknown>;
 	executionMode?: AgentToolExecutionMode;
+	/** True for user/built-in custom tools loaded from the sandbox-tool pipeline. Always enabled. */
+	custom?: boolean;
 	execute(args: Record<string, unknown>, signal?: AbortSignal): Promise<AgentToolResult>;
 }
 

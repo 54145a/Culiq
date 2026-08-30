@@ -142,6 +142,17 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 	for (const part of m.parts) {
 		if (part.type === "text" && part.text) {
 			blocks.push({ type: "text", text: part.text });
+		} else if (part.type === "tool-invocation") {
+			// Live-streamed tool calls use the AI SDK's native part type.
+			const tp = part as unknown as { toolCallId: string; toolName: string; input?: unknown; output?: unknown; errorText?: string };
+			blocks.push({ type: "toolCall", id: tp.toolCallId, name: tp.toolName, arguments: (tp.input ?? {}) as Record<string, unknown> });
+			if (tp.output != null) {
+				out.push({
+					role: "toolResult",
+					toolCallId: tp.toolCallId,
+					content: [{ type: "text", text: typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output) }],
+				});
+			}
 		} else if (part.type.startsWith("tool-")) {
 			const tp = part as { toolCallId: string; input: unknown; output?: unknown };
 			const name = part.type.slice(5);
@@ -407,6 +418,13 @@ function MessageView({ msg }: { msg: UIMessage }) {
 					textContent = "";
 				}
 				elements.push(<CompressNotice key={`cmp-${i}`} data={(part as { data: { beforeTokens: number; afterTokens: number; keptTurns: number; summary: string } }).data} />);
+			} else if (part.type === "tool-invocation") {
+				if (textContent) {
+					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+					textContent = "";
+				}
+				const tp = part as unknown as { toolCallId: string; toolName: string; input: unknown; state: string; output?: unknown; errorText?: string };
+				elements.push(<ToolCardView key={tp.toolCallId ?? i} toolName={tp.toolName} part={tp} />);
 			} else if (part.type.startsWith("tool-")) {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);

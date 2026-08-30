@@ -2,7 +2,6 @@ import { getActiveTab } from "@shared/transport/tab-rpc";
 import type { Capability } from "@shared/config";
 import { readDomTool, queryTool, clickTool, typeTool } from "../browser/dom";
 import { navigateTool } from "../browser/navigate";
-import { searchTool } from "../browser/search";
 import { fetchUrlTool } from "../browser/fetch-url";
 import { useSkillTool } from "../skills/use-skill";
 import { listTabsTool, switchTabTool, reloadTabTool } from "../browser/tabs";
@@ -30,7 +29,6 @@ const PATH_CAPABILITY: Record<string, Capability> = {
 	click: "click",
 	type: "type",
 	navigate: "navigate",
-	search: "search",
 	fetchUrl: "fetch_url",
 	useSkill: "use_skill",
 	listTabs: "list_tabs",
@@ -127,11 +125,6 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 		description: "Navigate to a URL on the active tab or a new tab (identical to the navigate tool).",
 		invoke: ([url, options]) => navigateTool.execute({ url: String(url), ...((options ?? {}) as Record<string, unknown>) } as never).then(toolText),
 	},
-	search: {
-		description:
-			"Search the web (mirrors the `search` tool). Opens a results tab and returns the extracted result text. Batch several queries in parallel with `await Promise.all([search(q1), search(q2)])`.",
-		invoke: ([query, maxChars]) => searchTool.execute({ query: String(query), maxChars: maxChars as number } as never).then(toolText),
-	},
 	query: {
 		description:
 			"Locate elements by CSS selector (identical to the `query` tool). Returns an array of match summaries (tag, id, classes, text, attributes, rect, visibility, disabled). Pass `{ all: false }` for the first match only; `limit` caps results.",
@@ -226,13 +219,18 @@ export function generateSandboxShims(): string {
 
 /** Compact .d.ts appended to the system prompt when the sandbox is enabled. */
 export function generateSandboxDts(): string {
-	const out: string[] = ["declare const sandbox: {", "  chrome: {"];
+	const out: string[] = [
+		"interface ToolResultContent { type: string; text?: string; [key: string]: unknown; }",
+		"interface ToolResult { content: ToolResultContent[]; isError?: boolean; }",
+		"declare const sandbox: {",
+		"  chrome: {",
+	];
 	for (const [ns, methods] of namespaceMap()) {
 		out.push(`    ${ns}: {`);
 		for (const m of methods) {
 			const desc = BRIDGE_SPEC[`${ns}.${m}`].description;
 			out.push(`    // ${desc}`);
-			out.push(`    ${m}(args: any[]): Promise<any>`);
+			out.push(`    ${m}(args: unknown[]): Promise<ToolResult>`);
 		}
 		out.push("    },");
 	}
@@ -241,7 +239,7 @@ export function generateSandboxDts(): string {
 		if (path.includes(".")) continue;
 		const desc = BRIDGE_SPEC[path].description;
 		out.push(`  // ${desc}`);
-		out.push(`  ${path}(args: any[]): Promise<any>`);
+		out.push(`  ${path}(args: unknown[]): Promise<ToolResult>`);
 	}
 	out.push("};");
 	return out.join("\n");

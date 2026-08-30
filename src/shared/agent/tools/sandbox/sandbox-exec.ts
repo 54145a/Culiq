@@ -6,7 +6,7 @@ const TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_CHARS = 8_000;
 const BRIDGE_HINT_MAX_CHARS = 2_000;
 
-type SandboxOutcome = { ok: true; value: string } | { ok: false; error: string };
+export type SandboxOutcome = { ok: true; value: string } | { ok: false; error: string };
 
 interface PendingCall {
 	resolve: (outcome: SandboxOutcome) => void;
@@ -196,7 +196,7 @@ function serializeBridgeValue(value: unknown): unknown {
 	}
 }
 
-function evaluate(signal: AbortSignal, code: string): Promise<SandboxOutcome> {
+export function evaluate(signal: AbortSignal, code: string): Promise<SandboxOutcome> {
 	const session = getSession(signal);
 	const id = session.nextId++;
 

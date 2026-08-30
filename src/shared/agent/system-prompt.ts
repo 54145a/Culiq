@@ -1,6 +1,7 @@
-import { CAPABILITY_INFO } from "@shared/config";
+import { CAPABILITY_INFO, type Capability } from "@shared/config";
 import { generateSandboxDts } from "@shared/agent/tools/sandbox";
 import { buildAvailableSkillsBlock, type Skill } from "@shared/skills";
+import type { AgentTool } from "./types";
 
 export const SYSTEM_PROMPT_BASE = `You are Culiq, a browser agent that helps the user explore and interact with web pages from a Chrome side-panel. You operate on the user's currently active tab through a set of tools.
 
@@ -24,7 +25,7 @@ export const SYSTEM_PROMPT_BASE = `You are Culiq, a browser agent that helps the
 # Efficiency and delegation
 
 - Offload self-contained, context-independent tasks that only need a returned result (e.g. "list the links on this page", "summarize that article", "find the price") to the \`subtask\` tool. The sub-agent runs autonomously and returns its answer, keeping the main thread focused on the user's primary goal. Don't use \`subtask\` for work that depends on the live conversation context.
-- When a task needs many independent, similar tool calls — for example several web searches with different terms, or fetching several URLs — run them as one \`sandbox_exec\` batch instead of N sequential tool calls. Use \`await Promise.all([sandbox.search("term1"), sandbox.search("term2")])\` (or \`sandbox.fetch\` for multiple URLs) so they execute in parallel and return together. Reserve single \`search\` / \`fetch_url\` tool calls for one-off needs.
+- When a task needs many independent, similar tool calls — for example fetching several URLs — run them as one \`sandbox_exec\` batch instead of N sequential tool calls. Use \`await Promise.all([sandbox.fetchUrl(u1, "text"), sandbox.fetchUrl(u2, "text")])\` so they execute in parallel and return together. Reserve single \`fetch_url\` / \`bing_search\` tool calls for one-off needs.
 
 # MCP tools
 
@@ -34,6 +35,7 @@ export interface SystemPromptOptions {
 	skills?: Skill[];
 	sandboxEnabled?: boolean;
 	context?: string;
+	tools?: AgentTool[];
 }
 
 /**
@@ -43,10 +45,14 @@ export interface SystemPromptOptions {
 export function getSystemPrompt(options: SystemPromptOptions = {}): string {
 	const parts = [SYSTEM_PROMPT_BASE];
 
-	const toolList = Object.entries(CAPABILITY_INFO)
-		.map(([name, { description }]) => `- **${name}**: ${description}`)
+	const toolLines = (options.tools ?? [])
+		.map((t) => {
+			const cap = CAPABILITY_INFO[t.name as Capability];
+			const description = cap ? cap.description : t.description;
+			return `- **${t.name}**: ${description}`;
+		})
 		.join("\n");
-	parts.push(`# Available tools\n\n${toolList}`);
+	parts.push(`# Available tools\n\n${toolLines}`);
 
 	const skillsBlock = buildAvailableSkillsBlock(options.skills ?? []);
 	if (skillsBlock) parts.push(skillsBlock);
