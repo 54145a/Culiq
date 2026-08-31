@@ -92,6 +92,19 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 					: event.stopReason === "error"
 						? "error"
 						: "stop";
+			if (event.stopReason === "error" && event.errorMessage) {
+				return [
+					{ type: "error", errorText: event.errorMessage },
+					{ type: "finish", finishReason },
+				];
+			}
+			if (event.stopReason === "max_turns") {
+				return [
+					{ type: "text-start", id: "max-turns" },
+					{ type: "text-delta", delta: "Reached max turns. Send another message to continue.", id: "max-turns" },
+					{ type: "finish", finishReason },
+				];
+			}
 			return { type: "finish", finishReason };
 		}
 

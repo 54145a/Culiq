@@ -278,6 +278,9 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		// history here — the only reliable way to populate old messages.
 		messages: convertSessionToUI(currentSession),
 		transport: chatTransport,
+		onError: (error) => {
+			addNotice("msg err", error.message);
+		},
 	});
 
 	useEffect(() => {

@@ -32,6 +32,7 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 		if (m.role !== "assistant") continue;
 
 		const content: AssistantContent[] = [];
+		const results: ToolResultMessage[] = [];
 		for (const part of m.parts) {
 			const type = (part as { type?: string }).type;
 			if (type === "text" && (part as { text?: string }).text) {
@@ -50,7 +51,7 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 					arguments: (tp.input ?? {}) as Record<string, unknown>,
 				} as ToolCallContent);
 				if (tp.output != null) {
-					out.push(toolResult(tp.toolCallId, tp.output));
+					results.push(toolResult(tp.toolCallId, tp.output));
 				}
 			} else if (typeof type === "string" && type.startsWith("tool-")) {
 				const tp = part as { toolCallId: string; input: unknown; output?: unknown };
@@ -61,11 +62,12 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 					arguments: (tp.input ?? {}) as Record<string, unknown>,
 				} as ToolCallContent);
 				if (tp.output != null) {
-					out.push(toolResult(tp.toolCallId, tp.output));
+					results.push(toolResult(tp.toolCallId, tp.output));
 				}
 			}
 		}
 		out.push({ role: "assistant", content, stopReason: "end" });
+		out.push(...results);
 	}
 	return out;
 }
@@ -152,8 +154,14 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					}
 				};
 
-				this.handlers.set(turnId, (event: AgentEvent) => {
-					if (closed) return;
+			this.handlers.set(turnId, (event: AgentEvent) => {
+				if (closed) return;
+
+				try {
+					// New LLM call within the same turn: reset so text-start is sent again
+					if (event.type === "turn_start") {
+						textStartSent.clear();
+					}
 
 					// Handle text-delta: ensure text-start is sent first
 					if (event.type === "message_update" && event.delta.kind === "text") {
@@ -178,7 +186,12 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					if (event.type === "agent_end") {
 						setTimeout(finish, 50);
 					}
-				});
+				} catch (err) {
+					console.error("[culiq transport] event handler error:", err);
+					safeEnqueue({ type: "finish", finishReason: "error" } as UIMessageChunk);
+					setTimeout(finish, 50);
+				}
+			});
 
 				if (options.abortSignal) {
 					options.abortSignal.addEventListener(
