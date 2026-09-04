@@ -35,11 +35,16 @@ export function SessionsView({ options }: { options: SessionsViewOptions }) {
 
 	useEffect(() => {
 		let cancelled = false;
-		listSessions().then((list) => {
-			if (cancelled) return;
-			setSessions(list);
-			setLoaded(true);
-		});
+		listSessions()
+			.then((list) => {
+				if (cancelled) return;
+				setSessions(list);
+				setLoaded(true);
+			})
+			.catch(() => {
+				if (cancelled) return;
+				setLoaded(true);
+			});
 		return () => {
 			cancelled = true;
 		};

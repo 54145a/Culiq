@@ -7,6 +7,7 @@ type Target = "chrome" | "firefox";
 
 const target: Target = (process.env.TARGET as Target) || "chrome";
 if (target !== "chrome" && target !== "firefox") {
+	// oxlint-disable-next-line typescript/restrict-template-expressions -- target is narrowed to string literal union
 	throw new Error(`Unknown TARGET=${target}, expected "chrome" or "firefox"`);
 }
 

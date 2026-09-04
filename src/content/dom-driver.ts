@@ -180,6 +180,7 @@ function scrollIntoCenter(el: Element): void {
 
 function insertValue(el: HTMLInputElement | HTMLTextAreaElement, text: string): void {
 	const proto = el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+	// oxlint-disable-next-line typescript/unbound-method -- .call() explicitly binds `this`
 	const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
 	if (setter) setter.call(el, (el.value ?? "") + text);
 	else el.value = (el.value ?? "") + text;
@@ -190,7 +191,7 @@ function insertValue(el: HTMLInputElement | HTMLTextAreaElement, text: string): 
 function submitForm(el: HTMLInputElement | HTMLTextAreaElement): boolean {
 	const form = el.form;
 	if (form) {
-		form.requestSubmit ? form.requestSubmit() : form.submit();
+		if (form.requestSubmit) form.requestSubmit(); else form.submit();
 		return true;
 	}
 	const enter = (type: "keydown" | "keyup") =>

@@ -85,7 +85,13 @@ export const fetchUrlTool: AgentTool = {
 		const tabId = tab.id;
 
 		try {
-			await waitForTabComplete(tabId, signal);
+			let loaded = true;
+			try {
+				await waitForTabComplete(tabId, signal);
+			} catch {
+				// Timed out or aborted — page may still have usable DOM content.
+				loaded = false;
+			}
 			if (signal?.aborted) throw new DOMException("aborted", "AbortError");
 
 			const results = await chrome.scripting.executeScript({
@@ -100,6 +106,8 @@ export const fetchUrlTool: AgentTool = {
 			const truncated = text.length > maxChars;
 			if (truncated) text = `${text.slice(0, maxChars)}\n…[truncated ${text.length - maxChars} more chars]`;
 
+			const incomplete = !loaded ? "\n⚠️ Page did not fully load (e.g. blocked resources). Content may be partial." : "";
+
 			return {
 				content: [
 					{
@@ -108,6 +116,7 @@ export const fetchUrlTool: AgentTool = {
 							`fetched: ${outcome.url || url}\ntitle: ${outcome.title || "(no title)"}` +
 							`\nmode: ${mode} · chars: ${text.length}${truncated ? " (truncated)" : ""}` +
 							(afterLoad === "open" ? `\ntabId: ${tabId}` : "") +
+							incomplete +
 							`\n\n${text}`,
 					},
 				],

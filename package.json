@@ -12,12 +12,16 @@
 		"mcp:server": "pnpx --yes @modelcontextprotocol/server-everything streamableHttp",
 		"test:mcp": "node scripts/mcp-smoke.mjs",
 		"test:sandbox": "node scripts/sandbox-worker-smoke.mjs",
-		"check": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p scripts/tsconfig.json --noEmit"
+		"check": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p scripts/tsconfig.json --noEmit",
+		"lint": "oxlint --type-aware",
+		"lint:fix": "oxlint --type-aware --fix"
 	},
 	"devDependencies": {
 		"@crxjs/vite-plugin": "^2.7.1",
 		"@types/chrome": "^0.2.6",
 		"@types/node": "^26.2.0",
+		"oxlint": "^1.81.0",
+		"oxlint-tsgolint": "^7.0.2001",
 		"typescript": "^7.0.2",
 		"vite": "^8.2.1",
 		"web-ext": "^10.6.0"

@@ -295,7 +295,7 @@ function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
 			settled = true;
 			chrome.tabs.onUpdated.removeListener(onUpdate);
 			clearTimeout(timer);
-			err ? reject(err) : resolve();
+			if (err) reject(err); else resolve();
 		};
 		const onUpdate = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
 			if (id === tabId && info.status === "complete") finish();
@@ -304,7 +304,7 @@ function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
 		chrome.tabs.onUpdated.addListener(onUpdate);
 		chrome.tabs.get(tabId).then((tab) => {
 			if (tab.status === "complete") finish();
-		});
+		}).catch(() => {});
 	});
 }
 

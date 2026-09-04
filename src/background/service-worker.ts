@@ -63,7 +63,7 @@ async function openPopupWindow(send: (m: BgToPanel) => void): Promise<void> {
 	if (!win?.id) return;
 	popupWindowId = win.id;
 	send({ type: "panel_transfer" });
-	void closeSidebar();
+	closeSidebar();
 }
 
 /** Firefox can close its sidebar programmatically; Chrome's sidePanel API cannot. */

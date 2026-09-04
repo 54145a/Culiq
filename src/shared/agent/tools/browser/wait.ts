@@ -42,6 +42,6 @@ export function waitForTabComplete(tabId: number, signal?: AbortSignal): Promise
 
 		chrome.tabs.get(tabId).then((tab) => {
 			if (tab.status === "complete") settleThenFinish();
-		});
+		}).catch(() => {});
 	});
 }

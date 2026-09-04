@@ -289,7 +289,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 				addNotice("msg err", `[bg] ${msg.text}`);
 			}
 		});
-	}, [chatTransport, addNotice]);
+	}, [transport, chatTransport, addNotice]);
 
 	useEffect(() => {
 		void hydrateFromStorage();
@@ -320,11 +320,11 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		const mode = contextMode === "none" ? undefined : contextMode;
 		chatTransport.setContextMode(mode);
 		chatTransport.setWindowId(getPanelWindowId());
-		sendMessage({ text });
+		void sendMessage({ text });
 		setContextMode("none");
 	}, [sendMessage, contextMode, chatTransport]);
 
-	const handleStop = useCallback(() => { stop(); }, [stop]);
+	const handleStop = useCallback(() => { void stop(); }, [stop]);
 
 	const title = useMemo(() => `${messages.length} message${messages.length === 1 ? "" : "s"}`, [messages]);
 
