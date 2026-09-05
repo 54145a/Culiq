@@ -102,3 +102,8 @@ User skills can be enabled / disabled or deleted individually. Imported scripts 
 ### License
 
 MIT
+
+### Known Issues
+
+- **Defuddle `markdown` mode in browser**: Defuddle's core bundle (`defuddle`) does not include Markdown conversion. The `markdown: true` option only works with the full bundle (`defuddle/full`). Culiq uses `defuddle/full` for the `readDom` `markdown` mode, which imports `createMarkdownContent` separately. See [Defuddle #82](https://github.com/kepano/defuddle/issues/82).
+- **Defuddle aggressive content removal**: Defuddle's scoring and selector removal can strip content from non-article pages (e.g. search results). The `readable_html` mode with `contentSelector` and disabled removal steps (`removeLowScoring: false`, etc.) is recommended for structured content like search results.

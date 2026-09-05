@@ -133,6 +133,9 @@ importers:
       marked:
         specifier: ^18.0.9
         version: 18.0.9
+      opfs-tools:
+        specifier: ^0.7.4
+        version: 0.7.4
       preact:
         specifier: ^10.29.8
         version: 10.29.8
@@ -1632,6 +1635,9 @@ packages:
   open@11.0.0:
     resolution: {integrity: sha512-smsWv2LzFjP03xmvFoJ331ss6h+jixfA4UUV/Bsiyuu4YJPfN+FIQGOIiv4w9/+MoHkfkJ22UIaQWRVFRfH6Vw==}
     engines: {node: '>=20'}
+
+  opfs-tools@0.7.4:
+    resolution: {integrity: sha512-DJgQnXyPcCj3q8pKa8SjP4HfNBPffj8kO6W1nc2zQydTqu5G/AxOuIjmWnRxZ84nE1EOpzZzhj8MYCZP1jRR9A==}
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -3426,6 +3432,8 @@ snapshots:
       is-inside-container: 1.0.0
       powershell-utils: 0.1.0
       wsl-utils: 0.3.1
+
+  opfs-tools@0.7.4: {}
 
   optionator@0.9.4:
     dependencies:

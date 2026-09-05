@@ -8,6 +8,7 @@ import type {
 	TypeResult,
 } from "@shared/transport/content-rpc";
 import Defuddle from "defuddle";
+import { createMarkdownContent } from "defuddle/full";
 
 const HTML_SNIPPET_LIMIT = 240;
 const TEXT_SNIPPET_LIMIT = 200;
@@ -106,7 +107,7 @@ function readDom(req: Extract<ContentRequest, { method: "read_dom" }>): ReadDomR
 	if (mode === "markdown") {
 		const defuddle = new Defuddle(document, { contentSelector: req.selector });
 		const result = defuddle.parse();
-		content = result.contentMarkdown ?? result.content;
+		content = result.contentMarkdown ?? createMarkdownContent(result.content, location.href);
 	} else if (mode === "html") {
 		content = (root as Element).outerHTML;
 	} else if (mode === "readable_html") {

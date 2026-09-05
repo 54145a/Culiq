@@ -2,7 +2,7 @@ import type { AgentTool } from "../agent/types";
 import { buildCustomToolAgentTool } from "./build";
 import { extractMetaFromArtifact } from "./parse";
 import { getUserCustomToolArtifact, listUserCustomTools } from "./storage";
-import { writeTextFile } from "../skills/storage";
+import { write } from "@shared/opfs";
 
 const BUILTIN_MANIFEST = ["bing_search"];
 
@@ -26,12 +26,12 @@ export async function syncBuiltinTools(): Promise<string[]> {
 				continue;
 			}
 			const artifact = await res.text();
-			await writeTextFile(`tools/${name}/culiq-tool.js`, artifact);
+			await write(`tools/${name}/culiq-tool.js`, artifact);
 
 			// Extract and cache metadata.
 			const meta = extractMetaFromArtifact(artifact);
 			if (meta) {
-				await writeTextFile(
+				await write(
 					`tools/${name}/culiq-tool.meta.json`,
 					JSON.stringify({ ...meta, source: "builtin" }, null, "\t"),
 				);

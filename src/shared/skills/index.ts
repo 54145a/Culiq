@@ -1,7 +1,7 @@
 import { listBuiltinSkills } from "./builtin";
 import { parseSkillMarkdown } from "./frontmatter";
 import { deleteSkillMeta, getSkillMeta, setSkillEnabled as setMetaEnabled, setSkillMeta } from "./storage";
-import { deleteEntry, listDir, readTextFile, writeTextFile } from "./storage";
+import { file as opfsFile, dir, write } from "@shared/opfs";
 
 export interface Skill {
 	id: string;
@@ -30,7 +30,7 @@ function skillFilePath(name: string, file: string): string {
 
 /** List user skills stored in OPFS. */
 export async function listUserSkills(): Promise<Skill[]> {
-	const names = await listDir(SKILLS_DIR);
+	const names = (await dir(SKILLS_DIR).children()).map((c) => c.name).sort();
 	const skills: Skill[] = [];
 	for (const name of names) {
 		const skill = await getUserSkill(name);
@@ -40,8 +40,8 @@ export async function listUserSkills(): Promise<Skill[]> {
 }
 
 export async function getUserSkill(name: string): Promise<Skill | undefined> {
-	const content = await readTextFile(skillFilePath(name, "SKILL.md"));
-	if (content === null) return undefined;
+	const content = await opfsFile(skillFilePath(name, "SKILL.md")).text();
+	if (!content) return undefined;
 	let parsed: ReturnType<typeof parseSkillMarkdown>;
 	try {
 		parsed = parseSkillMarkdown(content);
@@ -57,11 +57,10 @@ export async function getUserSkill(name: string): Promise<Skill | undefined> {
 	};
 
 	const scripts: Record<string, string> = {};
-	const files = await listDir(skillDir(name));
+	const files = (await dir(skillDir(name)).children()).map((c) => c.name);
 	for (const file of files) {
 		if (file === "SKILL.md") continue;
-		const source = await readTextFile(skillFilePath(name, file));
-		if (source !== null) scripts[file] = source;
+		scripts[file] = await opfsFile(skillFilePath(name, file)).text();
 	}
 
 	return {
@@ -78,9 +77,9 @@ export async function getUserSkill(name: string): Promise<Skill | undefined> {
 }
 
 export async function saveUserSkill(skill: Skill): Promise<void> {
-	await writeTextFile(skillFilePath(skill.name, "SKILL.md"), skill.content);
+	await write(skillFilePath(skill.name, "SKILL.md"), skill.content);
 	for (const [file, source] of Object.entries(skill.scripts)) {
-		await writeTextFile(skillFilePath(skill.name, file), source);
+		await write(skillFilePath(skill.name, file), source);
 	}
 	await setSkillMeta(skill.name, {
 		source: "user",
@@ -91,7 +90,7 @@ export async function saveUserSkill(skill: Skill): Promise<void> {
 }
 
 export async function deleteUserSkill(name: string): Promise<void> {
-	await deleteEntry(skillDir(name));
+	await dir(skillDir(name)).remove();
 	await deleteSkillMeta(name);
 }
 

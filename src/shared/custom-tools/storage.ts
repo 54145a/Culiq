@@ -1,6 +1,6 @@
-import { deleteEntry, listDir, readTextFile, writeTextFile } from "../skills/storage";
 import type { CustomToolMeta, SavedCustomTool } from "./types";
 import { extractMetaFromArtifact } from "./parse";
+import { file, dir, write } from "@shared/opfs";
 
 const TOOLS_DIR = "tools";
 
@@ -9,7 +9,7 @@ function toolFile(name: string, file: string): string {
 }
 
 export async function deleteUserCustomTool(name: string): Promise<void> {
-	await deleteEntry(`${TOOLS_DIR}/${name}`);
+	await dir(`${TOOLS_DIR}/${name}`).remove();
 }
 
 /**
@@ -18,11 +18,16 @@ export async function deleteUserCustomTool(name: string): Promise<void> {
  * falls back to legacy formats and auto-migrates.
  */
 export async function listUserCustomTools(): Promise<CustomToolMeta[]> {
-	const names = await listDir(TOOLS_DIR);
+	let names: string[];
+	try {
+		names = (await dir(TOOLS_DIR).children()).map((c) => c.name).sort();
+	} catch {
+		return [];
+	}
 	const out: CustomToolMeta[] = [];
 	for (const name of names) {
 		// New format: culiq-tool.meta.json
-		const metaRaw = await readTextFile(toolFile(name, "culiq-tool.meta.json"));
+		const metaRaw = await file(toolFile(name, "culiq-tool.meta.json")).text();
 		if (metaRaw) {
 			try {
 				const parsed = JSON.parse(metaRaw) as Omit<CustomToolMeta, "source">;
@@ -33,18 +38,18 @@ export async function listUserCustomTools(): Promise<CustomToolMeta[]> {
 		}
 
 		// Legacy: culiq-tool.json
-		const jsonRaw = await readTextFile(toolFile(name, "culiq-tool.json"));
+		const jsonRaw = await file(toolFile(name, "culiq-tool.json")).text();
 		if (jsonRaw) {
 			try {
 				const parsed = JSON.parse(jsonRaw) as Omit<CustomToolMeta, "source">;
-				await writeTextFile(toolFile(name, "culiq-tool.meta.json"), JSON.stringify(parsed, null, "\t"));
+				await write(toolFile(name, "culiq-tool.meta.json"), JSON.stringify(parsed, null, "\t"));
 				out.push({ ...parsed, source: "user" });
 				continue;
 			} catch { /* skip malformed */ }
 		}
 
 		// Legacy: package.json with culiq field
-		const pkgRaw = await readTextFile(toolFile(name, "package.json"));
+		const pkgRaw = await file(toolFile(name, "package.json")).text();
 		if (pkgRaw) {
 			try {
 				const pkg = JSON.parse(pkgRaw) as Record<string, unknown>;
@@ -59,7 +64,7 @@ export async function listUserCustomTools(): Promise<CustomToolMeta[]> {
 						parameters: (culiq.parameters as Record<string, unknown>) ?? {},
 						...(executionMode ? { executionMode } : {}),
 					};
-					await writeTextFile(toolFile(name, "culiq-tool.meta.json"), JSON.stringify(parsed, null, "\t"));
+					await write(toolFile(name, "culiq-tool.meta.json"), JSON.stringify(parsed, null, "\t"));
 					out.push({ ...parsed, source: "user" });
 					continue;
 				}
@@ -70,11 +75,12 @@ export async function listUserCustomTools(): Promise<CustomToolMeta[]> {
 }
 
 export async function getUserCustomToolArtifact(name: string): Promise<string | null> {
-	return readTextFile(toolFile(name, "culiq-tool.js"));
+	const content = await file(toolFile(name, "culiq-tool.js")).text();
+	return content || null;
 }
 
 export async function saveUserCustomTool(tool: SavedCustomTool): Promise<void> {
-	await writeTextFile(toolFile(tool.name, "culiq-tool.js"), tool.artifact);
+	await write(toolFile(tool.name, "culiq-tool.js"), tool.artifact);
 	// Cache metadata at install time.
 	const meta: Omit<CustomToolMeta, "source"> = {
 		name: tool.name,
@@ -82,7 +88,7 @@ export async function saveUserCustomTool(tool: SavedCustomTool): Promise<void> {
 		parameters: tool.parameters,
 		...(tool.executionMode ? { executionMode: tool.executionMode } : {}),
 	};
-	await writeTextFile(toolFile(tool.name, "culiq-tool.meta.json"), JSON.stringify(meta, null, "\t"));
+	await write(toolFile(tool.name, "culiq-tool.meta.json"), JSON.stringify(meta, null, "\t"));
 }
 
 /**
