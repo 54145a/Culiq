@@ -788,6 +788,13 @@ button.danger:hover {
 	overflow-wrap: break-word;
 }
 
+.capability-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex-shrink: 0;
+}
+
 .capability input {
 	margin-top: 2px;
 	padding: 0;

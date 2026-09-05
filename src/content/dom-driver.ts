@@ -7,6 +7,7 @@ import type {
 	ReadDomResult,
 	TypeResult,
 } from "@shared/transport/content-rpc";
+import Defuddle from "defuddle";
 
 const HTML_SNIPPET_LIMIT = 240;
 const TEXT_SNIPPET_LIMIT = 200;
@@ -94,7 +95,7 @@ function type(req: Extract<ContentRequest, { method: "type" }>): TypeResult {
 }
 
 function readDom(req: Extract<ContentRequest, { method: "read_dom" }>): ReadDomResult {
-	const mode = req.mode ?? "text";
+	const mode = req.mode ?? "markdown";
 	const maxChars = req.maxChars ?? DEFAULT_READ_MAX;
 	const root = req.selector ? safeQueryAll(req.selector)[0] : document.body;
 	if (!root) {
@@ -102,10 +103,16 @@ function readDom(req: Extract<ContentRequest, { method: "read_dom" }>): ReadDomR
 	}
 
 	let content: string;
-	if (mode === "text") {
-		content = (root as HTMLElement).innerText ?? root.textContent ?? "";
+	if (mode === "markdown") {
+		const defuddle = new Defuddle(document);
+		const result = defuddle.parse();
+		content = result.contentMarkdown ?? result.content;
 	} else if (mode === "html") {
 		content = (root as Element).outerHTML;
+	} else if (mode === "readable_html") {
+		const defuddle = new Defuddle(document);
+		const result = defuddle.parse();
+		content = result.content;
 	} else {
 		content = outline(root as Element, 0);
 	}

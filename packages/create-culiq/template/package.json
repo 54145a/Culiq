@@ -1,0 +1,14 @@
+{
+	"name": "my-tool",
+	"version": "0.0.1",
+	"description": "A Culiq custom tool.",
+	"main": "culiq-tool.js",
+	"files": ["culiq-tool.js"],
+	"devDependencies": {
+		"@culiq/sandbox": "latest",
+		"typescript": "^7.0.0"
+	},
+	"scripts": {
+		"check": "tsc --noEmit"
+	}
+}

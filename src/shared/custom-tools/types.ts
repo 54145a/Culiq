@@ -2,7 +2,7 @@ import type { AgentTool } from "../agent/types";
 
 export type CustomToolSource = "builtin" | "user";
 
-/** Metadata for a custom tool (no executable code). Mirrors `culiq-tool.json`. */
+/** Metadata for a custom tool (no executable code). Cached in culiq-tool.meta.json. */
 export interface CustomToolMeta {
 	name: string;
 	description: string;

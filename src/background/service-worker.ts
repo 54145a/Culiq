@@ -3,7 +3,7 @@ import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { listEnabledSkills } from "@shared/skills";
 import { closeSandbox, setSandboxContext } from "@shared/agent/tools/sandbox";
-import { ensureCustomToolsLoaded, refreshCustomTools } from "@shared/custom-tools";
+import { ensureCustomToolsLoaded, refreshCustomTools, syncBuiltinTools } from "@shared/custom-tools";
 import { runSubagent } from "@shared/agent/subagent";
 import { CAPABILITY_INFO, loadSettings, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
@@ -19,7 +19,13 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // Preload built-in + user custom tools so the first chat doesn't wait on OPFS.
-void ensureCustomToolsLoaded();
+// Sync built-in tools from static files, then preload all custom tools.
+void syncBuiltinTools()
+	.then((errors) => {
+		if (errors.length > 0) console.warn("[culiq] syncBuiltinTools errors:", errors);
+		return ensureCustomToolsLoaded();
+	})
+	.catch((err) => console.error("[culiq] syncBuiltinTools failed:", err));
 
 // The settings UI asks the SW to re-scan OPFS after a tool is installed/removed.
 chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
@@ -152,7 +158,9 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			const context = await buildSendTimeContext(msg.contextMode);
 			const mcpTools = await createMcpTools(controller.signal);
 			const allTools = [
-				...getTools().filter((tool) => enabled.has(tool.name as Capability) || tool.custom),
+				...getTools().filter(
+					(tool) => (enabled.has(tool.name as Capability) || tool.custom) && !settings.disabledTools.includes(tool.name),
+				),
 				...mcpTools,
 			];
 			const systemPrompt = getSystemPrompt({

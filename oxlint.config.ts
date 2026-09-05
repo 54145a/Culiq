@@ -6,6 +6,10 @@ export default defineConfig({
 		"scripts/**",
 		// Imported via ?raw and executed in sandbox — not a real module.
 		"src/shared/custom-tools/builtin/**",
+		// Legacy reference files, not part of the main codebase.
+		"examples/**",
+		// Scaffold templates — standalone projects with their own deps.
+		"packages/create-culiq/template/**",
 	],
 	rules: {
 		// Preact doesn't freeze props; settings page uses intentional dirty-model mutations.

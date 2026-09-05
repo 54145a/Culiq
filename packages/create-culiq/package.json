@@ -1,7 +1,10 @@
 {
-  "name": "create-culiq",
-  "version": "0.0.0",
-  "description": "Scaffold a Culiq custom-tool project with @culiq/sandbox types.",
-  "license": "MIT",
-  "private": false
+	"name": "create-culiq",
+	"version": "0.0.1",
+	"description": "Scaffold a Culiq custom-tool project.",
+	"type": "module",
+	"bin": {
+		"create-culiq": "index.js"
+	},
+	"license": "MIT"
 }

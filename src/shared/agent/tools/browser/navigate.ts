@@ -53,9 +53,16 @@ export const navigateTool: AgentTool = {
 			tabId = updated.id;
 		}
 
-		if (waitForLoad) await waitForTabComplete(tabId, signal);
+		if (waitForLoad) {
+			try {
+				await waitForTabComplete(tabId, signal);
+			} catch {
+				// Timed out or aborted — page may still be usable.
+			}
+		}
 
 		const final = await chrome.tabs.get(tabId);
+		const incomplete = final.status !== "complete" ? "\n⚠️ Page did not fully load (e.g. blocked resources)." : "";
 		return {
 			content: [
 				{
@@ -64,7 +71,8 @@ export const navigateTool: AgentTool = {
 						`navigated to: ${final.url ?? "(unknown)"}\n` +
 						`title: ${final.title ?? "(no title)"}\n` +
 						`status: ${final.status ?? "?"}` +
-						(newTab ? "\nopened in a new tab" : ""),
+						(newTab ? "\nopened in a new tab" : "") +
+						incomplete,
 				},
 			],
 		};

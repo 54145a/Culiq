@@ -119,6 +119,8 @@ export interface CuliqSettings {
 	modelCapabilities: Record<string, ModelCapabilityConfig>;
 	contextManagement: ContextManagementConfig;
 	subAgentModel: string;
+	/** Names of disabled custom tools (e.g. ["bing_search"]). */
+	disabledTools: string[];
 }
 
 export const CONTEXT_MANAGEMENT_DEFAULTS: ContextManagementConfig = {
@@ -173,6 +175,7 @@ export function defaultSettings(): CuliqSettings {
 		modelCapabilities: {},
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
 		subAgentModel: "",
+		disabledTools: [],
 	};
 }
 
@@ -185,6 +188,7 @@ interface StoredSettings {
 	modelCapabilities?: Record<string, ModelCapabilityConfig>;
 	contextManagement?: Partial<ContextManagementConfig>;
 	subAgentModel?: unknown;
+	disabledTools?: unknown;
 }
 
 /** Migrate old v2-v4 settings (Record<ProviderId, ProviderConfig>) to v5 (ProviderConfig[]). */
@@ -227,6 +231,7 @@ export async function loadSettings(): Promise<CuliqSettings> {
 		modelCapabilities: stored.modelCapabilities ?? {},
 		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
 		subAgentModel: typeof stored.subAgentModel === "string" ? stored.subAgentModel : base.subAgentModel,
+		disabledTools: Array.isArray(stored.disabledTools) ? stored.disabledTools : [],
 	};
 }
 

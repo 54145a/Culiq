@@ -1,24 +1,50 @@
 /**
  * Authoring types for Culiq custom tools.
  *
- * A custom tool is a single default-exported function `(sandbox) => ToolDefinition`.
- * Reference this module from your tool's JS with `// @ts-check` + JSDoc:
+ * A custom tool is a default-exported plain object with `name`, `description`,
+ * `parameters`, and `execute`. Reference this module from your tool's JS with
+ * `// @ts-check` + JSDoc:
  *
  *   // @ts-check
- *   // @type {import("@culiq/sandbox").CuliqToolFactory}
- *   export default (sandbox) => ({
+ *   /** @type {import("@culiq/sandbox").ToolDefinition} *\/
+ *   export default {
+ *     name: "my_tool",
  *     description: "...",
  *     parameters: { type: "object", properties: { q: { type: "string" } }, required: ["q"] },
- *     execute: async ({ q }) => {
- *       const res = await sandbox.fetchUrl("https://example.com?q=" + q, "text");
- *       // res is a ToolResult - extract the text explicitly.
- *       return res.content[0].text;
+ *     execute: async (sandbox, { q }) => {
+ *       const result = await sandbox.fetchUrl("https://example.com?q=" + q, "text");
+ *       return result;  // sandbox methods return strings
  *     },
- *   });
+ *   };
  *
- * Every `sandbox.*` bridge method returns a `ToolResult` (never a bare string),
- * so returning one directly is a type error - extract `res.content[0].text`.
+ * The sandbox is NOT available at module evaluation time - only inside `execute`.
+ * Do not call sandbox methods in the top-level object literal.
+ *
+ * Sandbox bridge methods return strings (via toolText), not ToolResult objects.
+ * Only `sandbox.fetch` returns a SandboxResponse.
  */
+
+/** Minimal Response type (avoids requiring DOM lib). */
+export interface SandboxResponse {
+	readonly ok: boolean;
+	readonly status: number;
+	readonly statusText: string;
+	readonly headers: Headers;
+	text(): Promise<string>;
+	json(): Promise<unknown>;
+	arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+/** Minimal Headers type. */
+export interface Headers {
+	get(name: string): string | null;
+}
+
+/** Minimal Request type. */
+export interface SandboxRequest {
+	readonly url: string;
+	readonly method: string;
+}
 
 /** One piece of a tool result. */
 export interface ToolResultContent {
@@ -28,9 +54,8 @@ export interface ToolResultContent {
 }
 
 /**
- * The structured result returned by every `sandbox.*` bridge call. Carries
- * meta-information (error flag, multiple content parts, content types) so tools
- * can inspect it rather than receiving a flattened string.
+ * The structured result returned by some sandbox bridge calls.
+ * Note: most bridge methods return strings, not ToolResult.
  */
 export interface ToolResult {
 	content: ToolResultContent[];
@@ -46,48 +71,62 @@ export interface CuliqSandbox {
 		delete(path: string): Promise<void>;
 		mkdir(path: string): Promise<void>;
 	};
-	/** Standard fetch; resolves to a Response. */
-	fetch(input: string | URL | Request, init?: unknown): Promise<Response>;
-	/** Bridge to chrome.tabs.* — every method returns a ToolResult. */
+	/** Standard fetch; resolves to a SandboxResponse. */
+	fetch(input: string | SandboxRequest, init?: unknown): Promise<SandboxResponse>;
+	/** Bridge to chrome.tabs.* — returns raw chrome API results. */
 	chrome: {
 		tabs: {
-			query(args: unknown[]): Promise<ToolResult>;
-			get(args: unknown[]): Promise<ToolResult>;
-			update(args: unknown[]): Promise<ToolResult>;
-			create(args: unknown[]): Promise<ToolResult>;
-			duplicate(args: unknown[]): Promise<ToolResult>;
-			reload(args: unknown[]): Promise<ToolResult>;
-			waitForLoad(args: unknown[]): Promise<ToolResult>;
+			query(args: unknown[]): Promise<unknown[]>;
+			get(args: unknown[]): Promise<unknown>;
+			update(args: unknown[]): Promise<unknown>;
+			create(args: unknown[]): Promise<unknown>;
+			duplicate(args: unknown[]): Promise<unknown>;
+			reload(args: unknown[]): Promise<unknown>;
+			waitForLoad(args: unknown[]): Promise<string>;
 		};
 		windows: {
-			get(args: unknown[]): Promise<ToolResult>;
-			update(args: unknown[]): Promise<ToolResult>;
+			get(args: unknown[]): Promise<unknown>;
+			update(args: unknown[]): Promise<unknown>;
 		};
 	};
-	/** Evaluate JS in a tab. Returns a ToolResult. */
-	evalInTab(args: unknown[]): Promise<ToolResult>;
-	evalInAllFrames(args: unknown[]): Promise<ToolResult>;
-	readDom(args: unknown[]): Promise<ToolResult>;
-	click(args: unknown[]): Promise<ToolResult>;
-	type(args: unknown[]): Promise<ToolResult>;
-	navigate(args: unknown[]): Promise<ToolResult>;
-	query(args: unknown[]): Promise<ToolResult>;
-	useSkill(args: unknown[]): Promise<ToolResult>;
-	fetchUrl(args: unknown[]): Promise<ToolResult>;
-	listTabs(args: unknown[]): Promise<ToolResult>;
-	switchTab(args: unknown[]): Promise<ToolResult>;
-	reloadTab(args: unknown[]): Promise<ToolResult>;
-	subtask(args: unknown[]): Promise<ToolResult>;
-	docs(args: unknown[]): Promise<ToolResult>;
+	/** Evaluate JS in a tab. Returns the eval result as a string. */
+	evalInTab(args: unknown[]): Promise<string>;
+	evalInAllFrames(args: unknown[]): Promise<string>;
+	/** Read DOM content. Returns extracted text/html/outline as a string. */
+	readDom(args: unknown[]): Promise<string>;
+	/** Click an element. Returns status as a string. */
+	click(args: unknown[]): Promise<string>;
+	/** Type text into an element. Returns status as a string. */
+	type(args: unknown[]): Promise<string>;
+	/** Navigate to a URL. Returns navigation status as a string. */
+	navigate(args: unknown[]): Promise<string>;
+	/** Query elements. Returns matching elements as a string. */
+	query(args: unknown[]): Promise<string>;
+	/** Use a skill. Returns skill output as a string. */
+	useSkill(args: unknown[]): Promise<string>;
+	/** Fetch a URL and extract content. Returns extracted text as a string. */
+	fetchUrl(args: unknown[]): Promise<string>;
+	/** List open tabs. Returns tab list as a string. */
+	listTabs(args: unknown[]): Promise<string>;
+	/** Switch to a tab. Returns status as a string. */
+	switchTab(args: unknown[]): Promise<string>;
+	/** Reload a tab. Returns status as a string. */
+	reloadTab(args: unknown[]): Promise<string>;
+	/** Run a subtask. Returns result as a string. */
+	subtask(args: unknown[]): Promise<string>;
+	/** Get sandbox API docs. Returns docs as a string. */
+	docs(args: unknown[]): Promise<string>;
 }
 
-/** The definition a custom-tool factory returns. `execute` must return a string. */
+/**
+ * The definition a custom tool exports. `execute` receives the sandbox as its
+ * first argument and the agent-supplied input as its second. It must return a
+ * string.
+ */
 export interface ToolDefinition {
+	name: string;
 	description: string;
 	parameters: Record<string, unknown>;
 	executionMode?: "parallel" | "sequential";
-	execute(input: Record<string, unknown>): string | Promise<string>;
+	execute(sandbox: CuliqSandbox, input: Record<string, unknown>): string | Promise<string>;
 }
-
-/** A custom tool: a single function that receives the sandbox and returns its definition. */
-export type CuliqToolFactory = (sandbox: CuliqSandbox) => ToolDefinition;

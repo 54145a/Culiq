@@ -113,7 +113,7 @@ export const readDomTool: AgentTool = {
 	parameters: {
 		type: "object",
 		properties: {
-			mode: { type: "string", enum: ["text", "html", "outline"], description: "Output mode. Default 'text'." },
+			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: 'markdown' (clean Markdown via Defuddle, default), 'html' (raw markup), 'readable_html' (clean HTML via Defuddle), or 'outline' (headings, links, forms)." },
 			selector: { type: "string", description: "Optional CSS selector to limit scope." },
 			maxChars: { type: "number", description: "Truncate output to this many chars. Default 8000." },
 		},
@@ -122,7 +122,7 @@ export const readDomTool: AgentTool = {
 	async execute(args) {
 		const result = await callContent({
 			method: "read_dom",
-			...(args.mode !== undefined ? { mode: args.mode as "text" | "html" | "outline" } : {}),
+			...(args.mode !== undefined ? { mode: args.mode as "markdown" | "html" | "readable_html" | "outline" } : {}),
 			...(args.selector !== undefined ? { selector: String(args.selector) } : {}),
 			...(args.maxChars !== undefined ? { maxChars: Number(args.maxChars) } : {}),
 		});

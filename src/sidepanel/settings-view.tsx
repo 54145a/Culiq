@@ -16,7 +16,8 @@ import {
 	type McpServerConfig,
 	type McpTransport,
 } from "@shared/mcp";
-import { listUserCustomTools, saveUserCustomTool, deleteUserCustomTool } from "@shared/custom-tools/storage";
+import { listUserCustomTools, saveUserCustomTool, deleteUserCustomTool, extractMetaFromArtifact } from "@shared/custom-tools/storage";
+import { syncBuiltinTools } from "@shared/custom-tools";
 import type { CustomToolMeta } from "@shared/custom-tools";
 
 function Field({
@@ -594,12 +595,13 @@ function McpServersGroup() {
 	);
 }
 
-function LocalToolsGroup() {
+function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const [tools, setTools] = useState<CustomToolMeta[] | null>(null);
 	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
 
 	const refresh = async () => {
 		try {
+			await syncBuiltinTools();
 			setTools(await listUserCustomTools());
 		} catch (err) {
 			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
@@ -620,12 +622,13 @@ function LocalToolsGroup() {
 			const pkg = decodeURIComponent(m[1]);
 			const version = m[2] ? `@${m[2]}` : "";
 			const base = `https://cdn.jsdelivr.net/npm/${pkg}${version}`;
-			const [jres, sres] = await Promise.all([fetch(`${base}/culiq-tool.json`), fetch(`${base}/culiq-tool.js`)]);
-			if (!jres.ok) throw new Error(`culiq-tool.json not found in ${pkg} (is this a Culiq tool package?)`);
-			if (!sres.ok) throw new Error(`culiq-tool.js not found in ${pkg}`);
-			const meta = (await jres.json()) as CustomToolMeta;
+			const sres = await fetch(`${base}/culiq-tool.js`);
+			if (!sres.ok) throw new Error(`culiq-tool.js not found in ${pkg} (is this a Culiq tool package?)`);
 			const artifact = await sres.text();
-			await saveUserCustomTool({ ...meta, source: "user", artifact });
+			const extracted = extractMetaFromArtifact(artifact);
+			if (!extracted) throw new Error(`Failed to extract metadata from ${pkg}/culiq-tool.js`);
+			const meta: CustomToolMeta = { ...extracted, source: "user" };
+			await saveUserCustomTool({ ...meta, artifact });
 			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
 			setStatus({ state: "ok", text: `imported ${meta.name}` });
 			await refresh();
@@ -642,17 +645,19 @@ function LocalToolsGroup() {
 		}
 		try {
 			const dir = await picker();
-			let json: string | undefined;
 			let js: string | undefined;
 			const entries = (dir as unknown as { values: () => AsyncIterableIterator<{ kind: string; name: string; getFile: () => Promise<File> }> }).values();
 			for await (const entry of entries) {
-				if (entry.kind !== "file") continue;
-				if (entry.name === "culiq-tool.json") json = await (await entry.getFile()).text();
-				else if (entry.name === "culiq-tool.js") js = await (await entry.getFile()).text();
+				if (entry.kind === "file" && entry.name === "culiq-tool.js") {
+					js = await (await entry.getFile()).text();
+					break;
+				}
 			}
-			if (!json || !js) throw new Error("Folder must contain culiq-tool.json and culiq-tool.js.");
-			const meta = JSON.parse(json) as CustomToolMeta;
-			await saveUserCustomTool({ ...meta, source: "user", artifact: js });
+			if (!js) throw new Error("Folder must contain culiq-tool.js.");
+			const extracted = extractMetaFromArtifact(js);
+			if (!extracted) throw new Error("Failed to extract metadata from culiq-tool.js.");
+			const meta: CustomToolMeta = { ...extracted, source: "user" };
+			await saveUserCustomTool({ ...meta, artifact: js });
 			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
 			setStatus({ state: "ok", text: `imported ${meta.name}` });
 			await refresh();
@@ -672,9 +677,8 @@ function LocalToolsGroup() {
 		<details className="settings-group">
 			<summary className="settings-header">Custom tools</summary>
 			<p className="settings-hint">
-				Executable, typed tools built with <code>@culiq/sandbox</code> and distributed as npm packages. On an npm package page, click
-				"Load from npm page" to install it; or import a folder containing <code>culiq-tool.json</code> + <code>culiq-tool.js</code>. Built-in
-				tools (e.g. <code>bing_search</code>) ship with the extension.
+				Executable, typed tools built with <code>@culiq/sandbox</code>. On an npm package page, click
+				"Load from npm page" to install it; or import a folder containing <code>culiq-tool.js</code>.
 			</p>
 			<div className="settings-actions">
 				<span className="status" data-state={status?.state}>
@@ -691,24 +695,41 @@ function LocalToolsGroup() {
 				{tools === null ? null : tools.length === 0 ? (
 					<p>No custom tools installed yet.</p>
 				) : (
-					tools.map((t) => (
+				tools.map((t) => (
 						<div className="capability" key={t.name}>
 							<code>{t.name}</code>
-							<span className="capability-desc">: {t.source}</span>
 							<span className="capability-desc"> {t.description}</span>
-							{t.source === "user" && (
+							<div className="capability-actions">
 								<button
 									type="button"
 									className="skill-delete"
 									onClick={(e) => {
 										e.preventDefault();
-										e.stopPropagation();
-										void onDelete(t.name);
+										const disabled = settings.disabledTools;
+										settings.disabledTools = disabled.includes(t.name)
+											? disabled.filter((n) => n !== t.name)
+											: [...disabled, t.name];
+										dirty();
 									}}
 								>
-									delete
+									{settings.disabledTools.includes(t.name) ? "enable" : "disable"}
 								</button>
-							)}
+								{t.source === "user" ? (
+									<button
+										type="button"
+										className="skill-delete"
+										onClick={(e) => {
+											e.preventDefault();
+											e.stopPropagation();
+											void onDelete(t.name);
+										}}
+									>
+										delete
+									</button>
+								) : (
+									<span className="capability-desc">(builtin)</span>
+								)}
+							</div>
 						</div>
 					))
 				)}
@@ -773,7 +794,7 @@ export function SettingsView() {
 		<ProvidersGroup settings={settings} dirty={dirty} />
 		<ContextGroup settings={settings} dirty={dirty} />
 			<SearchAndSubAgentGroup settings={settings} dirty={dirty} />
-			<LocalToolsGroup />
+			<LocalToolsGroup settings={settings} dirty={dirty} />
 			<SkillsGroup />
 			<McpServersGroup />
 			<div className="settings-actions settings-save-bar">
