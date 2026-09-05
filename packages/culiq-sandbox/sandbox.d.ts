@@ -12,7 +12,7 @@
  *     description: "...",
  *     parameters: { type: "object", properties: { q: { type: "string" } }, required: ["q"] },
  *     execute: async (sandbox, { q }) => {
- *       const result = await sandbox.fetchUrl("https://example.com?q=" + q, "text");
+ *       const result = await sandbox.fetchUrl({ url: "https://example.com?q=" + q });
  *       return result;  // sandbox methods return strings
  *     },
  *   };
@@ -23,6 +23,22 @@
  * Sandbox bridge methods return strings (via toolText), not ToolResult objects.
  * Only `sandbox.fetch` returns a SandboxResponse.
  */
+
+// ── Shared enums ────────────────────────────────────────────────────────────
+
+/** Output mode for readDom / fetchUrl. */
+export type ReadDomMode = "markdown" | "html" | "readable_html" | "outline";
+
+/** Whether to close or keep open the tab after fetchUrl. */
+export type AfterLoad = "close" | "open";
+
+/** JS world for evalInTab / evalInAllFrames. */
+export type EvalWorld = "isolated" | "main";
+
+/** Execution mode for custom tools. */
+export type ExecutionMode = "parallel" | "sequential";
+
+// ── Response types ──────────────────────────────────────────────────────────
 
 /** Minimal Response type (avoids requiring DOM lib). */
 export interface SandboxResponse {
@@ -62,6 +78,8 @@ export interface ToolResult {
 	isError?: boolean;
 }
 
+// ── Sandbox interface ───────────────────────────────────────────────────────
+
 export interface CuliqSandbox {
 	/** Filesystem over OPFS, relative paths only. */
 	fs: {
@@ -73,6 +91,7 @@ export interface CuliqSandbox {
 	};
 	/** Standard fetch; resolves to a SandboxResponse. */
 	fetch(input: string | SandboxRequest, init?: unknown): Promise<SandboxResponse>;
+
 	/** Bridge to chrome.tabs.* — returns raw chrome API results. */
 	chrome: {
 		tabs: {
@@ -89,33 +108,64 @@ export interface CuliqSandbox {
 			update(args: unknown[]): Promise<unknown>;
 		};
 	};
-	/** Evaluate JS in a tab. Returns the eval result as a string. */
-	evalInTab(args: unknown[]): Promise<string>;
-	evalInAllFrames(args: unknown[]): Promise<string>;
-	/** Read DOM content. Returns extracted text/html/outline as a string. */
-	readDom(args: unknown[]): Promise<string>;
-	/** Click an element. Returns status as a string. */
-	click(args: unknown[]): Promise<string>;
-	/** Type text into an element. Returns status as a string. */
-	type(args: unknown[]): Promise<string>;
-	/** Navigate to a URL. Returns navigation status as a string. */
-	navigate(args: unknown[]): Promise<string>;
-	/** Query elements. Returns matching elements as a string. */
-	query(args: unknown[]): Promise<string>;
-	/** Use a skill. Returns skill output as a string. */
-	useSkill(args: unknown[]): Promise<string>;
-	/** Fetch a URL and extract content. Returns extracted text as a string. */
-	fetchUrl(args: unknown[]): Promise<string>;
-	/** List open tabs. Returns tab list as a string. */
-	listTabs(args: unknown[]): Promise<string>;
-	/** Switch to a tab. Returns status as a string. */
-	switchTab(args: unknown[]): Promise<string>;
-	/** Reload a tab. Returns status as a string. */
-	reloadTab(args: unknown[]): Promise<string>;
-	/** Run a subtask. Returns result as a string. */
-	subtask(args: unknown[]): Promise<string>;
-	/** Get sandbox API docs. Returns docs as a string. */
-	docs(args: unknown[]): Promise<string>;
+
+	/**
+	 * Evaluate JS in a tab. Returns the eval result as a string.
+	 * @param options.tabId - Tab to evaluate in.
+	 * @param options.world - "isolated" (default) or "main".
+	 * @param options.code - JS code to evaluate.
+	 */
+	evalInTab(options: { tabId: number; world?: EvalWorld; code: string }): Promise<string>;
+
+	/** Evaluate JS in every frame of a tab. Returns one entry per frame. */
+	evalInAllFrames(options: { tabId: number; world?: EvalWorld; code: string }): Promise<string>;
+
+	/**
+	 * Read DOM content from the active tab.
+	 * @param options.mode - Output mode: "markdown" (default), "html", "readable_html", or "outline".
+	 * @param options.selector - CSS selector to limit scope.
+	 * @param options.maxChars - Truncate output.
+	 */
+	readDom(options?: { mode?: ReadDomMode; selector?: string; maxChars?: number }): Promise<string>;
+
+	/** Click an element on the active page. */
+	click(options: { selector: string; index?: number }): Promise<string>;
+
+	/** Type text into an input on the active page. */
+	type(options: { selector: string; text: string; submit?: boolean; clear?: boolean }): Promise<string>;
+
+	/** Navigate to a URL. */
+	navigate(options: { url: string; newTab?: boolean; waitForLoad?: boolean }): Promise<string>;
+
+	/** Query elements by CSS selector. */
+	query(options: { selector: string; all?: boolean; limit?: number }): Promise<string>;
+
+	/** Use a skill. */
+	useSkill(options: { name: string; file?: string; maxChars?: number }): Promise<string>;
+
+	/**
+	 * Fetch a URL, load in a tab, and extract content.
+	 * @param options.url - The URL to fetch.
+	 * @param options.mode - Output mode: "markdown" (default), "html", "readable_html", or "outline".
+	 * @param options.maxChars - Truncate output.
+	 * @param options.selector - CSS selector to limit content scope.
+	 */
+	fetchUrl(options: { url: string; mode?: ReadDomMode; maxChars?: number; selector?: string }): Promise<string>;
+
+	/** List open tabs. */
+	listTabs(options?: { max?: number }): Promise<string>;
+
+	/** Switch to a tab. */
+	switchTab(options: { tabId: number }): Promise<string>;
+
+	/** Reload a tab. */
+	reloadTab(options: { tabId: number; bypassCache?: boolean }): Promise<string>;
+
+	/** Run a subtask. */
+	subtask(options: { task: string }): Promise<string>;
+
+	/** Get sandbox API docs. */
+	docs(options?: { name?: string }): Promise<string>;
 }
 
 /**
@@ -127,6 +177,6 @@ export interface ToolDefinition {
 	name: string;
 	description: string;
 	parameters: Record<string, unknown>;
-	executionMode?: "parallel" | "sequential";
+	executionMode?: ExecutionMode;
 	execute(sandbox: CuliqSandbox, input: Record<string, unknown>): string | Promise<string>;
 }

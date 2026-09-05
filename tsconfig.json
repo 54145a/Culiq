@@ -26,6 +26,9 @@
 		"paths": {
 			"@shared/*": [
 				"./src/shared/*"
+			],
+			"@culiq/sandbox": [
+				"./packages/culiq-sandbox/sandbox.d.ts"
 			]
 		}
 	},

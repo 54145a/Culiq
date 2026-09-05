@@ -104,13 +104,13 @@ function readDom(req: Extract<ContentRequest, { method: "read_dom" }>): ReadDomR
 
 	let content: string;
 	if (mode === "markdown") {
-		const defuddle = new Defuddle(document);
+		const defuddle = new Defuddle(document, { contentSelector: req.selector });
 		const result = defuddle.parse();
 		content = result.contentMarkdown ?? result.content;
 	} else if (mode === "html") {
 		content = (root as Element).outerHTML;
 	} else if (mode === "readable_html") {
-		const defuddle = new Defuddle(document);
+		const defuddle = new Defuddle(document, { contentSelector: req.selector });
 		const result = defuddle.parse();
 		content = result.content;
 	} else {

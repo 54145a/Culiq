@@ -1,5 +1,6 @@
 import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool, AgentToolResult } from "../../types";
+import type { ReadDomMode, AfterLoad } from "@culiq/sandbox";
 import { navigateTool } from "./navigate";
 import { readDomTool } from "./dom";
 
@@ -44,8 +45,8 @@ export const fetchUrlTool: AgentTool = {
 		type: "object",
 		properties: {
 			url: { type: "string", description: "Absolute http(s) URL to fetch." },
-			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: `markdown` (clean Markdown via Defuddle, default), `html` (raw markup), `readable_html` (clean HTML via Defuddle), or `outline` (headings, links, forms)." },
-			afterLoad: { type: "string", enum: ["close", "open"], description: "Close the tab after reading ('close', one-shot) or leave it open ('open') so follow-up tools can use it." },
+			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"] as ReadDomMode[], description: "Output mode: `markdown` (clean Markdown via Defuddle, default), `html` (raw markup), `readable_html` (clean HTML via Defuddle), or `outline` (headings, links, forms)." },
+			afterLoad: { type: "string", enum: ["close", "open"] as AfterLoad[], description: "Close the tab after reading ('close', one-shot) or leave it open ('open') so follow-up tools can use it." },
 			maxChars: { type: "number", description: "Truncate the result to this many chars. Default 200000." },
 			probeMime: { type: "boolean", description: "HEAD-probe the URL first and refuse non-textual content types. Default true; set false to fetch anyway." },
 		},
@@ -89,7 +90,8 @@ export const fetchUrlTool: AgentTool = {
 		if (signal?.aborted) throw new DOMException("aborted", "AbortError");
 
 		// Delegate content extraction to read_dom tool.
-		const contentResult = await readDomTool.execute({ mode, maxChars }, signal);
+		const selector = typeof args.selector === "string" ? args.selector : undefined;
+		const contentResult = await readDomTool.execute({ mode, maxChars, selector }, signal);
 
 		// Close tab if needed.
 		if (afterLoad === "close") {

@@ -138,8 +138,8 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 	},
 	fetchUrl: {
 		description:
-			"Fetch a URL, load it in a tab, and extract readable content (identical to the `fetch_url` tool). `mode` is 'markdown' (default), 'html', 'readable_html', or 'outline'. `maxChars` truncates. Returns the extracted text.",
-		invoke: ([url, mode, maxChars]) => fetchUrlTool.execute({ url: String(url), mode: mode as "markdown" | "html" | "readable_html" | "outline", maxChars: maxChars as number } as never).then(toolText),
+			"Fetch a URL, load it in a tab, and extract readable content (identical to the `fetch_url` tool). Options: url, mode ('markdown'|'html'|'readable_html'|'outline'), maxChars, selector, afterLoad ('close'|'open'), probeMime. Returns the extracted text.",
+		invoke: ([options]) => fetchUrlTool.execute((options ?? {}) as never).then(toolText),
 	},
 	listTabs: {
 		description: "List open tabs (id, url, title, active state), excluding internal chrome:// URLs (identical to the `list_tabs` tool).",

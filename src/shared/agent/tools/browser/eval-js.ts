@@ -1,6 +1,7 @@
 import { getActiveTab } from "@shared/transport/tab-rpc";
 import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
+import type { EvalWorld } from "@culiq/sandbox";
 
 const EVAL_TIMEOUT_MS = 30_000;
 
@@ -19,7 +20,7 @@ export const evalJsTool: AgentTool = {
 			},
 			world: {
 				type: "string",
-				enum: ["isolated", "main"],
+				enum: ["isolated", "main"] as EvalWorld[],
 				description:
 					"Required execution context. Use 'main' for page JavaScript state and reverse engineering; use 'isolated' only for DOM-only operations.",
 			},

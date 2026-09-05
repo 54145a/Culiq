@@ -19,28 +19,7 @@ export default {
 		const maxChars = typeof input.maxChars === "number" ? input.maxChars : undefined;
 		const url = "https://www.bing.com/search?q=" + encodeURIComponent(query);
 		const limit = maxChars && maxChars > 0 ? maxChars : 200000;
-		const raw = await sandbox.fetchUrl(url, "readable_html", limit);
-		console.log("[bing_search] raw length:", raw?.length);
-		console.log("[bing_search] raw first 200:", raw?.slice(0, 200));
-		// Strip metadata header (url/title/mode lines + blank line) before the HTML content.
-		const headerEnd = raw.indexOf("\n\n");
-		const html = headerEnd >= 0 ? raw.slice(headerEnd + 2) : raw;
-		console.log("[bing_search] html length:", html.length);
-		console.log("[bing_search] html first 200:", html.slice(0, 200));
-		const doc = new DOMParser().parseFromString(html, "text/html");
-		const container = doc.querySelector("#b_results");
-		const lines = [];
-		if (container) {
-			for (const li of Array.from(container.children)) {
-				if (li.nodeType !== 1) continue;
-				if (li.classList && li.classList.contains("b_pag")) continue;
-				const text = (li.textContent || "").replace(/\s+/g, " ").trim();
-				if (text) lines.push(text);
-			}
-		}
-		let text = lines.join("\n\n") || "(no results extracted)";
-		const truncated = text.length > limit;
-		if (truncated) text = text.slice(0, limit) + `\n…[truncated ${text.length - limit} more chars]`;
-		return `search: ${query}\nengine: bing\nchars: ${text.length}${truncated ? " (truncated)" : ""}\n\n${text}`;
+		const result = await sandbox.fetchUrl({ url, mode: "readable_html", maxChars: limit, selector: "#b_results" });
+		return `search: ${query}\nengine: bing\n\n${result}`;
 	},
 };
