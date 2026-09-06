@@ -105,10 +105,9 @@ export const fetchUrlTool: AgentTool = {
 			if (popupId) await chrome.windows.update(popupId, { focused: true }).catch(() => {});
 		}
 
-		// Close tab if needed.
-		if (afterLoad === "close") {
-			const tabId = await getActiveTabId();
-			if (tabId) chrome.tabs.remove(tabId).catch(() => {});
+		// Close the target tab (not the active tab, which may be the popup window).
+		if (afterLoad === "close" && targetTabId !== undefined) {
+			chrome.tabs.remove(targetTabId).catch(() => {});
 		}
 
 		// Return the content, stripping the readDomTool metadata header.
