@@ -42,8 +42,14 @@ export function waitForTabComplete(tabId: number, signal?: AbortSignal, expected
 			LOAD_TIMEOUT_MS,
 		);
 
-		chrome.tabs.get(tabId).then((tab) => {
-			if (tab.status === "complete") settleThenFinish();
-		}).catch(() => {});
+		// Wait 1s before checking current status — gives navigation time to start
+		setTimeout(() => {
+			chrome.tabs.get(tabId).then((tab) => {
+				if (tab.status === "complete") {
+					if (expectedUrl && tab.url && !tab.url.startsWith(expectedUrl)) return;
+					settleThenFinish();
+				}
+			}).catch(() => {});
+		}, 1000);
 	});
 }
