@@ -228,7 +228,7 @@ export const sandboxExecTool: AgentTool = {
 			code: {
 				type: "string",
 				description:
-					"JavaScript body run in the sandbox. Use `return X` to send back a value. Example: `return await sandbox.fs.list('skills')`.",
+					"JavaScript body run in the sandbox. Use `return X` to send back a value. Example: `return await sandbox.dir('skills').children()`.",
 			},
 			maxChars: { type: "number", description: "Truncate the serialized result to this many chars. Default 8000." },
 		},

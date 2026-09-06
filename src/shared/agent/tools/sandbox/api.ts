@@ -5,6 +5,7 @@ import { navigateTool } from "../browser/navigate";
 import { fetchUrlTool } from "../browser/fetch-url";
 import { useSkillTool } from "../skills/use-skill";
 import { listTabsTool, switchTabTool, reloadTabTool } from "../browser/tabs";
+import { file, dir, write } from "@shared/opfs";
 
 /**
  * Single source of truth for the sandbox's extension bridge. Each entry
@@ -99,7 +100,7 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 	},
 	evalInTab: {
 		description:
-			"Evaluate JavaScript in a tab's MAIN or ISOLATED world (mirrors the eval_js tool). Returns the serialized result; throws on error. Combine with sandbox.fs to store page content.",
+			"Evaluate JavaScript in a tab's MAIN or ISOLATED world (mirrors the eval_js tool). Returns the serialized result; throws on error. Combine with `sandbox.write` to store page content.",
 		invoke: async ([tabId, world, code]) => evalInTab(Number(tabId), world === "main" ? "MAIN" : "ISOLATED", String(code)),
 	},
 	evalInAllFrames: {
@@ -164,6 +165,69 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 	docs: {
 		description: "Return the sandbox API declarations for a namespace (e.g. 'tabs'), a method (e.g. 'tabs.query'), or everything when omitted.",
 		invoke: async ([name]) => (name ? sandboxDocs(String(name)) : generateSandboxDts()),
+	},
+
+	// ── Filesystem (bridge to opfs.ts) ──────────────────────────────────────
+	"fs.read": {
+		description: "Read a file from OPFS. Returns the file content as a string.",
+		invoke: async ([path]) => file(String(path)).text(),
+	},
+	"fs.write": {
+		description: "Write a string to a file in OPFS.",
+		invoke: async ([path, content]) => { await write(String(path), String(content)); },
+	},
+	"fs.list": {
+		description: "List files and directories in an OPFS path.",
+		invoke: async ([path]) => {
+			const children = await dir(String(path)).children();
+			return children.map((c) => ({ name: c.name, kind: c.kind }));
+		},
+	},
+	"fs.delete": {
+		description: "Delete a file or directory from OPFS.",
+		invoke: async ([path]) => { await file(String(path)).remove(); },
+	},
+	"fs.mkdir": {
+		description: "Create a directory in OPFS.",
+		invoke: async ([path]) => { await dir(String(path)).create(); },
+	},
+	tree: {
+		description: "Recursively list all files and directories under a path, returning a formatted tree string.",
+		invoke: async ([path]) => {
+			const p = String(path || "");
+			const lines: string[] = [];
+			async function walk(d: any, prefix: string) {
+				const children = await d.children();
+				for (let i = 0; i < children.length; i++) {
+					const child = children[i];
+					const isLast = i === children.length - 1;
+					const connector = isLast ? "└── " : "├── ";
+					const childPrefix = isLast ? "    " : "│   ";
+					if (child.kind === "file") {
+						lines.push(`${prefix}${connector}${child.name}`);
+					} else {
+						lines.push(`${prefix}${connector}${child.name}/`);
+						await walk(child, `${prefix}${childPrefix}`);
+					}
+				}
+			}
+			await walk(dir(p), "");
+			return lines.join("\n") || "(empty)";
+		},
+	},
+
+	// ── Fetch (bridge to extension context, CORS-free) ──────────────────────
+	fetch: {
+		description: "Fetch a URL with CORS-free access (uses extension context). Returns { status, ok, headers, text, json } where text and json are pre-fetched strings.",
+		invoke: async ([input, init]) => {
+			const res = await fetch(String(input), init as RequestInit);
+			const headers: Record<string, string> = {};
+			res.headers.forEach((v, k) => { headers[k] = v; });
+			const text = await res.text();
+			let json: unknown;
+			try { json = JSON.parse(text); } catch { /* not JSON */ }
+			return { status: res.status, ok: res.ok, headers, text, json };
+		},
 	},
 };
 

@@ -68,7 +68,7 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	},
 	sandbox_exec: {
 		description:
-			"Run JavaScript in a restricted sandbox worker hosted in the panel's hidden iframe. Exposes `sandbox.fs.{read,write,list,delete,mkdir}` over OPFS, `sandbox.fetch`, and a chrome bridge including `sandbox.chrome.tabs.*`, `sandbox.chrome.windows.*`, `sandbox.readDom`, `sandbox.click`, `sandbox.type`, `sandbox.navigate`, and `sandbox.evalInTab`. No DOM and no direct chrome.* inside the worker; bridge calls are proxied through the background and validated. State persists within the turn. Top-level await supported; `return X` to send a value back.",
+			"Run JavaScript in a restricted sandbox worker hosted in the panel's hidden iframe. Exposes `sandbox.file(path).text()/.remove()`, `sandbox.dir(path).children()/.remove()/.create()`, `sandbox.write(path, content)`, `sandbox.tree(path)`, and `sandbox.fetch(url)` (CORS-free). Also includes a chrome bridge: `sandbox.chrome.tabs.*`, `sandbox.chrome.windows.*`, `sandbox.readDom`, `sandbox.click`, `sandbox.type`, `sandbox.navigate`, `sandbox.evalInTab`, and more. No DOM and no direct chrome.* inside the worker; all calls are proxied through the background. State persists within the turn. Top-level await supported; `return X` to send a value back.",
 	},
 	subtask: {
 		description:

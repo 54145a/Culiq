@@ -81,15 +81,30 @@ export interface ToolResult {
 // ── Sandbox interface ───────────────────────────────────────────────────────
 
 export interface CuliqSandbox {
-	/** Filesystem over OPFS, relative paths only. */
-	fs: {
-		read(path: string): Promise<string>;
-		write(path: string, content: string): Promise<void>;
-		list(path: string): Promise<string[]>;
-		delete(path: string): Promise<void>;
-		mkdir(path: string): Promise<void>;
+	// ── Filesystem (opfs-tools style) ─────────────────────────────────────────
+
+	/** Access a file. Returns { text(), remove() }. */
+	file(path: string): {
+		text(): Promise<string>;
+		remove(): Promise<void>;
 	};
-	/** Standard fetch; resolves to a SandboxResponse. */
+
+	/** Access a directory. Returns { children(), remove(), create() }. */
+	dir(path: string): {
+		children(): Promise<Array<{ name: string; kind: string }>>;
+		remove(): Promise<void>;
+		create(): Promise<void>;
+	};
+
+	/** Write a string to a file. */
+	write(path: string, content: string): Promise<void>;
+
+	/** Recursively list all files and directories under a path. */
+	tree(path?: string): Promise<string>;
+
+	// ── Fetch (CORS-free via extension context) ─────────────────────────────
+
+	/** Fetch a URL with CORS-free access. Returns { status, ok, headers, text(), json() }. */
 	fetch(input: string | SandboxRequest, init?: unknown): Promise<SandboxResponse>;
 
 	/** Bridge to chrome.tabs.* — returns raw chrome API results. */

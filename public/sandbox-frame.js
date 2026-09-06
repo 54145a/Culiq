@@ -13,17 +13,6 @@
  *   frame -> parent:  { __culiq: "sandbox", sessionId, data }   eval-result / bridge (request)
  */
 
-var MAX_FILE_BYTES = 1048576;
-
-function safePath(p) {
-  if (typeof p !== "string") throw new Error("fs: path must be a string");
-  const cleaned = p.replace(/\\/g, "/");
-  if (cleaned.startsWith("/")) throw new Error("fs: path must be relative");
-  const parts = cleaned.split("/").filter(Boolean);
-  if (parts.some((x) => x === "..")) throw new Error("fs: parent traversal is not allowed");
-  return parts.join("/");
-}
-
 function serialize(v) {
   const seen = new WeakSet();
   try {
@@ -49,72 +38,46 @@ function serialize(v) {
   }
 }
 
-async function opfsRoot() {
-  return navigator.storage.getDirectory();
-}
-
-async function getDir(parts, create) {
-  let dir = await opfsRoot();
-  for (const part of parts) dir = await dir.getDirectoryHandle(part, { create });
-  return dir;
-}
-
-async function getFile(parts, create) {
-  const dir = await getDir(parts.slice(0, -1), create);
-  return dir.getFileHandle(parts[parts.length - 1], { create });
-}
-
-const fs = {
-  async read(p) {
-    const parts = safePath(p).split("/");
-    const handle = await getFile(parts, false);
-    const file = await handle.getFile();
-    if (file.size > MAX_FILE_BYTES) throw new Error("fs: file too large (" + file.size + " bytes)");
-    return await file.text();
-  },
-  async write(p, content) {
-    if (typeof content !== "string") throw new Error("fs: content must be a string");
-    if (content.length > MAX_FILE_BYTES) throw new Error("fs: content too large");
-    const parts = safePath(p).split("/");
-    const handle = await getFile(parts, true);
-    const writable = await handle.createWritable();
-    await writable.write(content);
-    await writable.close();
-  },
-  async list(p) {
-    const parts = safePath(p).split("/").filter(Boolean);
-    let dir;
-    try {
-      dir = parts.length === 0 ? await opfsRoot() : await getDir(parts, false);
-    } catch (err) {
-      if (err && err.name === "NotFoundError") return [];
-      throw err;
-    }
-    const out = [];
-    for await (const entry of dir.entries()) out.push(entry[0]);
-    return out.sort();
-  },
-  async delete(p) {
-    const parts = safePath(p).split("/");
-    const dir = await getDir(parts.slice(0, -1), false);
-    await dir.removeEntry(parts[parts.length - 1], { recursive: true });
-  },
-  async mkdir(p) {
-    const parts = safePath(p).split("/").filter(Boolean);
-    if (parts.length) await getDir(parts, true);
-  },
-};
-
 /** One sandbox session = one agent turn. Each holds its own sandbox object and pending bridge calls. */
 const sessions = new Map();
 
 function session(id) {
   let s = sessions.get(id);
   if (!s) {
-    s = { id, sandbox: { fs, fetch: (input, init) => fetch(input, init) }, pending: new Map(), nextBridgeId: 1 };
+    s = { id, sandbox: null, pending: new Map(), nextBridgeId: 1 };
+    s.sandbox = createSandbox(s);
     sessions.set(id, s);
   }
   return s;
+}
+
+function createSandbox(sess) {
+  return {
+    // ── Filesystem (bridge to opfs.ts via SW) ──────────────────────────────
+    file(path) {
+      return {
+        text: () => bridgeCall(sess, "fs.read", [path]),
+        remove: () => bridgeCall(sess, "fs.delete", [path]),
+      };
+    },
+    dir(path) {
+      return {
+        children: () => bridgeCall(sess, "fs.list", [path]),
+        remove: () => bridgeCall(sess, "fs.delete", [path]),
+        create: () => bridgeCall(sess, "fs.mkdir", [path]),
+      };
+    },
+    write(path, content) {
+      return bridgeCall(sess, "fs.write", [path, content]);
+    },
+    tree(path) {
+      return bridgeCall(sess, "tree", [path || ""]);
+    },
+    // ── Fetch (bridge to extension context, CORS-free) ──────────────────────
+    fetch(input, init) {
+      return bridgeCall(sess, "fetch", [input, init]);
+    },
+  };
 }
 
 function bridgeCall(sess, path, args) {
