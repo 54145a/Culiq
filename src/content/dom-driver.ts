@@ -7,6 +7,8 @@ import type {
 	ReadDomResult,
 	TypeResult,
 } from "@shared/transport/content-rpc";
+import Defuddle from "defuddle";
+import { createMarkdownContent } from "defuddle/full";
 
 const HTML_SNIPPET_LIMIT = 240;
 const TEXT_SNIPPET_LIMIT = 200;
@@ -94,7 +96,7 @@ function type(req: Extract<ContentRequest, { method: "type" }>): TypeResult {
 }
 
 function readDom(req: Extract<ContentRequest, { method: "read_dom" }>): ReadDomResult {
-	const mode = req.mode ?? "text";
+	const mode = req.mode ?? "markdown";
 	const maxChars = req.maxChars ?? DEFAULT_READ_MAX;
 	const root = req.selector ? safeQueryAll(req.selector)[0] : document.body;
 	if (!root) {
@@ -102,10 +104,16 @@ function readDom(req: Extract<ContentRequest, { method: "read_dom" }>): ReadDomR
 	}
 
 	let content: string;
-	if (mode === "text") {
-		content = (root as HTMLElement).innerText ?? root.textContent ?? "";
+	if (mode === "markdown") {
+		const defuddle = new Defuddle(document, { contentSelector: req.selector });
+		const result = defuddle.parse();
+		content = result.contentMarkdown ?? createMarkdownContent(result.content, location.href);
 	} else if (mode === "html") {
 		content = (root as Element).outerHTML;
+	} else if (mode === "readable_html") {
+		const defuddle = new Defuddle(document, { contentSelector: req.selector });
+		const result = defuddle.parse();
+		content = result.content;
 	} else {
 		content = outline(root as Element, 0);
 	}
@@ -180,6 +188,7 @@ function scrollIntoCenter(el: Element): void {
 
 function insertValue(el: HTMLInputElement | HTMLTextAreaElement, text: string): void {
 	const proto = el instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+	// oxlint-disable-next-line typescript/unbound-method -- .call() explicitly binds `this`
 	const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
 	if (setter) setter.call(el, (el.value ?? "") + text);
 	else el.value = (el.value ?? "") + text;
@@ -190,7 +199,7 @@ function insertValue(el: HTMLInputElement | HTMLTextAreaElement, text: string): 
 function submitForm(el: HTMLInputElement | HTMLTextAreaElement): boolean {
 	const form = el.form;
 	if (form) {
-		form.requestSubmit ? form.requestSubmit() : form.submit();
+		if (form.requestSubmit) form.requestSubmit(); else form.submit();
 		return true;
 	}
 	const enter = (type: "keydown" | "keyup") =>

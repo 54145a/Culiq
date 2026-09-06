@@ -23,10 +23,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: "22"
+          cache: "pnpm"
 
       - name: Resolve package version
         id: ver
@@ -43,16 +45,20 @@ jobs:
           fi
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        if: matrix.target == 'chrome'
+        run: pnpm lint
 
       - name: Type check
         if: matrix.target == 'chrome'
-        run: npm run check
+        run: pnpm check
 
       - name: Build extension (${{ matrix.target }})
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-        run: npm run build:${{ matrix.target }}
+        run: pnpm build:${{ matrix.target }}
 
       - name: Package archive
         id: pkg
@@ -76,7 +82,7 @@ jobs:
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           rm -rf signed
-          npx web-ext sign \
+          pnpm exec web-ext sign \
             --source-dir=dist-firefox \
             --artifacts-dir=signed \
             --api-key="$AMO_JWT_ISSUER" \

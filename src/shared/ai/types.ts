@@ -1,5 +1,4 @@
-import type { ProviderId } from "../config";
-
+export type ProviderId = string;
 export type StopReason = "end" | "toolUse" | "length" | "error" | "aborted";
 
 export interface TextContent {
@@ -29,7 +28,12 @@ export interface ToolCallContent {
 	arguments: Record<string, unknown>;
 }
 
-export type AssistantContent = TextContent | ThinkingContent | ToolCallContent;
+export interface ContextContent {
+	type: "context";
+	text: string;
+}
+
+export type AssistantContent = TextContent | ThinkingContent | ToolCallContent | ContextContent;
 
 export interface UserMessage {
 	role: "user";
@@ -72,8 +76,6 @@ export interface Context {
 }
 
 export interface StreamOptions {
-	apiKey: string;
-	baseUrl?: string;
 	signal?: AbortSignal;
 	maxTokens?: number;
 	temperature?: number;

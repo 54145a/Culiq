@@ -1,7 +1,7 @@
 import type { Message } from "./ai/types";
 
-const STORE_KEY = "curio.sessions.v2";
-const LEGACY_KEY = "curio.session.current.v1";
+const STORE_KEY = "culiq.sessions.v2";
+const LEGACY_KEY = "culiq.session.current.v1";
 const TITLE_MAX = 48;
 
 export interface Session {

@@ -30,6 +30,13 @@ body {
 	background: inherit;
 }
 
+#app {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+}
+
 header {
 	display: flex;
 	flex-direction: column;
@@ -61,11 +68,12 @@ h1 {
 	font-size: 0.78rem;
 }
 
-#theme-toggle {
+#theme-toggle,
+#popout-toggle {
 	width: 28px;
 	height: 28px;
 	padding: 0;
-	border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+	border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
 	border-radius: 50%;
 	background: transparent;
 	color: inherit;
@@ -74,13 +82,19 @@ h1 {
 	cursor: pointer;
 }
 
-#theme-toggle:hover {
+#theme-toggle:hover,
+#popout-toggle:hover {
 	background: color-mix(in srgb, currentColor 10%, transparent);
 }
 
-#theme-toggle:focus-visible {
+#theme-toggle:focus-visible,
+#popout-toggle:focus-visible {
 	outline: 2px solid #4a90e2;
 	outline-offset: 2px;
+}
+
+body[data-mode="window"] #popout-toggle {
+	display: none;
 }
 
 #status[data-state="pending"] {
@@ -126,6 +140,35 @@ nav button[aria-selected="true"] {
 }
 
 .view[data-active="true"] {
+	display: flex;
+}
+
+.popup-hint {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 24px;
+	text-align: center;
+}
+
+.popup-hint p {
+	margin: 0;
+}
+
+.popup-hint .hint {
+	font-size: 0.85rem;
+	opacity: 0.7;
+}
+
+body[data-popup-active="true"] header,
+body[data-popup-active="true"] .view:not(#view-popup-hint) {
+	display: none;
+}
+
+body[data-popup-active="true"] #view-popup-hint {
 	display: flex;
 }
 
@@ -351,6 +394,24 @@ nav button[aria-selected="true"] {
 	border-color: color-mix(in srgb, #c0392b 35%, transparent);
 }
 
+#log li.msg.notice {
+	font-size: 0.78rem;
+	color: color-mix(in srgb, currentColor 55%, transparent);
+	border-style: dashed;
+	border-color: color-mix(in srgb, currentColor 25%, transparent);
+}
+
+.skill-delete {
+	margin-left: auto;
+	padding: 1px 8px;
+	font-size: 0.72rem;
+	background: none;
+	border: 1px solid color-mix(in srgb, #c0392b 40%, transparent);
+	color: #c0392b;
+	border-radius: 6px;
+	cursor: pointer;
+}
+
 /* tool call cards */
 
 #log li.tool-card {
@@ -443,15 +504,18 @@ nav button[aria-selected="true"] {
 	overflow: auto;
 }
 
-#log li.tool-card[data-expanded="true"] .tool-args {
+#log li.tool-card[data-expanded="true"] .tool-args,
+#log .tool-card[data-expanded="true"] .tool-args {
 	display: block;
 }
 
-#log li.tool-card[data-expanded="true"] .tool-body {
+#log li.tool-card[data-expanded="true"] .tool-body,
+#log .tool-card[data-expanded="true"] .tool-body {
 	display: block;
 }
 
-#log li.tool-card[data-expanded="true"] .tool-body:empty {
+#log li.tool-card[data-expanded="true"] .tool-body:empty,
+#log .tool-card[data-expanded="true"] .tool-body:empty {
 	display: none;
 }
 
@@ -461,6 +525,31 @@ form {
 	gap: 8px;
 	padding: 12px 14px;
 	border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+
+.context-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 14px 0;
+	font-size: 0.78rem;
+}
+
+.context-label {
+	color: color-mix(in srgb, currentColor 55%, transparent);
+}
+
+#context-mode {
+	padding: 2px 6px;
+	font-size: 0.78rem;
+}
+
+.sandbox-frame {
+	position: absolute;
+	left: -9999px;
+	width: 0;
+	height: 0;
+	border: 0;
 }
 
 #input {
@@ -542,8 +631,13 @@ button.danger:hover {
 
 #view-settings {
 	padding: 14px;
-	overflow: auto;
+	overflow-y: auto;
+	overflow-x: hidden;
 	gap: 14px;
+}
+
+#view-settings label {
+	display: block;
 }
 
 .settings-group {
@@ -587,6 +681,7 @@ button.danger:hover {
 	margin: -8px 0 0;
 	font-size: 0.85rem;
 	color: color-mix(in srgb, currentColor 55%, transparent);
+	overflow-wrap: anywhere;
 }
 
 .provider-card {
@@ -660,8 +755,10 @@ button.danger:hover {
 
 .settings-actions .status {
 	flex: 1;
+	min-width: 0;
 	font-size: 0.82rem;
 	color: color-mix(in srgb, currentColor 60%, transparent);
+	overflow-wrap: anywhere;
 }
 
 .settings-actions .status[data-state="ok"] {
@@ -682,6 +779,20 @@ button.danger:hover {
 	align-items: flex-start;
 	gap: 8px;
 	font-size: 0.85rem;
+	min-width: 0;
+}
+
+.capability-desc {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-wrap: break-word;
+}
+
+.capability-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex-shrink: 0;
 }
 
 .capability input {
