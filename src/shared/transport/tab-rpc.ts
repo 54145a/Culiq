@@ -23,6 +23,10 @@ export function setPanelWindow(windowId: number | undefined): void {
 export async function getPanelWindowTab(): Promise<chrome.tabs.Tab | undefined> {
 	if (panelWindowId === undefined) return undefined;
 	const [tab] = await chrome.tabs.query({ active: true, windowId: panelWindowId });
+	if (!tab) return undefined;
+	// In popup mode, the panel window only contains the extension page.
+	// Return undefined so the fallback in findTargetTab kicks in.
+	if (tab.url?.startsWith("chrome-extension://")) return undefined;
 	return tab;
 }
 

@@ -351,23 +351,37 @@ async function evalInTab(tabId: number, world: "MAIN" | "ISOLATED", code: string
 	return outcome.value ?? "";
 }
 
-function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
+function waitForTabLoad(tabId: number, timeoutMs: number, signal?: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
 		let settled = false;
+		let settleTimer: ReturnType<typeof setTimeout> | undefined;
+		const settleThenFinish = () => {
+			if (settled) return;
+			settleTimer = setTimeout(() => finish(), 5_000);
+		};
 		const finish = (err?: Error) => {
 			if (settled) return;
 			settled = true;
+			if (settleTimer) clearTimeout(settleTimer);
 			chrome.tabs.onUpdated.removeListener(onUpdate);
+			chrome.tabs.onRemoved.removeListener(onRemoved);
 			clearTimeout(timer);
+			if (signal) signal.removeEventListener("abort", onAbort);
 			if (err) reject(err); else resolve();
 		};
 		const onUpdate = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
-			if (id === tabId && info.status === "complete") finish();
+			if (id === tabId && info.status === "complete") settleThenFinish();
 		};
+		const onRemoved = (id: number) => {
+			if (id === tabId) finish(new Error("Tab was closed while waiting for load."));
+		};
+		const onAbort = () => finish(new Error("aborted"));
 		const timer = setTimeout(() => finish(new Error(`waitForLoad timed out after ${timeoutMs / 1000}s`)), timeoutMs);
 		chrome.tabs.onUpdated.addListener(onUpdate);
+		chrome.tabs.onRemoved.addListener(onRemoved);
+		signal?.addEventListener("abort", onAbort);
 		chrome.tabs.get(tabId).then((tab) => {
-			if (tab.status === "complete") finish();
+			if (tab.status === "complete") settleThenFinish();
 		}).catch(() => {});
 	});
 }

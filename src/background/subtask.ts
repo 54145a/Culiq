@@ -27,7 +27,10 @@ export const subtaskTool: AgentTool = {
 	async execute(args, signal) {
 		const task = String(args.task);
 		const maxTurns = typeof args.maxTurns === "number" ? Math.max(1, Math.floor(args.maxTurns)) : 5;
-		const text = await runSubagent(task, getTools(), getSystemPrompt(), signal, maxTurns);
+		const tools = getTools().filter(
+			(tool) => !tool.custom && tool.name !== "subtask" && tool.name !== "sandbox_exec",
+		);
+		const text = await runSubagent(task, tools, getSystemPrompt({ tools }), signal, maxTurns);
 		return { content: [{ type: "text", text }] };
 	},
 };

@@ -193,9 +193,21 @@ interface StoredSettings {
 
 /** Migrate old v2-v4 settings (Record<ProviderId, ProviderConfig>) to v5 (ProviderConfig[]). */
 function migrateProviders(stored: StoredSettings, base: CuliqSettings): { providers: ProviderConfig[]; defaultProviderId: string } {
-	// New format: array + defaultProviderId
+	// New format: array + defaultProviderId — fill in defaults for missing fields
 	if (Array.isArray(stored.providers) && typeof stored.defaultProviderId === "string") {
-		return { providers: stored.providers, defaultProviderId: stored.defaultProviderId };
+		const merged = stored.providers.map((p) => {
+			const def = PROVIDER_DEFAULTS.find((d) => d.id === p.id);
+			return {
+				id: p.id,
+				name: p.name ?? def?.name ?? p.id,
+				type: p.type ?? def?.type ?? "openai",
+				apiKey: p.apiKey ?? "",
+				baseUrl: p.baseUrl ?? def?.baseUrl ?? "",
+				defaultModel: p.defaultModel ?? def?.defaultModel ?? "",
+				models: p.models ?? def?.models ?? [],
+			};
+		});
+		return { providers: merged, defaultProviderId: stored.defaultProviderId };
 	}
 	// Old format: Record<string, ProviderConfig> + activeProvider
 	const oldProviders = stored.providers;
