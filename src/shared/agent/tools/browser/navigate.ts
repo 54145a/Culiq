@@ -1,5 +1,6 @@
 import { getActiveTab } from "@shared/transport/tab-rpc";
 import { CAPABILITY_INFO } from "@shared/config";
+import { isStandaloneMode } from "@shared/standalone";
 import type { AgentTool } from "../../types";
 import { waitForTabComplete } from "./wait";
 
@@ -38,7 +39,7 @@ export const navigateTool: AgentTool = {
 		const url = String(args.url);
 		const newTab = Boolean(args.newTab);
 		const waitForLoad = args.waitForLoad !== false;
-		const shouldFocus = newTab;
+		const shouldFocus = newTab && !isStandaloneMode();
 
 		let parsed: URL;
 		try {

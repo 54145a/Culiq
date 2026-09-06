@@ -116,20 +116,36 @@ export const readDomTool: AgentTool = {
 			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: 'markdown' (clean Markdown via Defuddle, default), 'html' (raw markup), 'readable_html' (clean HTML via Defuddle), or 'outline' (headings, links, forms)." },
 			selector: { type: "string", description: "Optional CSS selector to limit scope." },
 			maxChars: { type: "number", description: "Truncate output to this many chars. Default 8000." },
+			tabId: { type: "number", description: "Read from a specific tab instead of the active tab. Used internally; not exposed to agents." },
 		},
 		additionalProperties: false,
 	},
 	async execute(args) {
-		const result = await callContent({
-			method: "read_dom",
-			...(args.mode !== undefined ? { mode: args.mode as "markdown" | "html" | "readable_html" | "outline" } : {}),
-			...(args.selector !== undefined ? { selector: String(args.selector) } : {}),
-			...(args.maxChars !== undefined ? { maxChars: Number(args.maxChars) } : {}),
-		});
-		const header = `url: ${result.url}\ntitle: ${result.title}\nmode: ${result.mode} · scope: ${result.scope} · chars: ${result.chars}${result.truncated ? " (truncated)" : ""}`;
-		return {
-			content: [{ type: "text", text: `${header}\n\n${result.content}` }],
-		};
+		// If a specific tabId is requested, switch to it and restore afterward.
+		const targetTabId = args.tabId as number | undefined;
+		let originalTabId: number | undefined;
+		if (targetTabId !== undefined) {
+			const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+			originalTabId = tabs[0]?.id;
+			await chrome.tabs.update(targetTabId, { active: true });
+		}
+		try {
+			const result = await callContent({
+				method: "read_dom",
+				...(args.mode !== undefined ? { mode: args.mode as "markdown" | "html" | "readable_html" | "outline" } : {}),
+				...(args.selector !== undefined ? { selector: String(args.selector) } : {}),
+				...(args.maxChars !== undefined ? { maxChars: Number(args.maxChars) } : {}),
+			});
+			const header = `url: ${result.url}\ntitle: ${result.title}\nmode: ${result.mode} · scope: ${result.scope} · chars: ${result.chars}${result.truncated ? " (truncated)" : ""}`;
+			return {
+				content: [{ type: "text", text: `${header}\n\n${result.content}` }],
+			};
+		} finally {
+			// Restore the original active tab after reading.
+			if (targetTabId !== undefined && originalTabId !== undefined) {
+				await chrome.tabs.update(originalTabId, { active: true }).catch(() => {});
+			}
+		}
 	},
 };
 

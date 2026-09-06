@@ -91,7 +91,8 @@ export const fetchUrlTool: AgentTool = {
 
 		// Delegate content extraction to read_dom tool.
 		const selector = typeof args.selector === "string" ? args.selector : undefined;
-		const contentResult = await readDomTool.execute({ mode, maxChars, selector }, signal);
+		const targetTabId = (await chrome.tabs.query({ url })).at(-1)?.id;
+		const contentResult = await readDomTool.execute({ mode, maxChars, selector, tabId: targetTabId }, signal);
 
 		// In standalone mode, switch back to the popup window after reading.
 		if (isStandaloneMode()) {
