@@ -3,6 +3,14 @@ import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 import { waitForTabComplete } from "./wait";
 
+/** Internal args — `active` is injected by the system, not exposed in JSON Schema. */
+interface NavigateArgs {
+	url: string;
+	newTab?: boolean;
+	waitForLoad?: boolean;
+	active?: boolean;
+}
+
 export const navigateTool: AgentTool = {
 	name: "navigate",
 	description: CAPABILITY_INFO.navigate.description,
@@ -26,10 +34,12 @@ export const navigateTool: AgentTool = {
 		additionalProperties: false,
 	},
 	executionMode: "sequential",
-	async execute(args, signal) {
+	async execute(rawArgs, signal) {
+		const args = rawArgs as unknown as NavigateArgs;
 		const url = String(args.url);
 		const newTab = Boolean(args.newTab);
 		const waitForLoad = args.waitForLoad !== false;
+		const shouldFocus = args.active !== false;
 
 		let parsed: URL;
 		try {
@@ -43,12 +53,12 @@ export const navigateTool: AgentTool = {
 
 		let tabId: number;
 		if (newTab) {
-			const created = await chrome.tabs.create({ url, active: true });
+			const created = await chrome.tabs.create({ url, active: shouldFocus });
 			if (created.id === undefined) throw new Error("Failed to create tab.");
 			tabId = created.id;
 		} else {
-			const active = await getActiveTab();
-			const updated = await chrome.tabs.update(active.id as number, { url });
+			const current = await getActiveTab();
+			const updated = await chrome.tabs.update(current.id as number, { url });
 			if (!updated || updated.id === undefined) throw new Error("Failed to update tab.");
 			tabId = updated.id;
 		}

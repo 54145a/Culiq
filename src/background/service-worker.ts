@@ -189,6 +189,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				enabled,
 				subagent: (task) => runSubagent(task, sandboxToolsForSubagent, systemPrompt, controller.signal),
 				eventSink: (event) => send({ type: "agent_event", turnId, event }),
+				windowId: msg.windowId,
 			});
 			await runAgentLoop(
 				{
