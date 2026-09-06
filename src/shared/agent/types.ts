@@ -5,6 +5,8 @@ export type ProviderId = string;
 export interface AgentToolResult {
 	content: ToolResultContent[];
 	isError?: boolean;
+	/** Optional identifier returned by navigate to pass the tab ID to fetch_url. */
+	toolCallId?: string;
 }
 
 export interface AgentToolDisplayResult {

@@ -85,6 +85,7 @@ export const navigateTool: AgentTool = {
 						incomplete,
 				},
 			],
+			toolCallId: String(tabId),
 		};
 	},
 };

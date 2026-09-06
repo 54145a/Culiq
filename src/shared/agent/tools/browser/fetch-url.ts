@@ -82,16 +82,21 @@ export const fetchUrlTool: AgentTool = {
 		}
 
 		// Delegate navigation to navigate tool (handles chrome.tabs + timeout).
+		let navResult: AgentToolResult;
 		try {
-			await navigateTool.execute({ url, newTab: true, waitForLoad: true }, signal);
+			navResult = await navigateTool.execute({ url, newTab: true, waitForLoad: true }, signal);
 		} catch (err) {
 			return { content: [{ type: "text", text: `Navigation failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
 		}
 		if (signal?.aborted) throw new DOMException("aborted", "AbortError");
 
+		// Extract tab ID from navigate result, or query by URL as fallback.
+		const targetTabId = navResult.toolCallId
+			? Number(navResult.toolCallId)
+			: (await chrome.tabs.query({ url })).at(-1)?.id;
+
 		// Delegate content extraction to read_dom tool.
 		const selector = typeof args.selector === "string" ? args.selector : undefined;
-		const targetTabId = (await chrome.tabs.query({ url })).at(-1)?.id;
 		const contentResult = await readDomTool.execute({ mode, maxChars, selector, tabId: targetTabId }, signal);
 
 		// In standalone mode, switch back to the popup window after reading.
