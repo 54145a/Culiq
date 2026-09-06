@@ -50,24 +50,24 @@ self.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
 
 const activeTurns = new Map<string, { controller: AbortController; port: chrome.runtime.Port }>();
 
-let popupWindowId: number | undefined;
+import { setPopupWindowId, clearIfMatches, isStandaloneMode, getPopupWindowId } from "@shared/standalone";
 chrome.windows.onRemoved.addListener((id) => {
-	if (id === popupWindowId) popupWindowId = undefined;
+	clearIfMatches(id);
 });
 
 async function openPopupWindow(send: (m: BgToPanel) => void): Promise<void> {
-	if (popupWindowId !== undefined) {
+	if (isStandaloneMode()) {
 		try {
-			await chrome.windows.update(popupWindowId, { focused: true });
+			await chrome.windows.update(getPopupWindowId()!, { focused: true });
 			return;
 		} catch {
-			popupWindowId = undefined;
+			setPopupWindowId(undefined);
 		}
 	}
 	const url = chrome.runtime.getURL("src/sidepanel/index.html?window=1");
 	const win = await chrome.windows.create({ url, type: "popup", width: 440, height: 720 });
 	if (!win?.id) return;
-	popupWindowId = win.id;
+	setPopupWindowId(win.id);
 	send({ type: "panel_transfer" });
 	closeSidebar();
 }
@@ -189,7 +189,6 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				enabled,
 				subagent: (task) => runSubagent(task, sandboxToolsForSubagent, systemPrompt, controller.signal),
 				eventSink: (event) => send({ type: "agent_event", turnId, event }),
-				windowId: msg.windowId,
 			});
 			await runAgentLoop(
 				{

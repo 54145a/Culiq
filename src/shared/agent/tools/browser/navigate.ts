@@ -1,14 +1,14 @@
 import { getActiveTab } from "@shared/transport/tab-rpc";
 import { CAPABILITY_INFO } from "@shared/config";
+import { isStandaloneMode } from "@shared/standalone";
 import type { AgentTool } from "../../types";
 import { waitForTabComplete } from "./wait";
 
-/** Internal args — `active` is injected by the system, not exposed in JSON Schema. */
+/** Internal args — standalone mode is detected automatically. */
 interface NavigateArgs {
 	url: string;
 	newTab?: boolean;
 	waitForLoad?: boolean;
-	active?: boolean;
 }
 
 export const navigateTool: AgentTool = {
@@ -39,7 +39,7 @@ export const navigateTool: AgentTool = {
 		const url = String(args.url);
 		const newTab = Boolean(args.newTab);
 		const waitForLoad = args.waitForLoad !== false;
-		const shouldFocus = args.active !== false;
+		const shouldFocus = newTab && !isStandaloneMode();
 
 		let parsed: URL;
 		try {

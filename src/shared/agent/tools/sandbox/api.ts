@@ -16,7 +16,6 @@ import { file, dir, write } from "@shared/opfs";
 /** Per-call context handed to each bridge `invoke` by the sandbox session. */
 export interface SandboxCtx {
 	subagent?: (task: string) => Promise<string>;
-	windowId?: number;
 }
 
 export interface BridgeSpecEntry {
@@ -125,10 +124,7 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 	},
 	navigate: {
 		description: "Navigate to a URL on the active tab or a new tab (identical to the navigate tool).",
-		invoke: ([url, options], ctx) => {
-			const shouldFocus = !ctx.windowId;
-			return navigateTool.execute({ url: String(url), active: shouldFocus, ...((options ?? {}) as Record<string, unknown>) } as never).then(toolText);
-		},
+		invoke: ([url, options]) => navigateTool.execute({ url: String(url), ...((options ?? {}) as Record<string, unknown>) } as never).then(toolText),
 	},
 	query: {
 		description:

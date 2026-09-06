@@ -18,7 +18,6 @@ interface SandboxContext {
 	enabled: Set<Capability>;
 	subagent?: (task: string) => Promise<string>;
 	eventSink?: (event: AgentEvent) => void;
-	windowId?: number;
 }
 
 interface SandboxSession {
@@ -29,7 +28,6 @@ interface SandboxSession {
 	enabled: Set<Capability>;
 	subagent?: (task: string) => Promise<string>;
 	eventSink?: (event: AgentEvent) => void;
-	windowId?: number;
 }
 
 /**
@@ -117,7 +115,6 @@ function getSession(signal: AbortSignal): SandboxSession {
 			enabled,
 			subagent: ctx?.subagent,
 			eventSink: ctx?.eventSink,
-			windowId: ctx?.windowId,
 		};
 		sessions.set(signal, created);
 		signal.addEventListener("abort", () => closeSandbox(signal), { once: true });
@@ -153,7 +150,7 @@ async function handleBridge(session: SandboxSession, id: number, path: string, a
 	const toolCallId = `sb-${id}`;
 	const toolName = `sandbox.${path}`;
 	const sink = session.eventSink;
-	const ctx = { subagent: session.subagent, windowId: session.windowId };
+	const ctx = { subagent: session.subagent };
 	if (sink) sink({ type: "tool_execution_start", toolCallId, toolName, args: args as unknown as Record<string, unknown> });
 	try {
 		if (!isPathEnabled(path, session.enabled)) {
