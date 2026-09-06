@@ -7,7 +7,7 @@ import { ensureCustomToolsLoaded, refreshCustomTools, syncBuiltinTools } from "@
 import { runSubagent } from "@shared/agent/subagent";
 import { CAPABILITY_INFO, loadSettings, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
-import { getPanelWindowTab, isProtectedUrl, setPanelWindow } from "@shared/transport/tab-rpc";
+import { findTargetTab, isProtectedUrl, setPanelWindow } from "@shared/transport/tab-rpc";
 import { type ChatContextMode } from "@shared/transport/protocol";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
@@ -228,7 +228,7 @@ async function buildSendTimeContext(contextMode: ChatContextMode | undefined): P
 	const blocks: string[] = [];
 	// The "current page" is the tab next to the panel (its own window's active
 	// tab), not the focused window — the user may have switched windows.
-	const current = (await getPanelWindowTab()) ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+	const current = await findTargetTab();
 	const currentUrl = current?.url;
 	const isOurPage = currentUrl !== undefined && currentUrl.startsWith(`chrome-extension://${chrome.runtime.id}`);
 	const internal = currentUrl !== undefined && isProtectedUrl(currentUrl) && !isOurPage;
