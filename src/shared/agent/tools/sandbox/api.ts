@@ -351,7 +351,7 @@ async function evalInTab(tabId: number, world: "MAIN" | "ISOLATED", code: string
 	return outcome.value ?? "";
 }
 
-function waitForTabLoad(tabId: number, timeoutMs: number, signal?: AbortSignal): Promise<void> {
+function waitForTabLoad(tabId: number, timeoutMs: number, signal?: AbortSignal, expectedUrl?: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		let settled = false;
 		let settleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -369,8 +369,10 @@ function waitForTabLoad(tabId: number, timeoutMs: number, signal?: AbortSignal):
 			if (signal) signal.removeEventListener("abort", onAbort);
 			if (err) reject(err); else resolve();
 		};
-		const onUpdate = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
-			if (id === tabId && info.status === "complete") settleThenFinish();
+		const onUpdate = (id: number, info: chrome.tabs.OnUpdatedInfo, tab?: chrome.tabs.Tab) => {
+			if (id !== tabId) return;
+			if (expectedUrl && tab?.url && !tab.url.startsWith(expectedUrl)) return;
+			if (info.status === "complete") settleThenFinish();
 		};
 		const onRemoved = (id: number) => {
 			if (id === tabId) finish(new Error("Tab was closed while waiting for load."));

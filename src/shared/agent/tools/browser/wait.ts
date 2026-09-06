@@ -3,7 +3,7 @@ const LOAD_TIMEOUT_MS = 30_000;
 // painting before we read the page. Applies to both navigate and fetch_url.
 const SETTLE_MS = 5_000;
 
-export function waitForTabComplete(tabId: number, signal?: AbortSignal): Promise<void> {
+export function waitForTabComplete(tabId: number, signal?: AbortSignal, expectedUrl?: string): Promise<void> {
 	return new Promise<void>((resolve, reject) => {
 		let settled = false;
 		let settleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -19,12 +19,14 @@ export function waitForTabComplete(tabId: number, signal?: AbortSignal): Promise
 			chrome.tabs.onRemoved.removeListener(onRemoved);
 			clearTimeout(timer);
 			if (signal) signal.removeEventListener("abort", onAbort);
-			if (err) reject(err);
-			else resolve();
+			if (err) reject(err); else resolve();
 		};
 
-		const onUpdated = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
-			if (id === tabId && info.status === "complete") settleThenFinish();
+		const onUpdated = (id: number, info: chrome.tabs.OnUpdatedInfo, tab?: chrome.tabs.Tab) => {
+			if (id !== tabId) return;
+			// If an expected URL is set, wait for the tab to navigate to it
+			if (expectedUrl && tab?.url && !tab.url.startsWith(expectedUrl)) return;
+			if (info.status === "complete") settleThenFinish();
 		};
 		const onRemoved = (id: number) => {
 			if (id === tabId) finish(new Error("Tab was closed while waiting for load."));

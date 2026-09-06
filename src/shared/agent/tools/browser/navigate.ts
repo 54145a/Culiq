@@ -65,7 +65,7 @@ export const navigateTool: AgentTool = {
 
 		if (waitForLoad) {
 			try {
-				await waitForTabComplete(tabId, signal);
+				await waitForTabComplete(tabId, signal, url);
 			} catch {
 				// Timed out or aborted — page may still be usable.
 			}
