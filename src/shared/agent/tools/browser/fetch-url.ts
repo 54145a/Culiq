@@ -89,13 +89,20 @@ export const fetchUrlTool: AgentTool = {
 		}
 		if (signal?.aborted) throw new DOMException("aborted", "AbortError");
 
+		// In standalone mode, the new tab is not the active tab.
+		// Temporarily activate it for readDomTool.
+		const targetTabId = (await chrome.tabs.query({ url })).at(-1)?.id;
+		if (targetTabId !== undefined) {
+			await chrome.tabs.update(targetTabId, { active: true });
+		}
+
 		// Delegate content extraction to read_dom tool.
 		const selector = typeof args.selector === "string" ? args.selector : undefined;
 		const contentResult = await readDomTool.execute({ mode, maxChars, selector }, signal);
 
 		// Close tab if needed.
 		if (afterLoad === "close") {
-			const tabId = await getActiveTabId();
+			const tabId = targetTabId ?? (await getActiveTabId());
 			if (tabId) chrome.tabs.remove(tabId).catch(() => {});
 		}
 
