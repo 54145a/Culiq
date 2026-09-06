@@ -40,42 +40,20 @@ export type ExecutionMode = "parallel" | "sequential";
 
 // ── Response types ──────────────────────────────────────────────────────────
 
-/** Minimal Response type (avoids requiring DOM lib). */
-export interface SandboxResponse {
-	readonly ok: boolean;
+/** Response-like proxy returned by sandbox.fetch. Body methods forward to SW via bridge. */
+export interface Response {
 	readonly status: number;
-	readonly statusText: string;
-	readonly headers: Headers;
+	readonly ok: boolean;
+	readonly headers: Record<string, string>;
 	text(): Promise<string>;
 	json(): Promise<unknown>;
 	arrayBuffer(): Promise<ArrayBuffer>;
-}
-
-/** Minimal Headers type. */
-export interface Headers {
-	get(name: string): string | null;
 }
 
 /** Minimal Request type. */
 export interface SandboxRequest {
 	readonly url: string;
 	readonly method: string;
-}
-
-/** One piece of a tool result. */
-export interface ToolResultContent {
-	type: string;
-	text?: string;
-	[key: string]: unknown;
-}
-
-/**
- * The structured result returned by some sandbox bridge calls.
- * Note: most bridge methods return strings, not ToolResult.
- */
-export interface ToolResult {
-	content: ToolResultContent[];
-	isError?: boolean;
 }
 
 // ── Sandbox interface ───────────────────────────────────────────────────────
@@ -104,8 +82,12 @@ export interface CuliqSandbox {
 
 	// ── Fetch (CORS-free via extension context) ─────────────────────────────
 
-	/** Fetch a URL with CORS-free access. Returns { status, ok, headers, text(), json() }. */
-	fetch(input: string | SandboxRequest, init?: unknown): Promise<SandboxResponse>;
+	/**
+	 * Fetch a URL with CORS-free access.
+	 * Returns a Response-like proxy with .text(), .json(), .arrayBuffer() methods.
+	 * The body is lazy — methods forward calls to the SW via bridge.
+	 */
+	fetch(input: string | SandboxRequest, init?: unknown): Promise<Response>;
 
 	/** Bridge to chrome.tabs.* — returns raw chrome API results. */
 	chrome: {

@@ -153,6 +153,13 @@ function ProviderCard({
 			<Field label="API key" type="password" value={provider.apiKey} placeholder="sk-..." onInput={(v) => { provider.apiKey = v; dirty(); }} />
 			<Field label="Base URL" type="text" value={provider.baseUrl} placeholder={def?.baseUrl ?? ""} onInput={(v) => { provider.baseUrl = v; dirty(); }} />
 			<ModelListField value={provider.models} placeholder="claude-sonnet-4-5, gpt-4o-mini, ..." onModels={(v) => { provider.models = v; dirty(); }} />
+			<Field
+				label="Context window (tokens)"
+				type="number"
+				value={String(provider.contextWindow ?? "")}
+				placeholder="Default: 64000"
+				onInput={(v) => { provider.contextWindow = v ? Number(v) : undefined; dirty(); }}
+			/>
 			{provider.models.length > 0 && (
 				<div className="model-capabilities">
 					<p className="settings-hint">Per-model capabilities. Only screenshot (visual analysis) can be disabled — useful for text-only models. All other capabilities are always on.</p>
@@ -239,8 +246,7 @@ function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () 
 		<details className="settings-group">
 			<summary className="settings-header">Context management</summary>
 			<p className="settings-hint">
-				Summarize old turns when the conversation nears the model's context window. Fill in the context window size below; if
-				left empty a conservative default is used.
+				Summarize old turns when the conversation nears the model's context window. The context window size is set per-model in the Providers section.
 			</p>
 			<CheckRow
 				code="Auto-compress context"
@@ -267,17 +273,6 @@ function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () 
 				onInput={(v) => {
 					const n = Number(v);
 					if (Number.isFinite(n) && n >= 1) cm.keepTurns = Math.floor(n);
-					dirty();
-				}}
-			/>
-			<Field
-				label="Context window (tokens)"
-				type="number"
-				value={cm.windowOverride !== undefined ? String(cm.windowOverride) : ""}
-				placeholder="e.g. 200000"
-				onInput={(v) => {
-					const n = Number(v);
-					cm.windowOverride = v.trim() !== "" && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
 					dirty();
 				}}
 			/>

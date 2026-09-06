@@ -38,6 +38,17 @@ function serialize(v) {
   }
 }
 
+/** Create a proxy that forwards method calls to the SW via bridge. */
+function createResponseProxy(sess, responseId) {
+  return new Proxy({}, {
+    get(target, prop) {
+      if (prop === "then") return undefined;
+      if (prop === Symbol.toPrimitive) return () => `[Response ${responseId}]`;
+      return (...args) => bridgeCall(sess, `response.${String(prop)}`, [responseId, ...args]);
+    },
+  });
+}
+
 /** One sandbox session = one agent turn. Each holds its own sandbox object and pending bridge calls. */
 const sessions = new Map();
 
@@ -75,7 +86,13 @@ function createSandbox(sess) {
     },
     // ── Fetch (bridge to extension context, CORS-free) ──────────────────────
     fetch(input, init) {
-      return bridgeCall(sess, "fetch", [input, init]);
+      return bridgeCall(sess, "fetch", [input, init]).then((value) => {
+        // If the SW returned a response marker, wrap it in a proxy
+        if (value && value.__type === "response") {
+          return createResponseProxy(sess, value.id);
+        }
+        return value;
+      });
     },
   };
 }

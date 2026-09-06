@@ -56,7 +56,7 @@ export const fetchUrlTool: AgentTool = {
 	executionMode: "sequential",
 	async execute(args, signal): Promise<AgentToolResult> {
 		const url = String(args.url);
-		const afterLoad = args.afterLoad === "open" ? "open" : "close";
+		const afterLoad = args.afterLoad === "close" ? "close" : "open";
 		const mode = (args.mode as "markdown" | "html" | "readable_html" | "outline") ?? "markdown";
 		const maxChars = typeof args.maxChars === "number" ? Math.max(100, Math.floor(args.maxChars)) : 200_000;
 		const probeMime = args.probeMime !== false;

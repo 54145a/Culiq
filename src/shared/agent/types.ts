@@ -38,6 +38,7 @@ export interface AgentLoopConfig {
 	temperature?: number;
 	maxTurns?: number;
 	contextManagement?: ContextManagementConfig;
+	contextWindow?: number;
 }
 
 export type AgentEvent =

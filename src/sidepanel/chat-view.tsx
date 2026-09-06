@@ -8,6 +8,7 @@ import { renderMarkdown } from "./markdown";
 import { ExtensionChatTransport } from "./extension-chat-transport";
 import { getPanelWindowId } from "./window";
 import type { BgToPanel, PanelToBg } from "@shared/transport/protocol";
+import type { ImageContent } from "@shared/ai/types";
 
 export interface ChatTransport {
 	send(msg: PanelToBg): void;
@@ -89,10 +90,14 @@ export async function startFreshSession(): Promise<void> {
 function convertSessionToUI(session: Session): UIMessage[] {
 	// Collect tool results keyed by toolCallId so they can be merged into the
 	// matching tool-call part (the stored format keeps them as separate messages).
-	const resultText = new Map<string, string>();
+	const resultText = new Map<string, { text: string; images: Array<{ mediaType: string; data: string }> }>();
 	for (const m of session.messages) {
 		if (m.role === "toolResult") {
-			resultText.set(m.toolCallId, m.content.filter((c) => c.type === "text").map((c) => c.text).join(""));
+			const text = m.content.filter((c) => c.type === "text").map((c) => c.text).join("");
+			const images = m.content
+				.filter((c): c is ImageContent => c.type === "image")
+				.map((c) => ({ mediaType: c.mediaType, data: c.data }));
+			resultText.set(m.toolCallId, { text, images });
 		}
 	}
 	return session.messages
@@ -223,6 +228,10 @@ function ToolCardView({ toolName, part }: { toolName: string; part: { toolCallId
 	const [expanded, setExpanded] = useState(false);
 	const status = part.state.includes("error") ? "error" : part.state.includes("available") && part.output !== undefined ? "ok" : "running";
 	const result = part.errorText ?? (typeof part.output === "string" ? part.output : part.output ? JSON.stringify(part.output) : "");
+	// Check if output contains image data
+	const images = typeof part.output === "object" && part.output !== null && "images" in part.output
+		? (part.output as { images: Array<{ mediaType: string; data: string }> }).images
+		: [];
 	return (
 		<li className="tool-card" data-status={status} data-expanded={String(expanded)}>
 			<div
@@ -244,7 +253,12 @@ function ToolCardView({ toolName, part }: { toolName: string; part: { toolCallId
 				<span className="tool-status">{status === "running" ? "running…" : status}</span>
 			</div>
 			<pre className="tool-args">{formatJSON(part.input)}</pre>
-			<div className="tool-body">{result}</div>
+			<div className="tool-body">
+				{images.length > 0 && images.map((img, i) => (
+					<img key={i} src={`data:${img.mediaType};base64,${img.data}`} className="tool-screenshot" alt={`Screenshot ${i + 1}`} />
+				))}
+				{result && <span>{result}</span>}
+			</div>
 		</li>
 	);
 }

@@ -60,7 +60,7 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	},
 	fetch_url: {
 		description:
-			"Read the content of a URL. By default (`afterLoad:\"close\"`), opens the page in a new tab, extracts the rendered content, and closes it — a one-shot read best suited for simple text, API responses, or static pages you only need to view once. Set `afterLoad:\"open\"` to keep the tab open after reading, so you can follow up with `read_dom`, `query`, or `click` on the same page; in this mode `mode` supports `\"text\"`, `\"html\"`, and `\"outline\"`. A HEAD request first checks the content type; binary files are refused by default (`probeMime:true`).",
+			"Read the content of a URL. By default, opens the page in a new tab, extracts the rendered content, and keeps the tab open for follow-up tools (`read_dom`, `query`, `click`). Set `afterLoad:\"close\"` for one-shot reads that close the tab after extraction. Prefer this over `navigate` when the goal is to read page content. `mode` supports `\"markdown\"` (default), `\"html\"`, `\"readable_html\"`, and `\"outline\"`. A HEAD request first checks the content type; binary files are refused by default (`probeMime:true`).",
 	},
 	use_skill: {
 		description:
@@ -68,7 +68,7 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	},
 	sandbox_exec: {
 		description:
-			"Run JavaScript in a restricted sandbox worker hosted in the panel's hidden iframe. Exposes `sandbox.file(path).text()/.remove()`, `sandbox.dir(path).children()/.remove()/.create()`, `sandbox.write(path, content)`, `sandbox.tree(path)`, and `sandbox.fetch(url)` (CORS-free). Also includes a chrome bridge: `sandbox.chrome.tabs.*`, `sandbox.chrome.windows.*`, `sandbox.readDom`, `sandbox.click`, `sandbox.type`, `sandbox.navigate`, `sandbox.evalInTab`, and more. No DOM and no direct chrome.* inside the worker; all calls are proxied through the background. State persists within the turn. Top-level await supported; `return X` to send a value back.",
+			"Run JavaScript in a restricted sandbox worker hosted in the panel's hidden iframe. Exposes `sandbox.file(path).text()/.remove()`, `sandbox.dir(path).children()/.remove()/.create()`, `sandbox.write(path, content)`, `sandbox.tree(path)`, and `sandbox.fetch(url)` (CORS-free). Also includes a chrome bridge: `sandbox.chrome.tabs.*`, `sandbox.chrome.windows.*`, `sandbox.readDom`, `sandbox.click`, `sandbox.type`, `sandbox.navigate`, `sandbox.evalInTab`, and more. No DOM and no direct chrome.* inside the worker; all calls are proxied through the background. Do NOT call multiple sandbox tools concurrently (e.g. via Promise.all) — sandbox tools operate on the same tab and must be called sequentially. For batch operations, write the parallel logic inside the sandbox_exec code itself. State persists within the turn. Top-level await supported; `return X` to send a value back.",
 	},
 	subtask: {
 		description:
@@ -99,6 +99,8 @@ export interface ProviderConfig {
 	baseUrl: string;
 	defaultModel: string;
 	models: string[];
+	/** Per-model context window override in tokens. If undefined, uses DEFAULT_CONTEXT_WINDOW. */
+	contextWindow?: number;
 }
 
 const CULIQ_SETTINGS_VERSION = 5;

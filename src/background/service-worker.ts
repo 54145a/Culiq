@@ -199,6 +199,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				{
 					model: { id: provider.defaultModel, provider: provider.id },
 					contextManagement: settings.contextManagement,
+					contextWindow: provider.contextWindow,
 				},
 				(event) => send({ type: "agent_event", turnId, event }),
 				controller.signal,
@@ -247,7 +248,7 @@ async function buildSendTimeContext(contextMode: ChatContextMode | undefined): P
 
 	if (internal) {
 		blocks.push(
-			`The current page is a browser-internal page: ${currentUrl}. DOM tools (read_dom, query, click, type, screenshot) cannot operate on it — if the user wants a web page, open one with navigate instead.`,
+			`The current page is a browser-internal page: ${currentUrl}. DOM tools (read_dom, query, click, type, screenshot) cannot operate on it — open a new tab with navigate first.`,
 		);
 	}
 

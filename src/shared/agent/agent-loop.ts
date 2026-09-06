@@ -225,8 +225,9 @@ Write a concise, information-dense summary that preserves:
 
 Omit per-turn filler and repeated narration. Do not add commentary or markdown. Output only the summary text.`;
 
-function resolveContextWindow(override?: number): number {
+function resolveContextWindow(override?: number, providerWindow?: number): number {
 	if (override !== undefined && override > 0) return override;
+	if (providerWindow !== undefined && providerWindow > 0) return providerWindow;
 	return DEFAULT_CONTEXT_WINDOW;
 }
 
@@ -341,7 +342,7 @@ async function maybeCompressContext(
 	if (!cm?.enabled || context.messages.length < 2) return;
 
 	const beforeTokens = estimateContextTokens(context);
-	const window = resolveContextWindow(cm.windowOverride);
+	const window = resolveContextWindow(cm.windowOverride, config.contextWindow);
 	const threshold = Math.floor(window * cm.thresholdRatio);
 	if (beforeTokens <= threshold) return;
 
