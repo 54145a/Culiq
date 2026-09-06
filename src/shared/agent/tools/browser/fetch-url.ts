@@ -117,8 +117,8 @@ export const fetchUrlTool: AgentTool = {
 		const text = headerEnd >= 0 ? raw.slice(headerEnd + 2) : raw;
 		if (afterLoad === "open") {
 			const tabId = await getActiveTabId();
-			return { content: [{ type: "text", text: `fetched: ${url}\n${text}${tabId ? `\ntabId: ${tabId}` : ""}` }] };
+			return { content: [{ type: "text", text: `fetched: ${url}\n\n${text}${tabId ? `\ntabId: ${tabId}` : ""}` }] };
 		}
-		return { content: [{ type: "text", text: `fetched: ${url}\n${text}` }] };
+		return { content: [{ type: "text", text: `fetched: ${url}\n\n${text}` }] };
 	},
 };
