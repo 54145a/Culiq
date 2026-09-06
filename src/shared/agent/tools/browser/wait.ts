@@ -24,8 +24,10 @@ export function waitForTabComplete(tabId: number, signal?: AbortSignal, expected
 
 		const onUpdated = (id: number, info: chrome.tabs.OnUpdatedInfo, tab?: chrome.tabs.Tab) => {
 			if (id !== tabId) return;
-			// If an expected URL is set, wait for the tab to navigate to it
-			if (expectedUrl && tab?.url && !tab.url.startsWith(expectedUrl)) return;
+			// Wait for the tab to navigate to the expected URL
+			if (expectedUrl) {
+				if (!tab?.url || !tab.url.startsWith(expectedUrl)) return;
+			}
 			if (info.status === "complete") settleThenFinish();
 		};
 		const onRemoved = (id: number) => {
@@ -46,7 +48,7 @@ export function waitForTabComplete(tabId: number, signal?: AbortSignal, expected
 		setTimeout(() => {
 			chrome.tabs.get(tabId).then((tab) => {
 				if (tab.status === "complete") {
-					if (expectedUrl && tab.url && !tab.url.startsWith(expectedUrl)) return;
+					if (expectedUrl && (!tab.url || !tab.url.startsWith(expectedUrl))) return;
 					settleThenFinish();
 				}
 			}).catch(() => {});
