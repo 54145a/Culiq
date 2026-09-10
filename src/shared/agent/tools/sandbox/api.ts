@@ -199,14 +199,6 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 		return Array.from(new Uint8Array(buf));
 	}),
 };
-			const res = responseStore.get(Number(id));
-			if (!res) throw new Error("Response not found (may have been consumed).");
-			responseStore.delete(Number(id));
-			const buf = await res.arrayBuffer();
-			return Array.from(new Uint8Array(buf));
-		},
-	},
-};
 
 /** Store for response objects created by the fetch bridge. */
 const responseStore = new Map<number, Response>();

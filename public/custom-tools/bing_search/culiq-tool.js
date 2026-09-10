@@ -3,7 +3,7 @@
 export default {
 	name: "bing_search",
 	description:
-		"Search the web using Bing and return the extracted result text. Opens the results page, reads the result list (the #b_results items), and returns the readable content so the agent can follow up with read_dom, query, or click. Use this for quick web searches instead of navigating to a search engine manually.",
+		"Search the web using Bing and return the extracted result text. ALWAYS use this tool first when you need to find documentation, guides, or external resources — do NOT guess URLs. Opens the results page, reads the result list (the #b_results items), and returns the readable content so the agent can follow up with read_dom, query, or click.",
 	parameters: {
 		type: "object",
 		properties: {

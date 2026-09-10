@@ -79,6 +79,8 @@ export interface StreamOptions {
 	signal?: AbortSignal;
 	maxTokens?: number;
 	temperature?: number;
+	headers?: Record<string, string>;
+	reasoning?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
 export type StreamEvent =

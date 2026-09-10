@@ -92,6 +92,8 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 	private sendFn: SendFn;
 	private contextMode?: ChatContextMode;
 	private windowId?: number;
+	private enabledCustomTools?: string[];
+	private reasoning?: string;
 	private handlers = new Map<string, (event: AgentEvent) => void>();
 
 	constructor(sendFn: SendFn, onMessageFn: OnMessageFn) {
@@ -112,6 +114,14 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 		this.windowId = id;
 	}
 
+	setCustomTools(tools: string[] | undefined): void {
+		this.enabledCustomTools = tools;
+	}
+
+	setReasoning(level: string | undefined): void {
+		this.reasoning = level;
+	}
+
 	async sendMessages(options: {
 		trigger: "submit-message" | "regenerate-message";
 		chatId: string;
@@ -129,6 +139,9 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 			messages: panelMessages as never,
 			...(this.contextMode ? { contextMode: this.contextMode } : {}),
 			...(this.windowId !== undefined ? { windowId: this.windowId } : {}),
+			...(options.chatId ? { sessionId: options.chatId } : {}),
+			...(this.enabledCustomTools ? { enabledCustomTools: this.enabledCustomTools } : {}),
+			...(this.reasoning ? { reasoning: this.reasoning } : {}),
 		};
 
 		return new ReadableStream<UIMessageChunk>({

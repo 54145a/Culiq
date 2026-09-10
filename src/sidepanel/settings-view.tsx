@@ -4,6 +4,7 @@ import {
 	CAPABILITY_INFO,
 	loadSettings,
 	PROVIDER_DEFAULTS,
+	REASONING_LEVELS,
 	type CuliqSettings,
 	type ProviderConfig,
 	saveSettings,
@@ -16,7 +17,7 @@ import {
 	type McpServerConfig,
 	type McpTransport,
 } from "@shared/mcp";
-import { listUserCustomTools, saveUserCustomTool, deleteUserCustomTool, extractMetaFromArtifact } from "@shared/custom-tools/storage";
+import { listUserCustomTools, saveCustomToolPackage, deleteUserCustomTool, extractMetaFromArtifact } from "@shared/custom-tools/storage";
 import { syncBuiltinTools } from "@shared/custom-tools";
 import type { CustomToolMeta } from "@shared/custom-tools";
 
@@ -44,25 +45,6 @@ function Field({
 				onClick={(e) => e.stopPropagation()}
 			/>
 		</label>
-	);
-}
-
-// Keeps the raw text (with commas) in the input while still parsing into the
-// models array on each keystroke. Binding value to models.join() would strip
-// the comma on input, making it impossible to type.
-function ModelListField({ value, placeholder, onModels }: { value: string[]; placeholder?: string; onModels: (v: string[]) => void }) {
-	const [text, setText] = useState(value.join(", "));
-	return (
-		<Field
-			label="Available models"
-			type="text"
-			value={text}
-			placeholder={placeholder}
-			onInput={(v) => {
-				setText(v);
-				onModels(v.split(",").map((s) => s.trim()).filter(Boolean));
-			}}
-		/>
 	);
 }
 
@@ -101,42 +83,19 @@ function CheckRow({
 
 function ProviderCard({
 	provider,
-	isDefault,
-	setDefault,
 	remove,
 	dirty,
-	settings,
 }: {
 	provider: ProviderConfig;
-	isDefault: boolean;
-	setDefault: () => void;
 	remove: () => void;
 	dirty: () => void;
-	settings: CuliqSettings;
 }) {
 	const def = PROVIDER_DEFAULTS.find((d) => d.id === provider.id);
 
 	return (
-		<div
-			className="provider-card"
-			data-active={String(isDefault)}
-			role="button"
-			tabIndex={0}
-			aria-pressed={isDefault}
-			onClick={(e) => {
-				if ((e.target as HTMLElement).closest("label, input, select, button")) return;
-				setDefault();
-			}}
-			onKeyDown={(e) => {
-				if (e.key !== "Enter" && e.key !== " ") return;
-				if ((e.target as HTMLElement).closest("input, select, button")) return;
-				e.preventDefault();
-				setDefault();
-			}}
-		>
+		<div className="provider-card">
 			<header>
 				<h3>{provider.name || provider.id}</h3>
-				<span className="active-badge">{isDefault ? "default" : "click to set default"}</span>
 			</header>
 			<Field label="Name" type="text" value={provider.name} placeholder={provider.id} onInput={(v) => { provider.name = v; dirty(); }} />
 			<label>
@@ -152,88 +111,174 @@ function ProviderCard({
 			</label>
 			<Field label="API key" type="password" value={provider.apiKey} placeholder="sk-..." onInput={(v) => { provider.apiKey = v; dirty(); }} />
 			<Field label="Base URL" type="text" value={provider.baseUrl} placeholder={def?.baseUrl ?? ""} onInput={(v) => { provider.baseUrl = v; dirty(); }} />
-			<ModelListField value={provider.models} placeholder="claude-sonnet-4-5, gpt-4o-mini, ..." onModels={(v) => { provider.models = v; dirty(); }} />
-			<Field
-				label="Context window (tokens)"
-				type="number"
-				value={String(provider.contextWindow ?? "")}
-				placeholder="Default: 64000"
-				onInput={(v) => { provider.contextWindow = v ? Number(v) : undefined; dirty(); }}
-			/>
-			{provider.models.length > 0 && (
-				<div className="model-capabilities">
-					<p className="settings-hint">Per-model capabilities. Only screenshot (visual analysis) can be disabled — useful for text-only models. All other capabilities are always on.</p>
-					{provider.models.map((model) => {
-						const key = `${provider.id}:${model}`;
-						const disabled = settings.modelCapabilities[key]?.disabledCapabilities ?? [];
-						const screenshotOn = !disabled.includes("screenshot");
-						const setScreenshot = (on: boolean) => {
-							const entry = settings.modelCapabilities[key] ?? { disabledCapabilities: [] };
-							entry.disabledCapabilities = on
-								? entry.disabledCapabilities.filter((c) => c !== "screenshot")
-								: entry.disabledCapabilities.includes("screenshot")
-									? entry.disabledCapabilities
-									: [...entry.disabledCapabilities, "screenshot"];
-							if (entry.disabledCapabilities.length === 0) delete settings.modelCapabilities[key];
-							else settings.modelCapabilities[key] = entry;
-							dirty();
-						};
-						return (
-							<CheckRow
-								key={key}
-								code={model}
-								checked={screenshotOn}
-								onToggle={setScreenshot}
-								desc={CAPABILITY_INFO.screenshot.description}
-							/>
-						);
-					})}
-				</div>
-			)}
 			<button type="button" className="provider-delete" onClick={(e) => { e.stopPropagation(); remove(); }}>Delete</button>
 		</div>
 	);
 }
+
 function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
-	const setDefault = (id: string) => { settings.defaultProviderId = id; dirty(); };
 	const removeProvider = (id: string) => {
 		settings.providers = settings.providers.filter((p) => p.id !== id);
-		if (settings.defaultProviderId === id && settings.providers.length > 0) {
-			settings.defaultProviderId = settings.providers[0].id;
+		settings.models = settings.models.filter((m) => m.providerId !== id);
+		if (settings.models.length > 0 && !settings.models.find((m) => m.id === settings.defaultModelId)) {
+			settings.defaultModelId = settings.models[0].id;
 		}
 		dirty();
 	};
 	const addProvider = () => {
 		const id = `provider-${Date.now()}`;
-		settings.providers.push({ id, name: id, type: "openai", apiKey: "", baseUrl: "", defaultModel: "", models: [] });
+		settings.providers.push({ id, name: id, type: "openai", apiKey: "", baseUrl: "" });
 		dirty();
 	};
-	const defaultProvider = settings.providers.find((p) => p.id === settings.defaultProviderId);
 
 	return (
-		<details className="settings-group">
+		<details className="settings-group" open>
 			<summary className="settings-header">Providers</summary>
-			<p className="settings-hint">Configure model providers. Click a card to set as default.</p>
+			<p className="settings-hint">
+				Configure API credentials. Each provider holds a name, type, key, and base URL.
+			</p>
 			<div className="capability-list">
 				{settings.providers.map((p) => (
-					<ProviderCard key={p.id} provider={p} isDefault={settings.defaultProviderId === p.id} setDefault={() => setDefault(p.id)} remove={() => removeProvider(p.id)} dirty={dirty} settings={settings} />
+					<ProviderCard key={p.id} provider={p} remove={() => removeProvider(p.id)} dirty={dirty} />
 				))}
 			</div>
 			<div className="settings-actions">
-				<label>
-					<span>Default model</span>
-					<select
-						value={defaultProvider?.defaultModel ?? ""}
-						onClick={(e) => e.stopPropagation()}
-						onChange={(e) => { if (defaultProvider) { defaultProvider.defaultModel = (e.target as HTMLSelectElement).value; dirty(); } }}
-					>
-						<option value="">Select model…</option>
-						{defaultProvider?.models.map((m) => (
-							<option key={m} value={m}>{m}</option>
-						))}
-					</select>
-				</label>
 				<button type="button" onClick={addProvider}>Add provider</button>
+			</div>
+		</details>
+	);
+}
+
+function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
+	const [newModelName, setNewModelName] = useState("");
+	const [newModelProvider, setNewModelProvider] = useState(settings.providers[0]?.id ?? "");
+
+	const onAdd = () => {
+		const name = newModelName.trim();
+		if (!name || !newModelProvider) return;
+		const id = `${newModelProvider}:${name}`;
+		if (settings.models.some((m) => m.id === id)) return;
+		settings.models.push({ id, providerId: newModelProvider, name });
+		if (!settings.defaultModelId) settings.defaultModelId = id;
+		setNewModelName("");
+		dirty();
+	};
+
+	const onDelete = (id: string) => {
+		settings.models = settings.models.filter((m) => m.id !== id);
+		if (settings.defaultModelId === id && settings.models.length > 0) {
+			settings.defaultModelId = settings.models[0].id;
+		}
+		dirty();
+	};
+
+	return (
+		<details className="settings-group">
+			<summary className="settings-header">Models</summary>
+			<p className="settings-hint">
+				All available models across providers. Toggle screenshot capability per model
+				(useful for text-only models). Set the context window size for context compression.
+			</p>
+			<label className="settings-default-model">
+				<span>Default model</span>
+				<select
+					value={settings.defaultModelId}
+					onClick={(e) => e.stopPropagation()}
+					onChange={(e) => { settings.defaultModelId = (e.target as HTMLSelectElement).value; dirty(); }}
+				>
+					{settings.models.map((m) => (
+						<option key={m.id} value={m.id}>{m.name} ({settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId})</option>
+					))}
+				</select>
+			</label>
+			<div className="capability-list">
+				{settings.models.map((m) => {
+					const capKey = m.id;
+					const disabled = settings.modelCapabilities[capKey]?.disabledCapabilities ?? [];
+					const screenshotOn = !disabled.includes("screenshot");
+					const setScreenshot = (on: boolean) => {
+						const entry = settings.modelCapabilities[capKey] ?? { disabledCapabilities: [] };
+						entry.disabledCapabilities = on
+							? entry.disabledCapabilities.filter((c) => c !== "screenshot")
+							: entry.disabledCapabilities.includes("screenshot")
+								? entry.disabledCapabilities
+								: [...entry.disabledCapabilities, "screenshot"];
+						if (entry.disabledCapabilities.length === 0) delete settings.modelCapabilities[capKey];
+						else settings.modelCapabilities[capKey] = entry;
+						dirty();
+					};
+					return (
+						<div className="model-row" key={m.id}>
+							<div className="model-row-header">
+								<code>{m.name}</code>
+								<span className="capability-desc">{settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId}</span>
+								{settings.defaultModelId === m.id && <span className="active-badge">default</span>}
+								<button
+									type="button"
+									className="skill-delete"
+									title="Delete model"
+									onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(m.id); }}
+								>
+									delete
+								</button>
+							</div>
+							<div className="model-row-controls">
+								<CheckRow
+									code="screenshot"
+									checked={screenshotOn}
+									onToggle={setScreenshot}
+									desc={CAPABILITY_INFO.screenshot.description}
+								/>
+								<Field
+									label="Context window"
+									type="number"
+									value={String(m.contextWindow ?? "")}
+									placeholder="Default: 64000"
+									onInput={(v) => { m.contextWindow = v ? Number(v) : undefined; dirty(); }}
+								/>
+								<label>
+									<span>Thinking</span>
+									<select
+										value={m.reasoning ?? ""}
+										onClick={(e) => e.stopPropagation()}
+										onChange={(e) => { m.reasoning = (e.target as HTMLSelectElement).value as any || undefined; dirty(); }}
+									>
+										{REASONING_LEVELS.map((l) => (
+											<option key={l.value} value={l.value}>{l.label}</option>
+										))}
+									</select>
+								</label>
+							</div>
+						</div>
+					);
+				})}
+			</div>
+			<div className="settings-actions add-model-row">
+				<div className="add-model-fields">
+					<label>
+						<span>Add model</span>
+						<input
+							type="text"
+							value={newModelName}
+							placeholder="model-name"
+							onInput={(e) => setNewModelName((e.target as HTMLInputElement).value)}
+							onClick={(e) => e.stopPropagation()}
+						/>
+					</label>
+					<label>
+						<span>Provider</span>
+						<select
+							value={newModelProvider}
+							onClick={(e) => e.stopPropagation()}
+							onChange={(e) => setNewModelProvider((e.target as HTMLSelectElement).value)}
+						>
+							{settings.providers.map((p) => (
+								<option key={p.id} value={p.id}>{p.name || p.id}</option>
+							))}
+						</select>
+					</label>
+				</div>
+				<button type="button" onClick={onAdd}>Add model</button>
 			</div>
 		</details>
 	);
@@ -246,7 +291,7 @@ function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () 
 		<details className="settings-group">
 			<summary className="settings-header">Context management</summary>
 			<p className="settings-hint">
-				Summarize old turns when the conversation nears the model's context window. The context window size is set per-model in the Providers section.
+				Summarize old turns when the conversation nears the model's context window. The context window size is set per-model in the Models section.
 			</p>
 			<CheckRow
 				code="Auto-compress context"
@@ -620,12 +665,19 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 			const sres = await fetch(`${base}/culiq-tool.js`);
 			if (!sres.ok) throw new Error(`culiq-tool.js not found in ${pkg} (is this a Culiq tool package?)`);
 			const artifact = await sres.text();
-			const extracted = extractMetaFromArtifact(artifact);
-			if (!extracted) throw new Error(`Failed to extract metadata from ${pkg}/culiq-tool.js`);
-			const meta: CustomToolMeta = { ...extracted, source: "user" };
-			await saveUserCustomTool({ ...meta, artifact });
+			const metas = extractMetaFromArtifact(artifact);
+			if (metas.length === 0) throw new Error(`Failed to extract metadata from ${pkg}/culiq-tool.js`);
+			const pkgName = metas[0].name;
+			const tools = metas.map((m) => ({
+				toolName: m.toolName,
+				description: m.description,
+				parameters: m.parameters,
+				...(m.executionMode ? { executionMode: m.executionMode } : {}),
+			}));
+			await saveCustomToolPackage(pkgName, artifact, tools);
 			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
-			setStatus({ state: "ok", text: `imported ${meta.name}` });
+			const count = metas.length;
+			setStatus({ state: "ok", text: `imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})` });
 			await refresh();
 		} catch (err) {
 			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
@@ -649,12 +701,19 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 				}
 			}
 			if (!js) throw new Error("Folder must contain culiq-tool.js.");
-			const extracted = extractMetaFromArtifact(js);
-			if (!extracted) throw new Error("Failed to extract metadata from culiq-tool.js.");
-			const meta: CustomToolMeta = { ...extracted, source: "user" };
-			await saveUserCustomTool({ ...meta, artifact: js });
+			const metas = extractMetaFromArtifact(js);
+			if (metas.length === 0) throw new Error("Failed to extract metadata from culiq-tool.js.");
+			const pkgName = metas[0].name;
+			const tools = metas.map((m) => ({
+				toolName: m.toolName,
+				description: m.description,
+				parameters: m.parameters,
+				...(m.executionMode ? { executionMode: m.executionMode } : {}),
+			}));
+			await saveCustomToolPackage(pkgName, js, tools);
 			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
-			setStatus({ state: "ok", text: `imported ${meta.name}` });
+			const count = metas.length;
+			setStatus({ state: "ok", text: `imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})` });
 			await refresh();
 		} catch (err) {
 			if (err instanceof DOMException && err.name === "AbortError") return;
@@ -674,6 +733,7 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 			<p className="settings-hint">
 				Executable, typed tools built with <code>@culiq/sandbox</code>. On an npm package page, click
 				"Load from npm page" to install it; or import a folder containing <code>culiq-tool.js</code>.
+				These settings control the default state. Use the "Tools" button in the chat input to toggle tools per message (does not change these settings).
 			</p>
 			<div className="settings-actions">
 				<span className="status" data-state={status?.state}>
@@ -691,8 +751,9 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 					<p>No custom tools installed yet.</p>
 				) : (
 				tools.map((t) => (
-						<div className="capability" key={t.name}>
-							<code>{t.name}</code>
+						<div className="capability" key={t.toolName}>
+							<code>{t.toolName}</code>
+							{t.name !== t.toolName && <span className="capability-desc"> ({t.name})</span>}
 							<span className="capability-desc"> {t.description}</span>
 							<div className="capability-actions">
 								<button
@@ -701,13 +762,13 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 									onClick={(e) => {
 										e.preventDefault();
 										const disabled = settings.disabledTools;
-										settings.disabledTools = disabled.includes(t.name)
-											? disabled.filter((n) => n !== t.name)
-											: [...disabled, t.name];
+										settings.disabledTools = disabled.includes(t.toolName)
+											? disabled.filter((n) => n !== t.toolName)
+											: [...disabled, t.toolName];
 										dirty();
 									}}
 								>
-									{settings.disabledTools.includes(t.name) ? "enable" : "disable"}
+									{settings.disabledTools.includes(t.toolName) ? "enable" : "disable"}
 								</button>
 								{t.source === "user" ? (
 									<button
@@ -748,11 +809,11 @@ function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; 
 					onChange={(e) => { settings.subAgentModel = (e.target as HTMLSelectElement).value; dirty(); }}
 				>
 					<option value="">Use main model</option>
-					{settings.providers.flatMap((p) => p.models.map((m) => (
-						<option key={`${p.id}:${m}`} value={`${p.id}:${m}`}>
-							{p.name || p.id}: {m}
+					{settings.models.map((m) => (
+						<option key={m.id} value={m.id}>
+							{settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId}: {m.name}
 						</option>
-					)))}
+					))}
 				</select>
 			</label>
 		</details>
@@ -770,7 +831,11 @@ export function SettingsView() {
 
 	if (!settings) return null;
 
-	const dirty = () => setSettings({ ...settings });
+	const dirty = () => setSettings({
+		...settings,
+		providers: settings.providers.map((p) => ({ ...p })),
+		models: settings.models.map((m) => ({ ...m })),
+	});
 
 	const onSave = async () => {
 		setSaveState("saving");
@@ -787,6 +852,7 @@ export function SettingsView() {
 	return (
 		<>
 		<ProvidersGroup settings={settings} dirty={dirty} />
+		<ModelsGroup settings={settings} dirty={dirty} />
 		<ContextGroup settings={settings} dirty={dirty} />
 			<SearchAndSubAgentGroup settings={settings} dirty={dirty} />
 			<LocalToolsGroup settings={settings} dirty={dirty} />

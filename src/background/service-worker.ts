@@ -5,7 +5,7 @@ import { listEnabledSkills } from "@shared/skills";
 import { closeSandbox, setSandboxContext } from "@shared/agent/tools/sandbox";
 import { ensureCustomToolsLoaded, refreshCustomTools, syncBuiltinTools } from "@shared/custom-tools";
 import { runSubagent } from "@shared/agent/subagent";
-import { CAPABILITY_INFO, loadSettings, type Capability } from "@shared/config";
+import { CAPABILITY_INFO, loadSettings, resolveDefaultModel, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
 import { findTargetTab, isProtectedUrl, setPanelWindow } from "@shared/transport/tab-rpc";
 import { type ChatContextMode } from "@shared/transport/protocol";
@@ -133,21 +133,26 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 	try {
 		const settings = await loadSettings();
 		setupProviderRegistry(settings.providers);
-		const provider = settings.providers.find((p) => p.id === settings.defaultProviderId);
+		const resolved = resolveDefaultModel(settings);
 
-		if (!provider?.apiKey) {
-			sendErrorEnd(`${provider?.id ?? "default"}: API key not configured. Open Settings.`);
+		if (!resolved) {
+			sendErrorEnd("No default model configured. Open Settings → Models.");
 			return;
 		}
 
+		if (!resolved.provider.apiKey) {
+			sendErrorEnd(`${resolved.provider.name}: API key not configured. Open Settings → Providers.`);
+			return;
+		}
+
+		const { provider, model } = resolved;
 		const controller = new AbortController();
 		activeTurns.set(turnId, { controller, port });
 
 		// Per-model capability overrides. All capabilities are enabled by default
 		// (including every sandbox-exposed tool); only the model's own disabled list
 		// (currently only `screenshot` is user-toggleable) is subtracted.
-		const modelKey = `${provider.id}:${provider.defaultModel}`;
-		const disabled = settings.modelCapabilities[modelKey]?.disabledCapabilities ?? [];
+		const disabled = settings.modelCapabilities[model.id]?.disabledCapabilities ?? [];
 		const enabled = new Set<Capability>(Object.keys(CAPABILITY_INFO) as Capability[]);
 		for (const d of disabled) enabled.delete(d);
 
@@ -157,9 +162,14 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
 			const context = await buildSendTimeContext(msg.contextMode);
 			const mcpTools = await createMcpTools(controller.signal);
+			const customOverride = msg.enabledCustomTools;
 			const allTools = [
 				...getTools().filter(
-					(tool) => (enabled.has(tool.name as Capability) || tool.custom) && !settings.disabledTools.includes(tool.name),
+					(tool) => {
+						if (!tool.custom) return enabled.has(tool.name as Capability);
+						if (customOverride) return customOverride.includes(tool.name);
+						return !settings.disabledTools.includes(tool.name);
+					},
 				),
 				...mcpTools,
 			];
@@ -197,9 +207,11 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 					tools: allTools,
 				},
 				{
-					model: { id: provider.defaultModel, provider: provider.id },
+					model: { id: model.name, provider: provider.id },
 					contextManagement: settings.contextManagement,
-					contextWindow: provider.contextWindow,
+					contextWindow: model.contextWindow,
+					sessionId: msg.sessionId,
+					...(msg.reasoning ? { reasoning: msg.reasoning as "none" | "minimal" | "low" | "medium" | "high" | "xhigh" } : model.reasoning ? { reasoning: model.reasoning } : {}),
 				},
 				(event) => send({ type: "agent_event", turnId, event }),
 				controller.signal,
@@ -248,7 +260,7 @@ async function buildSendTimeContext(contextMode: ChatContextMode | undefined): P
 
 	if (internal) {
 		blocks.push(
-			`The current page is a browser-internal page: ${currentUrl}. DOM tools (read_dom, query, click, type, screenshot) cannot operate on it — open a new tab with navigate first.`,
+			`The current page is a browser-internal page: ${currentUrl}. DOM tools (read_dom, query, click, type, screenshot) cannot operate on it. Use navigate with newTab: true to open a web page — navigating without newTab on internal pages will fail.`,
 		);
 	}
 

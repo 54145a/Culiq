@@ -22,7 +22,7 @@ export type Capability =
 export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	navigate: {
 		description:
-			"Open a URL in the active tab (or a new tab) and wait for it to finish loading. Use this when the user asks to 'go to' or 'open' a site.",
+			"Navigate to a URL. **Requires a `url` parameter** — if the user hasn't specified one, ask first. When the current page is a browser-internal page (chrome://, chrome-extension://), always use `newTab: true` — navigating without `newTab` on internal pages will fail. Otherwise opens in the active tab by default.",
 	},
 	read_dom: {
 		description:
@@ -91,21 +91,41 @@ export interface ContextManagementConfig {
 
 export type ProviderType = "openai" | "anthropic";
 
+export type ReasoningLevel = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export const REASONING_LEVELS: Array<{ value: ReasoningLevel | ""; label: string }> = [
+	{ value: "", label: "Default" },
+	{ value: "none", label: "Off" },
+	{ value: "minimal", label: "Minimal" },
+	{ value: "low", label: "Low" },
+	{ value: "medium", label: "Medium" },
+	{ value: "high", label: "High" },
+	{ value: "xhigh", label: "Maximum" },
+];
+
+/** Provider = API credentials group. Models are separate. */
 export interface ProviderConfig {
 	id: string;
 	name: string;
 	type: ProviderType;
 	apiKey: string;
 	baseUrl: string;
-	defaultModel: string;
-	models: string[];
-	/** Per-model context window override in tokens. If undefined, uses DEFAULT_CONTEXT_WINDOW. */
-	contextWindow?: number;
 }
 
-const CULIQ_SETTINGS_VERSION = 5;
+/** A model entry, linked to a provider. */
+export interface ModelConfig {
+	id: string;
+	providerId: string;
+	name: string;
+	/** Per-model context window override in tokens. If undefined, uses DEFAULT_CONTEXT_WINDOW. */
+	contextWindow?: number;
+	/** Per-model default reasoning level. If undefined, uses provider default. */
+	reasoning?: ReasoningLevel;
+}
 
-/** Per-model capability overrides. Keyed by `${providerId}:${modelId}`. */
+const CULIQ_SETTINGS_VERSION = 6;
+
+/** Per-model capability overrides. Keyed by model id (e.g. `"openai:gpt-4o"`). */
 export interface ModelCapabilityConfig {
 	/** Capabilities explicitly turned OFF for this model (e.g. `["screenshot"]`). */
 	disabledCapabilities: Capability[];
@@ -115,7 +135,9 @@ export interface CuliqSettings {
 	version: typeof CULIQ_SETTINGS_VERSION;
 	theme: ThemePreference;
 	providers: ProviderConfig[];
-	defaultProviderId: string;
+	models: ModelConfig[];
+	/** Format: `${providerId}:${modelName}` */
+	defaultModelId: string;
 	/** Capability overrides per model. The only user-toggleable capability is `screenshot`;
 	 * everything else (including sandbox-exposed tools) is always enabled. */
 	modelCapabilities: Record<string, ModelCapabilityConfig>;
@@ -137,43 +159,53 @@ export const PROVIDER_DEFAULTS: Array<{
 	name: string;
 	type: ProviderType;
 	baseUrl: string;
-	defaultModel: string;
-	models: string[];
 }> = [
 	{
 		id: "anthropic",
 		name: "Anthropic",
 		type: "anthropic",
 		baseUrl: "https://api.anthropic.com",
-		defaultModel: "claude-sonnet-4-5-20250929",
-		models: ["claude-sonnet-4-5-20250929", "claude-haiku-3-5", "claude-3-5-sonnet"],
 	},
 	{
 		id: "openai",
 		name: "OpenAI",
 		type: "openai",
 		baseUrl: "https://api.openai.com/v1",
-		defaultModel: "gpt-4o-mini",
-		models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
 	},
+];
+
+/** Default models shipped with the extension. */
+const DEFAULT_MODELS: Array<{ providerId: string; name: string; contextWindow?: number }> = [
+	{ providerId: "anthropic", name: "claude-sonnet-4-5-20250929" },
+	{ providerId: "anthropic", name: "claude-haiku-3-5" },
+	{ providerId: "anthropic", name: "claude-3-5-sonnet" },
+	{ providerId: "openai", name: "gpt-4o" },
+	{ providerId: "openai", name: "gpt-4o-mini" },
+	{ providerId: "openai", name: "gpt-4-turbo" },
 ];
 
 const STORAGE_KEY = `culiq.settings.v${CULIQ_SETTINGS_VERSION}`;
 
 export function defaultSettings(): CuliqSettings {
+	const providers = PROVIDER_DEFAULTS.map((d) => ({
+		id: d.id,
+		name: d.name,
+		type: d.type,
+		apiKey: "",
+		baseUrl: d.baseUrl,
+	}));
+	const models = DEFAULT_MODELS.map((m) => ({
+		id: `${m.providerId}:${m.name}`,
+		providerId: m.providerId,
+		name: m.name,
+		...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
+	}));
 	return {
 		version: CULIQ_SETTINGS_VERSION,
 		theme: "system",
-		providers: PROVIDER_DEFAULTS.map((d) => ({
-			id: d.id,
-			name: d.name,
-			type: d.type,
-			apiKey: "",
-			baseUrl: d.baseUrl,
-			defaultModel: d.defaultModel,
-			models: d.models,
-		})),
-		defaultProviderId: "openai",
+		providers,
+		models,
+		defaultModelId: "openai:gpt-4o-mini",
 		modelCapabilities: {},
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
 		subAgentModel: "",
@@ -184,64 +216,26 @@ export function defaultSettings(): CuliqSettings {
 interface StoredSettings {
 	version?: number;
 	theme?: unknown;
-	activeProvider?: string;
-	providers?: Record<string, Partial<ProviderConfig>> | ProviderConfig[];
-	defaultProviderId?: string;
+	providers?: ProviderConfig[];
+	models?: ModelConfig[];
+	defaultModelId?: string;
 	modelCapabilities?: Record<string, ModelCapabilityConfig>;
 	contextManagement?: Partial<ContextManagementConfig>;
 	subAgentModel?: unknown;
 	disabledTools?: unknown;
 }
 
-/** Migrate old v2-v4 settings (Record<ProviderId, ProviderConfig>) to v5 (ProviderConfig[]). */
-function migrateProviders(stored: StoredSettings, base: CuliqSettings): { providers: ProviderConfig[]; defaultProviderId: string } {
-	// New format: array + defaultProviderId — fill in defaults for missing fields
-	if (Array.isArray(stored.providers) && typeof stored.defaultProviderId === "string") {
-		const merged = stored.providers.map((p) => {
-			const def = PROVIDER_DEFAULTS.find((d) => d.id === p.id);
-			return {
-				id: p.id,
-				name: p.name ?? def?.name ?? p.id,
-				type: p.type ?? def?.type ?? "openai",
-				apiKey: p.apiKey ?? "",
-				baseUrl: p.baseUrl ?? def?.baseUrl ?? "",
-				defaultModel: p.defaultModel ?? def?.defaultModel ?? "",
-				models: p.models ?? def?.models ?? [],
-			};
-		});
-		return { providers: merged, defaultProviderId: stored.defaultProviderId };
-	}
-	// Old format: Record<string, ProviderConfig> + activeProvider
-	const oldProviders = stored.providers;
-	if (oldProviders && typeof oldProviders === "object" && !Array.isArray(oldProviders)) {
-		const providers = Object.entries(oldProviders)
-			.filter(([, v]) => v && typeof v === "object")
-			.map(([id, v]) => ({
-				id,
-				name: PROVIDER_DEFAULTS.find((d) => d.id === id)?.name ?? id,
-				type: PROVIDER_DEFAULTS.find((d) => d.id === id)?.type ?? "openai",
-				apiKey: (v as Partial<ProviderConfig>).apiKey ?? "",
-				baseUrl: (v as Partial<ProviderConfig>).baseUrl ?? PROVIDER_DEFAULTS.find((d) => d.id === id)?.baseUrl ?? "",
-				defaultModel: PROVIDER_DEFAULTS.find((d) => d.id === id)?.defaultModel ?? "",
-				models: PROVIDER_DEFAULTS.find((d) => d.id === id)?.models ?? [],
-			}));
-		const defaultId = typeof stored.activeProvider === "string" ? stored.activeProvider : "openai";
-		return { providers, defaultProviderId: defaultId };
-	}
-	return { providers: base.providers, defaultProviderId: base.defaultProviderId };
-}
-
 export async function loadSettings(): Promise<CuliqSettings> {
 	const raw = await chrome.storage.local.get(STORAGE_KEY);
 	const stored = raw[STORAGE_KEY] as StoredSettings | undefined;
-	if (!stored || stored.version === undefined) return defaultSettings();
+	if (!stored || stored.version !== CULIQ_SETTINGS_VERSION) return defaultSettings();
 	const base = defaultSettings();
-	const { providers, defaultProviderId } = migrateProviders(stored, base);
 	return {
 		version: CULIQ_SETTINGS_VERSION,
 		theme: isThemePreference(stored.theme) ? stored.theme : base.theme,
-		providers,
-		defaultProviderId,
+		providers: Array.isArray(stored.providers) ? stored.providers : base.providers,
+		models: Array.isArray(stored.models) ? stored.models : base.models,
+		defaultModelId: typeof stored.defaultModelId === "string" ? stored.defaultModelId : base.defaultModelId,
 		modelCapabilities: stored.modelCapabilities ?? {},
 		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
 		subAgentModel: typeof stored.subAgentModel === "string" ? stored.subAgentModel : base.subAgentModel,
@@ -262,8 +256,26 @@ function isThemePreference(value: unknown): value is ThemePreference {
 	return value === "system" || value === "light" || value === "dark";
 }
 
-export function getDefaultProvider(settings: CuliqSettings): ProviderConfig {
-	const def = settings.providers.find((p) => p.id === settings.defaultProviderId);
-	if (!def) throw new Error(`Default provider "${settings.defaultProviderId}" not found.`);
-	return def;
+/** Resolve a defaultModelId string into its provider and model configs. */
+export function resolveDefaultModel(settings: CuliqSettings): { provider: ProviderConfig; model: ModelConfig } | null {
+	const model = settings.models.find((m) => m.id === settings.defaultModelId);
+	if (!model) return null;
+	const provider = settings.providers.find((p) => p.id === model.providerId);
+	if (!provider) return null;
+	return { provider, model };
+}
+
+/** Resolve a model id (bare name or `provider:model`) to its ModelConfig. */
+export function resolveModelId(modelId: string, settings: CuliqSettings): { provider: ProviderConfig; model: ModelConfig } | null {
+	if (modelId.includes(":")) {
+		const model = settings.models.find((m) => m.id === modelId);
+		if (!model) return null;
+		const provider = settings.providers.find((p) => p.id === model.providerId);
+		return provider ? { provider, model } : null;
+	}
+	// Bare model name — returns first match across all providers
+	const model = settings.models.find((m) => m.name === modelId);
+	if (!model) return null;
+	const provider = settings.providers.find((p) => p.id === model.providerId);
+	return provider ? { provider, model } : null;
 }

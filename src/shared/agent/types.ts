@@ -39,6 +39,8 @@ export interface AgentLoopConfig {
 	maxTurns?: number;
 	contextManagement?: ContextManagementConfig;
 	contextWindow?: number;
+	sessionId?: string;
+	reasoning?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
 export type AgentEvent =

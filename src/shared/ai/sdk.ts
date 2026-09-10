@@ -154,6 +154,8 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 				...(options.maxTokens !== undefined ? { maxOutputTokens: options.maxTokens } : {}),
 				...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
 				...(options.signal ? { abortSignal: options.signal } : {}),
+				...(options.headers ? { headers: options.headers } : {}),
+				...(options.reasoning ? { reasoning: options.reasoning } : {}),
 			});
 
 			const indexByPartId = new Map<string, number>();

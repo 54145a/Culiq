@@ -525,23 +525,42 @@ form {
 	gap: 8px;
 	padding: 12px 14px;
 	border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+	min-height: 0;
 }
 
 .context-row {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 8px;
 	padding: 6px 14px 0;
 	font-size: 0.78rem;
+	min-height: 0;
+	overflow: hidden;
 }
 
-.context-label {
+.context-field {
+	display: flex;
+	align-items: center;
+	gap: 4px;
 	color: color-mix(in srgb, currentColor 55%, transparent);
 }
 
-#context-mode {
+.context-field span {
+	white-space: nowrap;
+}
+
+.context-field select {
 	padding: 2px 6px;
 	font-size: 0.78rem;
+}
+
+.context-field-multi {
+	align-items: flex-start;
+}
+
+.context-field-multi select {
+	min-width: 0;
 }
 
 .sandbox-frame {
@@ -691,18 +710,6 @@ button.danger:hover {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
-	cursor: pointer;
-	transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.provider-card:hover {
-	border-color: color-mix(in srgb, currentColor 35%, transparent);
-}
-
-.provider-card[data-active="true"] {
-	border-color: #4a90e2;
-	box-shadow: 0 0 0 1px #4a90e2 inset;
-	cursor: default;
 }
 
 .provider-card header {
@@ -716,18 +723,6 @@ button.danger:hover {
 .provider-card header h3 {
 	margin: 0;
 	font-size: 1rem;
-	font-weight: 600;
-}
-
-.provider-card .active-badge {
-	font-size: 0.72rem;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-	color: color-mix(in srgb, currentColor 55%, transparent);
-}
-
-.provider-card[data-active="true"] .active-badge {
-	color: #4a90e2;
 	font-weight: 600;
 }
 
@@ -751,6 +746,18 @@ button.danger:hover {
 	justify-content: flex-end;
 	align-items: center;
 	padding-top: 4px;
+}
+
+.add-model-row {
+	flex-wrap: wrap;
+}
+
+.add-model-fields {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	flex: 1;
+	min-width: 0;
 }
 
 .settings-actions .status {
@@ -808,6 +815,67 @@ button.danger:hover {
 	height: 16px;
 	accent-color: #4a90e2;
 	flex: none;
+}
+
+.model-row {
+	border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+	border-radius: 6px;
+	padding: 8px 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.model-row-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 0.85rem;
+}
+
+.model-row-header code {
+	font-weight: 600;
+}
+
+.model-row-header .active-badge {
+	font-size: 0.72rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #4a90e2;
+	font-weight: 600;
+}
+
+.model-row-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding-left: 4px;
+}
+
+.model-row-controls label {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	font-size: 0.78rem;
+	color: color-mix(in srgb, currentColor 60%, transparent);
+}
+
+.model-row-controls input[type="number"] {
+	font-size: 0.85rem;
+	color: inherit;
+	width: 100px;
+}
+
+.settings-default-model {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 0;
+	font-size: 0.85rem;
+}
+
+.settings-default-model select {
+	font-size: 0.85rem;
 }
 
 /* sessions view */

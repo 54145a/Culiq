@@ -110,6 +110,7 @@ function buildShims(sess, paths) {
   for (const path of paths) {
     const dot = path.indexOf(".");
     if (dot === -1) {
+      if (path in sess.sandbox) continue;
       sess.sandbox[path] = (...args) => bridgeCall(sess, path, args);
     } else {
       const ns = path.slice(0, dot);

@@ -9,9 +9,11 @@ import { parse } from "acorn";
 
 interface ToolMeta {
 	name: string;
+	toolName: string;
 	description: string;
 	parameters: Record<string, unknown>;
 	executionMode?: "parallel" | "sequential";
+	toolIndex: number;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -19,12 +21,13 @@ interface ToolMeta {
 /**
  * Extract tool metadata by parsing the module with acorn.
  * No eval needed — safe for CSP-restricted contexts.
+ * Returns an array: multiple entries for multi-tool packages, one for single-tool.
  */
-export function extractMetaFromArtifact(source: string): ToolMeta | null {
+export function extractMetaFromArtifact(source: string): ToolMeta[] {
 	try {
 		const ast = parse(source, { ecmaVersion: "latest", sourceType: "module" });
 		const decl = ast.body.find((n: any) => n.type === "ExportDefaultDeclaration") as any;
-		if (!decl || decl.declaration?.type !== "ObjectExpression") return null;
+		if (!decl || decl.declaration?.type !== "ObjectExpression") return [];
 
 		const obj = decl.declaration;
 		const getProp = (name: string) =>
@@ -37,31 +40,49 @@ export function extractMetaFromArtifact(source: string): ToolMeta | null {
 			);
 
 		const nameProp = getProp("name");
-		const descProp = getProp("description");
-		const paramsProp = getProp("parameters");
-		const execModeProp = getProp("executionMode");
-
-		if (!nameProp || !descProp || !paramsProp) return null;
+		const toolsProp = getProp("tools");
 
 		const getString = (n: any): string =>
 			n?.type === "Literal" && typeof n.value === "string" ? n.value : "";
 
-		const name = getString(nameProp.value);
+		const packageName = nameProp ? getString(nameProp.value) : "";
+		if (!packageName) return [];
+
+		// Multi-tool: export default { name, tools: [...] }
+		if (toolsProp?.value?.type === "ArrayExpression") {
+			const results: ToolMeta[] = [];
+			const seen = new Set<string>();
+			for (let i = 0; i < toolsProp.value.elements.length; i++) {
+				const el = toolsProp.value.elements[i];
+				if (el?.type !== "ObjectExpression") continue;
+				const toolName = getString(el.properties.find((p: any) => p.key?.name === "toolName")?.value);
+				const description = getString(el.properties.find((p: any) => p.key?.name === "description")?.value);
+				const paramsProp = el.properties.find((p: any) => p.key?.name === "parameters");
+				const execModeProp = el.properties.find((p: any) => p.key?.name === "executionMode");
+				if (!toolName || !description || !paramsProp) continue;
+				if (seen.has(toolName)) continue;
+				seen.add(toolName);
+				const parameters = nodeToObject(paramsProp.value);
+				const rawMode = execModeProp ? getString(execModeProp.value) : "";
+				const executionMode = rawMode === "parallel" || rawMode === "sequential" ? rawMode : undefined;
+				results.push({ name: packageName, toolName, description, parameters, toolIndex: i, ...(executionMode ? { executionMode } : {}) });
+			}
+			return results;
+		}
+
+		// Single-tool: export default { name, description, parameters, execute }
+		const descProp = getProp("description");
+		const paramsProp = getProp("parameters");
+		const execModeProp = getProp("executionMode");
+		if (!descProp || !paramsProp) return [];
 		const description = getString(descProp.value);
 		const parameters = nodeToObject(paramsProp.value);
 		const rawMode = execModeProp ? getString(execModeProp.value) : "";
 		const executionMode = rawMode === "parallel" || rawMode === "sequential" ? rawMode : undefined;
-
-		if (!name || !description) return null;
-
-		return {
-			name,
-			description,
-			parameters,
-			...(executionMode ? { executionMode } : {}),
-		};
+		if (!description) return [];
+		return [{ name: packageName, toolName: packageName, description, parameters, toolIndex: -1, ...(executionMode ? { executionMode } : {}) }];
 	} catch {
-		return null;
+		return [];
 	}
 }
 

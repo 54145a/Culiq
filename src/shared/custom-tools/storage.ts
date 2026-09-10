@@ -1,21 +1,37 @@
-import type { CustomToolMeta, SavedCustomTool } from "./types";
+import type { CustomToolMeta } from "./types";
 import { extractMetaFromArtifact } from "./parse";
 import { file, dir, write } from "@shared/opfs";
 
 const TOOLS_DIR = "tools";
 
-function toolFile(name: string, file: string): string {
-	return `${TOOLS_DIR}/${name}/${file}`;
+function toolFile(name: string, f: string): string {
+	return `${TOOLS_DIR}/${name}/${f}`;
 }
 
 export async function deleteUserCustomTool(name: string): Promise<void> {
 	await dir(`${TOOLS_DIR}/${name}`).remove();
 }
 
+interface StoredToolEntry {
+	toolName: string;
+	description: string;
+	parameters: Record<string, unknown>;
+	executionMode?: "parallel" | "sequential";
+}
+
+interface StoredPackageMeta {
+	name: string;
+	tools: StoredToolEntry[];
+}
+
+function isPackageMeta(v: unknown): v is StoredPackageMeta {
+	return typeof v === "object" && v !== null && "tools" in v && Array.isArray((v as StoredPackageMeta).tools);
+}
+
 /**
  * List all user custom tools from OPFS.
- * Reads metadata from `culiq-tool.meta.json` (new format) first,
- * falls back to legacy formats and auto-migrates.
+ * Reads metadata from `culiq-tool.meta.json`.
+ * Supports both multi-tool (`{ name, tools: [...] }`) and legacy single-tool formats.
  */
 export async function listUserCustomTools(): Promise<CustomToolMeta[]> {
 	let names: string[];
@@ -25,51 +41,40 @@ export async function listUserCustomTools(): Promise<CustomToolMeta[]> {
 		return [];
 	}
 	const out: CustomToolMeta[] = [];
-	for (const name of names) {
-		// New format: culiq-tool.meta.json
-		const metaRaw = await file(toolFile(name, "culiq-tool.meta.json")).text();
-		if (metaRaw) {
-			try {
-				const parsed = JSON.parse(metaRaw) as Omit<CustomToolMeta, "source">;
-				const source = (parsed as Record<string, unknown>).source === "builtin" ? "builtin" : "user";
-				out.push({ ...parsed, source });
-				continue;
-			} catch { /* skip malformed */ }
-		}
+	for (const pkgName of names) {
+		const metaRaw = await file(toolFile(pkgName, "culiq-tool.meta.json")).text();
+		if (!metaRaw) continue;
+		try {
+			const parsed = JSON.parse(metaRaw);
+			const source: CustomToolMeta["source"] = (parsed as Record<string, unknown>).source === "builtin" ? "builtin" : "user";
 
-		// Legacy: culiq-tool.json
-		const jsonRaw = await file(toolFile(name, "culiq-tool.json")).text();
-		if (jsonRaw) {
-			try {
-				const parsed = JSON.parse(jsonRaw) as Omit<CustomToolMeta, "source">;
-				await write(toolFile(name, "culiq-tool.meta.json"), JSON.stringify(parsed, null, "\t"));
-				out.push({ ...parsed, source: "user" });
-				continue;
-			} catch { /* skip malformed */ }
-		}
-
-		// Legacy: package.json with culiq field
-		const pkgRaw = await file(toolFile(name, "package.json")).text();
-		if (pkgRaw) {
-			try {
-				const pkg = JSON.parse(pkgRaw) as Record<string, unknown>;
-				const culiq = pkg.culiq as Record<string, unknown> | undefined;
-				if (culiq) {
-					const executionMode = culiq.executionMode === "parallel" || culiq.executionMode === "sequential"
-						? culiq.executionMode
-						: undefined;
-					const parsed: Omit<CustomToolMeta, "source"> = {
-						name: String(pkg.name ?? name),
-						description: String(pkg.description ?? ""),
-						parameters: (culiq.parameters as Record<string, unknown>) ?? {},
-						...(executionMode ? { executionMode } : {}),
-					};
-					await write(toolFile(name, "culiq-tool.meta.json"), JSON.stringify(parsed, null, "\t"));
-					out.push({ ...parsed, source: "user" });
-					continue;
+			if (isPackageMeta(parsed)) {
+				for (let i = 0; i < parsed.tools.length; i++) {
+					const t = parsed.tools[i];
+					out.push({
+						name: parsed.name,
+						toolName: t.toolName,
+						description: t.description,
+						parameters: t.parameters,
+						source,
+						toolIndex: i,
+						...(t.executionMode ? { executionMode: t.executionMode } : {}),
+					});
 				}
-			} catch { /* skip malformed */ }
-		}
+			} else {
+				// Legacy single-tool format: { name, description, parameters, ... }
+				const toolName = parsed.name ?? pkgName;
+				out.push({
+					name: pkgName,
+					toolName,
+					description: String(parsed.description ?? ""),
+					parameters: parsed.parameters ?? {},
+					source,
+					toolIndex: -1,
+					...(parsed.executionMode ? { executionMode: parsed.executionMode } : {}),
+				});
+			}
+		} catch { /* skip malformed */ }
 	}
 	return out;
 }
@@ -79,20 +84,18 @@ export async function getUserCustomToolArtifact(name: string): Promise<string | 
 	return content || null;
 }
 
-export async function saveUserCustomTool(tool: SavedCustomTool): Promise<void> {
-	await write(toolFile(tool.name, "culiq-tool.js"), tool.artifact);
-	// Cache metadata at install time.
-	const meta: Omit<CustomToolMeta, "source"> = {
-		name: tool.name,
-		description: tool.description,
-		parameters: tool.parameters,
-		...(tool.executionMode ? { executionMode: tool.executionMode } : {}),
-	};
-	await write(toolFile(tool.name, "culiq-tool.meta.json"), JSON.stringify(meta, null, "\t"));
+/**
+ * Save a multi-tool package to OPFS.
+ * The artifact is a single JS file; the meta lists all tools in the package.
+ */
+export async function saveCustomToolPackage(
+	pkgName: string,
+	artifact: string,
+	tools: Array<{ toolName: string; description: string; parameters: Record<string, unknown>; executionMode?: "parallel" | "sequential" }>,
+): Promise<void> {
+	await write(toolFile(pkgName, "culiq-tool.js"), artifact);
+	const meta: StoredPackageMeta = { name: pkgName, tools };
+	await write(toolFile(pkgName, "culiq-tool.meta.json"), JSON.stringify(meta, null, "\t"));
 }
 
-/**
- * Extract tool metadata from an artifact source string by parsing with acorn.
- * Returns null if the artifact cannot be parsed or lacks required fields.
- */
 export { extractMetaFromArtifact };

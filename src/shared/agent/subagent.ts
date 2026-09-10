@@ -1,4 +1,4 @@
-import { loadSettings } from "@shared/config";
+import { loadSettings, resolveDefaultModel, resolveModelId } from "@shared/config";
 import { runAgentLoop } from "./agent-loop";
 import type { AgentContext, AgentTool } from "./types";
 
@@ -17,31 +17,25 @@ export async function runSubagent(
 	maxTurns = 5,
 ): Promise<string> {
 	const settings = await loadSettings();
-	const defaultProvider = settings.providers.find((p) => p.id === settings.defaultProviderId);
 	const raw = settings.subAgentModel.trim();
 
 	let providerId: string;
 	let modelId: string;
 
-	if (raw.includes(":")) {
-		// Explicit "provider:model" format
-		[providerId, modelId] = raw.split(":", 2);
-	} else if (raw) {
-		// Bare model name — search all providers; prefer default if it has the model
-		const candidate = defaultProvider?.models.includes(raw) ? defaultProvider : settings.providers.find((p) => p.models.includes(raw));
-		if (!candidate) {
-			throw new Error(`Model "${raw}" not found in any provider's Available models. Add it in Settings → Providers.`);
+	if (raw) {
+		const resolved = resolveModelId(raw, settings);
+		if (!resolved) {
+			throw new Error(`Model "${raw}" not found. Add it in Settings → Providers.`);
 		}
-		providerId = candidate.id;
-		modelId = raw;
+		providerId = resolved.provider.id;
+		modelId = resolved.model.name;
 	} else {
-		// Empty — fall back to default provider's default model
-		providerId = defaultProvider?.id ?? "";
-		modelId = defaultProvider?.defaultModel ?? "";
-	}
-
-	if (!providerId || !modelId) {
-		throw new Error("No sub-agent model configured. Set Sub-agent model in Settings → Providers.");
+		const defaultModel = resolveDefaultModel(settings);
+		if (!defaultModel) {
+			throw new Error("No sub-agent model configured. Set Sub-agent model in Settings → Providers.");
+		}
+		providerId = defaultModel.provider.id;
+		modelId = defaultModel.model.name;
 	}
 
 	const context: AgentContext = {

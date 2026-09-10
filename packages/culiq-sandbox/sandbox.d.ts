@@ -177,3 +177,18 @@ export interface ToolDefinition {
 	executionMode?: ExecutionMode;
 	execute(sandbox: CuliqSandbox, input: Record<string, unknown>): string | Promise<string>;
 }
+
+/**
+ * Multi-tool package: a single file exports multiple tools via a `tools` array.
+ * Each tool has its own `toolName`, `description`, `parameters`, and `execute`.
+ */
+export interface MultiToolDefinition {
+	name: string;
+	tools: Array<{
+		toolName: string;
+		description: string;
+		parameters: Record<string, unknown>;
+		executionMode?: ExecutionMode;
+		execute(sandbox: CuliqSandbox, input: Record<string, unknown>): string | Promise<string>;
+	}>;
+}

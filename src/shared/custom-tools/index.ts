@@ -6,7 +6,7 @@ import { write } from "@shared/opfs";
 
 const BUILTIN_MANIFEST = ["bing_search"];
 
-export type { CustomToolMeta, SavedCustomTool } from "./types";
+export type { CustomToolMeta } from "./types";
 
 let cache: AgentTool[] = [];
 let loadPromise: Promise<AgentTool[]> | null = null;
@@ -28,13 +28,25 @@ export async function syncBuiltinTools(): Promise<string[]> {
 			const artifact = await res.text();
 			await write(`tools/${name}/culiq-tool.js`, artifact);
 
-			// Extract and cache metadata.
-			const meta = extractMetaFromArtifact(artifact);
-			if (meta) {
-				await write(
-					`tools/${name}/culiq-tool.meta.json`,
-					JSON.stringify({ ...meta, source: "builtin" }, null, "\t"),
-				);
+			const metas = extractMetaFromArtifact(artifact);
+			if (metas.length > 0) {
+				if (metas.length === 1 && metas[0].toolIndex === -1) {
+					await write(
+						`tools/${name}/culiq-tool.meta.json`,
+						JSON.stringify({ name, description: metas[0].description, parameters: metas[0].parameters, source: "builtin" }, null, "\t"),
+					);
+				} else {
+					const tools = metas.map((m) => ({
+						toolName: m.toolName,
+						description: m.description,
+						parameters: m.parameters,
+						...(m.executionMode ? { executionMode: m.executionMode } : {}),
+					}));
+					await write(
+						`tools/${name}/culiq-tool.meta.json`,
+						JSON.stringify({ name, tools, source: "builtin" }, null, "\t"),
+					);
+				}
 			}
 		} catch (err) {
 			errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);

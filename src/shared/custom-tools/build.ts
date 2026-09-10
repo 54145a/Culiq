@@ -4,10 +4,10 @@ import type { CustomToolMeta } from "./types";
 import { prepareModuleSource } from "./parse";
 
 /**
- * Wrap a custom-tool artifact (a default-exported module with
- * `execute(sandbox, input)`) as an `AgentTool`. The full module source
- * is sent to the sandbox, preserving the scope chain (outer variables,
- * helper functions, etc.).
+ * Wrap a custom-tool artifact as an `AgentTool`. The full module source
+ * is sent to the sandbox, preserving the scope chain.
+ * For multi-tool packages (toolIndex >= 0), calls `tools[i].execute(...)`.
+ * For single-tool packages (toolIndex < 0), calls `execute(...)` directly.
  */
 export function buildCustomToolAgentTool(meta: CustomToolMeta, artifact: string): AgentTool {
 	const toResult = (value: string, isError = false): AgentToolResult => ({
@@ -15,19 +15,20 @@ export function buildCustomToolAgentTool(meta: CustomToolMeta, artifact: string)
 		isError,
 	});
 
-	// Prepare module source: replace `export default` with variable assignment.
-	// The full source (including outer scope) is sent to the sandbox.
 	const moduleSource = prepareModuleSource(artifact);
+	const execCall = meta.toolIndex >= 0
+		? `__culiq_default.tools[${meta.toolIndex}].execute`
+		: `__culiq_default.execute`;
 
 	return {
-		name: meta.name,
+		name: meta.toolName,
 		description: meta.description,
 		parameters: meta.parameters,
 		custom: true,
 		executionMode: meta.executionMode,
 		async execute(args, signal) {
 			if (!signal) return toResult("custom tool requires an AbortSignal.", true);
-			const code = `${moduleSource}\nreturn await __culiq_default.execute(sandbox, ${JSON.stringify(args)});`;
+			const code = `${moduleSource}\nreturn await ${execCall}(sandbox, ${JSON.stringify(args)});`;
 			let outcome: SandboxOutcome;
 			try {
 				outcome = await evaluate(signal, code);

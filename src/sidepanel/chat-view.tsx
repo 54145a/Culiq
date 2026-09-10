@@ -9,6 +9,8 @@ import { ExtensionChatTransport } from "./extension-chat-transport";
 import { getPanelWindowId } from "./window";
 import type { BgToPanel, PanelToBg } from "@shared/transport/protocol";
 import type { ImageContent } from "@shared/ai/types";
+import { listUserCustomTools } from "@shared/custom-tools/storage";
+import type { CustomToolMeta } from "@shared/custom-tools/types";
 
 export interface ChatTransport {
 	send(msg: PanelToBg): void;
@@ -278,6 +280,9 @@ function CompressNotice({ data }: { data: { beforeTokens: number; afterTokens: n
 export function ChatView({ transport, chatTransport }: { transport: ChatTransport; chatTransport: ExtensionChatTransport }) {
 	const [notices, setNotices] = useState<Notice[]>([]);
 	const [contextMode, setContextMode] = useState<ChatContextMode | "none">("none");
+	const [customTools, setCustomTools] = useState<CustomToolMeta[]>([]);
+	const [enabledTools, setEnabledTools] = useState<Set<string>>(new Set());
+	const [reasoning, setReasoning] = useState<string>("");
 	const logRef = useRef<HTMLUListElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -310,6 +315,13 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	}, []);
 
 	useEffect(() => {
+		void listUserCustomTools().then((tools) => {
+			setCustomTools(tools);
+			setEnabledTools(new Set(tools.map((t) => t.toolName)));
+		});
+	}, []);
+
+	useEffect(() => {
 		if (status !== "ready" || messages.length === 0) return;
 		const last = messages[messages.length - 1];
 		if (last?.role !== "assistant") return;
@@ -334,9 +346,13 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		const mode = contextMode === "none" ? undefined : contextMode;
 		chatTransport.setContextMode(mode);
 		chatTransport.setWindowId(getPanelWindowId());
+		const allToolNames = customTools.map((t) => t.toolName);
+		const isAllEnabled = enabledTools.size === allToolNames.length;
+		chatTransport.setCustomTools(isAllEnabled ? undefined : [...enabledTools]);
+		chatTransport.setReasoning(reasoning || undefined);
 		void sendMessage({ text });
 		setContextMode("none");
-	}, [sendMessage, contextMode, chatTransport]);
+	}, [sendMessage, contextMode, chatTransport, customTools, enabledTools, reasoning]);
 
 	const handleStop = useCallback(() => { void stop(); }, [stop]);
 
@@ -359,17 +375,51 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 				))}
 			</ul>
 			<div className="context-row">
-				<label className="context-label" htmlFor="context-mode">Context</label>
-				<select
-					id="context-mode"
-					value={contextMode}
-					onChange={(e) => setContextMode((e.target as HTMLSelectElement).value as ChatContextMode | "none")}
-					onClick={(e) => e.stopPropagation()}
-				>
-					<option value="none">None</option>
-					<option value="tabs">All tabs</option>
-					<option value="current">Current tab</option>
-				</select>
+				<label className="context-field">
+					<span>Context</span>
+					<select
+						value={contextMode}
+						onChange={(e) => setContextMode((e.target as HTMLSelectElement).value as ChatContextMode | "none")}
+					>
+						<option value="none">None</option>
+						<option value="tabs">All tabs</option>
+						<option value="current">Current tab</option>
+					</select>
+				</label>
+				{customTools.length > 0 && (
+					<label className="context-field context-field-multi">
+						<span>Tools</span>
+						<select
+							multiple
+							size={Math.min(customTools.length, 3)}
+							onChange={(e) => {
+								const selected = new Set<string>(
+									Array.from((e.target as HTMLSelectElement).selectedOptions, (o) => o.value)
+								);
+								setEnabledTools(selected);
+							}}
+						>
+							{customTools.map((t) => (
+								<option key={t.toolName} value={t.toolName} selected={enabledTools.has(t.toolName)}>{t.toolName}</option>
+							))}
+						</select>
+					</label>
+				)}
+				<label className="context-field">
+					<span>Thinking</span>
+					<select
+						value={reasoning}
+						onChange={(e) => setReasoning((e.target as HTMLSelectElement).value)}
+					>
+						<option value="">Default</option>
+						<option value="none">Off</option>
+						<option value="minimal">Minimal</option>
+						<option value="low">Low</option>
+						<option value="medium">Medium</option>
+						<option value="high">High</option>
+						<option value="xhigh">Maximum</option>
+					</select>
+				</label>
 			</div>
 			<form id="form" onSubmit={(e) => {
 				e.preventDefault();
