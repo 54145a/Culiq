@@ -23,7 +23,7 @@ export interface AgentTool {
 	executionMode?: AgentToolExecutionMode;
 	/** True for user/built-in custom tools loaded from the sandbox-tool pipeline. Always enabled. */
 	custom?: boolean;
-	execute(args: Record<string, unknown>, signal?: AbortSignal): Promise<AgentToolResult>;
+	execute(args: Record<string, unknown>, signal?: AbortSignal, emit?: AgentEventSink): Promise<AgentToolResult>;
 }
 
 export interface AgentContext {
@@ -43,30 +43,29 @@ export interface AgentLoopConfig {
 	reasoning?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
+type WithSubtaskId<T> = T & { subtaskId?: string };
+
 export type AgentEvent =
-	| { type: "agent_start" }
-	| { type: "turn_start"; turnIndex: number }
-	| { type: "context_sent"; text: string }
-	| { type: "message_start"; message: Message }
-	| { type: "message_update"; message: AssistantMessage; delta: { kind: "text"; contentIndex: number; text: string } }
-	| { type: "message_end"; message: Message }
-	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }
-	| {
+	| WithSubtaskId<{ type: "agent_start" }>
+	| WithSubtaskId<{ type: "turn_start"; turnIndex: number }>
+	| WithSubtaskId<{ type: "context_sent"; text: string }>
+	| WithSubtaskId<{ type: "message_start"; message: Message }>
+	| WithSubtaskId<{ type: "message_update"; message: AssistantMessage; delta: { kind: "text"; contentIndex: number; text: string } }>
+	| WithSubtaskId<{ type: "message_end"; message: Message }>
+	| WithSubtaskId<{ type: "tool_execution_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }>
+	| WithSubtaskId<{
 			type: "tool_execution_end";
 			toolCallId: string;
 			toolName: string;
 			result: AgentToolDisplayResult;
 			isError: boolean;
-	  }
-	| { type: "turn_end"; assistantMessage: AssistantMessage; toolResults: ToolResultMessage[] }
-	| {
-			type: "context_compressed";
-			beforeTokens: number;
-			afterTokens: number;
-			keptTurns: number;
-			summary: string;
-	  }
-	| { type: "agent_end"; messages: Message[]; stopReason: "end" | "max_turns" | "error" | "aborted"; errorMessage?: string };
+	  }>
+	| WithSubtaskId<{ type: "turn_end"; assistantMessage: AssistantMessage; toolResults: ToolResultMessage[] }>
+	| WithSubtaskId<{ type: "message_usage"; usage: { inputTokens: number; outputTokens: number }; cumulative: { inputTokens: number; outputTokens: number } }>
+	| WithSubtaskId<{ type: "context_compressed"; summary: string }>
+	| WithSubtaskId<{ type: "agent_end"; messages: Message[]; stopReason: "end" | "max_turns" | "error" | "aborted"; errorMessage?: string }>;
+
+export type AgentEventSink = (event: AgentEvent) => void;
 
 export function toolToLlmSpec(tool: AgentTool): Tool {
 	return { name: tool.name, description: tool.description, parameters: tool.parameters };

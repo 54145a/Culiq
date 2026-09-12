@@ -1,10 +1,8 @@
 import { estimateTokenCount, sliceByTokens } from "tokenx";
 import { streamSimple } from "../ai";
 import type { AssistantMessage, Message, ToolCallContent, ToolResultMessage } from "../ai/types";
-import type { AgentContext, AgentEvent, AgentLoopConfig, AgentTool, AgentToolResult } from "./types";
+import type { AgentContext, AgentEventSink, AgentLoopConfig, AgentTool, AgentToolResult } from "./types";
 import { toolToLlmSpec } from "./types";
-
-export type AgentEventSink = (event: AgentEvent) => void;
 
 function publicToolResult(message: ToolResultMessage): ToolResultMessage {
 	return {
@@ -32,6 +30,7 @@ export async function runAgentLoop(
 
 	const maxTurns = config.maxTurns;
 	let turnIndex = 0;
+	const cumulative = { inputTokens: 0, outputTokens: 0 };
 
 	while (true) {
 		if (signal?.aborted) {
@@ -45,7 +44,10 @@ export async function runAgentLoop(
 
 		emit({ type: "turn_start", turnIndex });
 
-		const assistantMessage = await streamAssistantResponse(context, config, emit, signal);
+		const summary = await maybeCompressContext(context, config, signal);
+		if (summary) emit({ type: "context_compressed", summary });
+
+		const assistantMessage = await streamAssistantResponse(context, config, emit, signal, cumulative);
 		context.messages.push(assistantMessage);
 		emit({ type: "message_end", message: assistantMessage });
 
@@ -95,10 +97,9 @@ async function streamAssistantResponse(
 	config: AgentLoopConfig,
 	emit: AgentEventSink,
 	signal?: AbortSignal,
+	cumulative?: { inputTokens: number; outputTokens: number },
 ): Promise<AssistantMessage> {
 	const tools = context.tools.length > 0 ? context.tools.map(toolToLlmSpec) : undefined;
-
-	await maybeCompressContext(context, config, emit, signal);
 
 	const stream = streamSimple(
 		config.model,
@@ -126,6 +127,16 @@ async function streamAssistantResponse(
 				type: "message_update",
 				message: event.partial,
 				delta: { kind: "text", contentIndex: event.contentIndex, text: event.delta },
+			});
+		} else if (event.type === "usage") {
+			if (cumulative) {
+				cumulative.inputTokens += event.usage.inputTokens;
+				cumulative.outputTokens += event.usage.outputTokens;
+			}
+			emit({
+				type: "message_usage",
+				usage: event.usage,
+				cumulative: cumulative ?? { inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens },
 			});
 		} else if (event.type === "done" || event.type === "error") {
 			if (!started) emit({ type: "message_start", message: event.message });
@@ -180,7 +191,7 @@ async function runToolCall(
 		isError = true;
 	} else {
 		try {
-			result = await tool.execute(toolCall.arguments, signal);
+			result = await tool.execute(toolCall.arguments, signal, emit);
 			isError = result.isError === true;
 		} catch (err) {
 			result = {
@@ -338,19 +349,18 @@ async function summarizeTurns(turns: Message[][], config: AgentLoopConfig, signa
 async function maybeCompressContext(
 	context: AgentContext,
 	config: AgentLoopConfig,
-	emit: AgentEventSink,
 	signal?: AbortSignal,
-): Promise<void> {
+): Promise<string | null> {
 	const cm = config.contextManagement;
-	if (!cm?.enabled || context.messages.length < 2) return;
+	if (!cm?.enabled || context.messages.length < 2) return null;
 
 	const beforeTokens = estimateContextTokens(context);
 	const window = resolveContextWindow(cm.windowOverride, config.contextWindow);
 	const threshold = Math.floor(window * cm.thresholdRatio);
-	if (beforeTokens <= threshold) return;
+	if (beforeTokens <= threshold) return null;
 
 	const { turns, tail } = splitTurns(context.messages);
-	if (turns.length <= 1) return;
+	if (turns.length <= 1) return null;
 
 	let keep = Math.min(cm.keepTurns, turns.length);
 	while (keep > 1) {
@@ -360,10 +370,10 @@ async function maybeCompressContext(
 	}
 
 	const oldTurns = turns.slice(0, -keep);
-	if (oldTurns.length === 0) return;
+	if (oldTurns.length === 0) return null;
 
 	const summary = await summarizeTurns(oldTurns, config, signal);
-	if (!summary) return;
+	if (!summary) return null;
 
 	const summaryMessage: AssistantMessage = {
 		role: "assistant",
@@ -374,11 +384,5 @@ async function maybeCompressContext(
 	const kept = turns.slice(-keep).flat();
 	context.messages = [summaryMessage, ...kept, ...tail];
 
-	emit({
-		type: "context_compressed",
-		beforeTokens,
-		afterTokens: estimateContextTokens(context),
-		keptTurns: kept.length,
-		summary,
-	});
+	return summary;
 }

@@ -76,11 +76,18 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 			return {
 				type: "data-compress",
 				id: "compress",
+				data: event.summary,
+			};
+
+		case "message_usage":
+			return {
+				type: "data-usage",
+				id: "usage",
 				data: {
-					beforeTokens: event.beforeTokens,
-					afterTokens: event.afterTokens,
-					keptTurns: event.keptTurns,
-					summary: event.summary,
+					input: event.usage.inputTokens,
+					output: event.usage.outputTokens,
+					totalIn: event.cumulative.inputTokens,
+					totalOut: event.cumulative.outputTokens,
 				},
 			};
 

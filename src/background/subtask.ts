@@ -1,6 +1,6 @@
 import { getSystemPrompt } from "@shared/agent/system-prompt";
 import { runSubagent } from "@shared/agent/subagent";
-import type { AgentTool } from "@shared/agent/types";
+import type { AgentEventSink, AgentTool } from "@shared/agent/types";
 import { getTools } from "./tool-registry";
 
 export const subtaskTool: AgentTool = {
@@ -24,13 +24,14 @@ export const subtaskTool: AgentTool = {
 		additionalProperties: false,
 	},
 	executionMode: "sequential",
-	async execute(args, signal) {
+	async execute(args, signal, emit?: AgentEventSink) {
 		const task = String(args.task);
 		const maxTurns = typeof args.maxTurns === "number" ? Math.max(1, Math.floor(args.maxTurns)) : 5;
 		const tools = getTools().filter(
 			(tool) => !tool.custom && tool.name !== "subtask" && tool.name !== "sandbox_exec",
 		);
-		const text = await runSubagent(task, tools, getSystemPrompt({ tools }), signal, maxTurns);
+		const subtaskId = `subtask-${crypto.randomUUID().slice(0, 8)}`;
+		const text = await runSubagent(task, tools, getSystemPrompt({ tools }), signal, maxTurns, subtaskId, emit);
 		return { content: [{ type: "text", text }] };
 	},
 };

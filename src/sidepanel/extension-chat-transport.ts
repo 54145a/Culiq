@@ -41,7 +41,8 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 				const data = (part as { data?: unknown }).data;
 				if (typeof data === "string" && data) content.push({ type: "context", text: data } as ContextContent);
 			} else if (type === "data-compress") {
-				// Compression metadata is already applied; nothing to send.
+				const data = (part as { data?: unknown }).data;
+				if (typeof data === "string" && data) content.push({ type: "context", text: data } as ContextContent);
 			} else if (type === "tool-invocation") {
 				const tp = part as { toolCallId: string; toolName: string; input?: unknown; output?: unknown };
 				content.push({
@@ -148,6 +149,8 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 			start: (controller) => {
 				let closed = false;
 				const textStartSent = new Set<string>();
+				let activeSubtaskId: string | null = null;
+				const subtaskEvents = new Map<string, AgentEvent[]>();
 
 				const safeEnqueue = (chunk: UIMessageChunk) => {
 					if (!closed) {
@@ -171,6 +174,42 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 				if (closed) return;
 
 				try {
+					// Subtask event routing
+					if (event.type === "tool_execution_start" && event.toolName === "subtask") {
+						activeSubtaskId = event.toolCallId;
+						subtaskEvents.set(event.toolCallId, []);
+						// Emit tool card for the subtask invocation itself
+						const chunks = agentEventToChunk(event);
+						if (chunks) {
+							const arr = Array.isArray(chunks) ? chunks : [chunks];
+							for (const chunk of arr) safeEnqueue(chunk as UIMessageChunk);
+						}
+						return;
+					}
+
+					if (event.subtaskId && activeSubtaskId) {
+						// Buffer subtask internal events
+						const buffered = subtaskEvents.get(activeSubtaskId);
+						if (buffered) buffered.push(event);
+						return;
+					}
+
+					if (event.type === "tool_execution_end" && event.toolCallId === activeSubtaskId) {
+						// Subtask finished — emit its collected messages as data-subtask
+						const buffered = subtaskEvents.get(event.toolCallId) ?? [];
+						const messages = this.buildSubtaskMessages(buffered);
+						safeEnqueue({ type: "data-subtask", id: event.toolCallId, data: messages } as UIMessageChunk);
+						// Also emit the tool result
+						const chunks = agentEventToChunk(event);
+						if (chunks) {
+							const arr = Array.isArray(chunks) ? chunks : [chunks];
+							for (const chunk of arr) safeEnqueue(chunk as UIMessageChunk);
+						}
+						activeSubtaskId = null;
+						subtaskEvents.delete(event.toolCallId);
+						return;
+					}
+
 					// New LLM call within the same turn: reset so text-start is sent again
 					if (event.type === "turn_start") {
 						textStartSent.clear();
@@ -220,6 +259,47 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 				this.sendFn(msg);
 			},
 		});
+	}
+
+	/**
+	 * Convert buffered subtask agent events into a serializable messages array
+	 * that the SubtaskCard can render.
+	 */
+	private buildSubtaskMessages(events: AgentEvent[]): Array<{
+		role: "assistant" | "toolResult";
+		content: string;
+		toolName?: string;
+		usage?: { inputTokens: number; outputTokens: number };
+		cumulative?: { inputTokens: number; outputTokens: number };
+	}> {
+		const messages: Array<{ role: "assistant" | "toolResult"; content: string; toolName?: string; usage?: { inputTokens: number; outputTokens: number }; cumulative?: { inputTokens: number; outputTokens: number } }> = [];
+		for (const event of events) {
+			if (event.type === "message_update" && event.delta.kind === "text") {
+				// Append delta to last assistant message or create new one
+				const last = messages[messages.length - 1];
+				if (last?.role === "assistant") {
+					last.content += event.delta.text;
+				} else {
+					messages.push({ role: "assistant", content: event.delta.text });
+				}
+			} else if (event.type === "tool_execution_start") {
+				messages.push({ role: "toolResult", content: `[${event.toolName}]`, toolName: event.toolName });
+			} else if (event.type === "tool_execution_end") {
+				const last = messages[messages.length - 1];
+				if (last?.role === "toolResult" && !last.content.includes(": ")) {
+					const resultText = event.result.content.map((c) => c.text).join("\n");
+					last.content = `[${event.toolName}] ${resultText}`;
+				}
+			} else if (event.type === "message_usage") {
+				// Attach usage to last assistant message
+				const last = messages[messages.length - 1];
+				if (last?.role === "assistant") {
+					last.usage = event.usage;
+					last.cumulative = event.cumulative;
+				}
+			}
+		}
+		return messages;
 	}
 
 	async reconnectToStream(): Promise<ReadableStream<UIMessageChunk> | null> {

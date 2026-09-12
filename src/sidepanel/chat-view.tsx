@@ -113,32 +113,42 @@ function convertSessionToUI(session: Session): UIMessage[] {
 			const blocks = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 			const parts: UIMessage["parts"] = [];
 			for (const block of blocks) {
-				if (block.type === "text" && block.text) {
-					parts.push({ type: "text" as const, text: block.text });
-				} else if (block.type === "thinking" && (block as { thinking: string }).thinking) {
-					parts.push({ type: "thinking" as const, thinking: (block as { thinking: string }).thinking } as never);
-				} else if (block.type === "toolCall") {
-				const output = resultText.get(block.id);
+				const b = block as unknown as { type: string; [key: string]: unknown };
+				if (b.type === "text" && b.text) {
+					parts.push({ type: "text" as const, text: b.text as string });
+				} else if (b.type === "thinking" && b.thinking) {
+					parts.push({ type: "thinking" as const, thinking: b.thinking as string } as never);
+				} else if (b.type === "toolCall") {
+				const output = resultText.get(b.id as string);
+				const toolName = b.name as string;
 				if (output) {
 					parts.push({
-						type: `tool-${block.name}` as const,
-						toolCallId: block.id,
-						input: block.arguments,
+						type: `tool-${toolName}` as const,
+						toolCallId: b.id as string,
+						input: b.arguments,
 						state: "output-available" as const,
 						output,
 					} as never);
 				} else {
 					parts.push({
-						type: `tool-${block.name}` as const,
-						toolCallId: block.id,
-						input: block.arguments,
+						type: `tool-${toolName}` as const,
+						toolCallId: b.id as string,
+						input: b.arguments,
 						state: "output-error" as const,
 						errorText: "Tool call was interrupted before a result was received.",
 					} as never);
 				}
-				} else if (block.type === "context" && block.text) {
-					parts.push({ type: "data-context" as const, id: "context", data: block.text } as never);
+				} else if (b.type === "context" && b.text) {
+					parts.push({ type: "data-context" as const, id: "context", data: b.text as string } as never);
+				} else if (b.type === "compress" && b.summary) {
+					parts.push({ type: "data-compress" as const, id: "compress", data: b.summary as string } as never);
+				} else if (b.type === "subtask" && b.messages) {
+					parts.push({ type: "data-subtask" as const, id: `subtask-${b.id as string}`, data: b.messages } as never);
 				}
+			}
+			const usage = (m as { usage?: { inputTokens: number; outputTokens: number } }).usage;
+			if (usage) {
+				parts.push({ type: "data-usage" as const, id: "usage", data: { input: usage.inputTokens, output: usage.outputTokens } } as never);
 			}
 			return { id: (m as { id?: string }).id ?? crypto.randomUUID(), role: "assistant" as const, parts };
 		});
@@ -157,8 +167,11 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 		| { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> }
 		| { type: "context"; text: string }
 		| { type: "thinking"; thinking: string }
+		| { type: "compress"; summary: string }
+		| { type: "subtask"; id: string; messages: unknown }
 	> = [];
 	const out: Session["messages"] = [];
+	let usage: { inputTokens: number; outputTokens: number } | undefined;
 	for (const part of m.parts) {
 		const pt = part as { type: string; [key: string]: unknown };
 		if (pt.type === "text" && pt.text) {
@@ -193,12 +206,24 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 					content: [{ type: "text", text: tp.errorText }],
 				});
 			}
-		} else if (part.type === "data-context") {
+		} else if (pt.type === "data-context") {
 			const data = (part as { data: unknown }).data;
 			if (typeof data === "string" && data) blocks.push({ type: "context", text: data });
+		} else if (pt.type === "data-compress") {
+			const data = (part as { data: unknown }).data;
+			if (typeof data === "string" && data) blocks.push({ type: "compress", summary: data } as never);
+		} else if (pt.type === "data-subtask") {
+			const data = (part as { data: unknown }).data;
+			const id = (part as { id?: string }).id ?? "subtask";
+			if (data) blocks.push({ type: "subtask", id, messages: data } as never);
+		} else if (pt.type === "data-usage") {
+			const data = (part as { data: unknown }).data as { input?: number; output?: number } | undefined;
+			if (data && typeof data === "object") usage = { inputTokens: data.input ?? 0, outputTokens: data.output ?? 0 };
 		}
 	}
-	out.unshift({ role: "assistant", content: blocks as never, stopReason: "end" });
+	const assistantMsg: Session["messages"][number] = { role: "assistant", content: blocks as never, stopReason: "end" };
+	if (usage) assistantMsg.usage = usage;
+	out.unshift(assistantMsg);
 	return out;
 }
 
@@ -221,7 +246,7 @@ export function setActiveIdNotifier(cb: (id: string) => void): void {
 
 let noticeId = 0;
 
-function ContextCard({ text }: { text: string }) {
+function ContextCard({ text, label = "sent" }: { text: string; label?: string }) {
 	const [expanded, setExpanded] = useState(false);
 		return (
 		<li className="tool-card" data-status="ok" data-expanded={String(expanded)}>
@@ -241,7 +266,7 @@ function ContextCard({ text }: { text: string }) {
 			>
 				<span className="tool-chevron" aria-hidden="true">▸</span>
 				<code>context</code>
-				<span className="tool-status">sent</span>
+				<span className="tool-status">{label}</span>
 			</div>
 			<pre className="tool-body">{text}</pre>
 		</li>
@@ -287,10 +312,64 @@ function ToolCardView({ toolName, part }: { toolName: string; part: { toolCallId
 	);
 }
 
-function CompressNotice({ data }: { data: { beforeTokens: number; afterTokens: number; keptTurns: number; summary: string } }) {
+function UsageBadge({ data }: { data: { input: number; output: number; totalIn?: number; totalOut?: number } }) {
+	const parts = [`${formatTokens(data.input)} in`, `${formatTokens(data.output)} out`];
+	if (data.totalIn !== undefined && data.totalOut !== undefined) {
+		parts.push(`cumulative: ${formatTokens(data.totalIn)} in · ${formatTokens(data.totalOut)} out`);
+	}
+	return <span className="usage-badge">{parts.join(" · ")}</span>;
+}
+
+interface SubtaskMessage {
+	role: "assistant" | "toolResult";
+	content: string;
+	toolName?: string;
+	usage?: { inputTokens: number; outputTokens: number };
+	cumulative?: { inputTokens: number; outputTokens: number };
+}
+
+function SubtaskCard({ messages }: { messages: SubtaskMessage[] }) {
+	const [expanded, setExpanded] = useState(true);
 	return (
-		<li className="msg notice">
-			{`Context compressed: ${formatTokens(data.beforeTokens)} → ${formatTokens(data.afterTokens)} tokens · kept ${data.keptTurns} recent turn${data.keptTurns === 1 ? "" : "s"} verbatim`}
+		<li className="tool-card subtask-card" data-status="ok" data-expanded={String(expanded)}>
+			<div
+				className="tool-head"
+				role="button"
+				tabIndex={0}
+				aria-expanded={expanded}
+				title="Click to expand"
+				onClick={() => setExpanded((v) => !v)}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						setExpanded((v) => !v);
+					}
+				}}
+			>
+				<span className="tool-chevron" aria-hidden="true">▸</span>
+				<code>subtask</code>
+				<span className="tool-status">{messages.length} messages</span>
+			</div>
+			{expanded && (
+				<div className="subtask-body">
+					{messages.map((msg, i) => {
+						if (msg.role === "assistant") {
+							return (
+								<div key={i} className="subtask-msg">
+									<div className="text md" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+									{msg.usage && <UsageBadge data={{ input: msg.usage.inputTokens, output: msg.usage.outputTokens, totalIn: msg.cumulative?.inputTokens, totalOut: msg.cumulative?.outputTokens }} />}
+								</div>
+							);
+						}
+						return (
+							<div key={i} className="subtask-tool">
+								<code>{msg.toolName ?? "tool"}</code>
+								<span className="subtask-tool-content">{msg.content}</span>
+							</div>
+						);
+					})}
+				</div>
+			)}
 		</li>
 	);
 }
@@ -572,12 +651,24 @@ function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
 					textContent = "";
 				}
 				elements.push(<ContextCard key={`ctx-${i}`} text={part.data as string} />);
-			} else if (part.type === "data-compress" && typeof part.data === "object") {
+			} else if (part.type === "data-compress" && typeof part.data === "string") {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
 					textContent = "";
 				}
-				elements.push(<CompressNotice key={`cmp-${i}`} data={part.data as { beforeTokens: number; afterTokens: number; keptTurns: number; summary: string }} />);
+				elements.push(<ContextCard key={`cmp-${i}`} text={part.data} label="compressed" />);
+			} else if (part.type === "data-usage" && typeof part.data === "object") {
+				if (textContent) {
+					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+					textContent = "";
+				}
+				elements.push(<UsageBadge key={`ub-${i}`} data={part.data as { input: number; output: number; totalIn?: number; totalOut?: number }} />);
+			} else if (part.type === "data-subtask" && Array.isArray(part.data)) {
+				if (textContent) {
+					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+					textContent = "";
+				}
+				elements.push(<SubtaskCard key={`st-${i}`} messages={part.data as SubtaskMessage[]} />);
 			} else if (part.type === "tool-invocation") {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
@@ -599,14 +690,14 @@ function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
 			elements.push(<div className="text md" key="t-end" dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
 		}
 		if (elements.length === 0) return null;
-		const hasNonText = elements.some((e) => e.type === ToolCardView || e.type === ContextCard || e.type === CompressNotice);
+		const hasNonText = elements.some((e) => e.type === ToolCardView || e.type === ContextCard || e.type === UsageBadge || e.type === SubtaskCard);
 		if (!hasNonText) {
 			return <li className="msg assistant">{elements}</li>;
 		}
 		return (
 			<>
 				{elements.map((el, i) =>
-					(el.type === ToolCardView || el.type === ContextCard || el.type === CompressNotice)
+					(el.type === ToolCardView || el.type === ContextCard || el.type === UsageBadge || el.type === SubtaskCard)
 						? el
 						: <li className="msg assistant" key={`a-${i}`}>{el}</li>,
 				)}

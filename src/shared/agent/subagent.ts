@@ -1,6 +1,6 @@
 import { loadSettings, resolveDefaultModel, resolveModelId } from "@shared/config";
 import { runAgentLoop } from "./agent-loop";
-import type { AgentContext, AgentTool } from "./types";
+import type { AgentContext, AgentEventSink, AgentTool } from "./types";
 
 /**
  * Run a self-contained sub-agent and return its final text answer. The sub-agent
@@ -15,6 +15,8 @@ export async function runSubagent(
 	systemPrompt: string,
 	signal?: AbortSignal,
 	maxTurns = 5,
+	subtaskId?: string,
+	emit?: AgentEventSink,
 ): Promise<string> {
 	const settings = await loadSettings();
 	const raw = settings.subAgentModel.trim();
@@ -44,13 +46,17 @@ export async function runSubagent(
 		tools,
 	};
 
+	const wrappedEmit: AgentEventSink | undefined = emit && subtaskId
+		? (event) => emit({ ...event, subtaskId })
+		: undefined;
+
 	await runAgentLoop(
 		context,
 		{
 			model: { id: modelId, provider: providerId },
 			maxTurns,
 		},
-		() => {},
+		wrappedEmit ?? (() => {}),
 		signal,
 	);
 

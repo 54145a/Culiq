@@ -197,7 +197,10 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			);
 			setSandboxContext(controller.signal, {
 				enabled,
-				subagent: (task) => runSubagent(task, sandboxToolsForSubagent, systemPrompt, controller.signal),
+				subagent: (task) => {
+					const subtaskId = `subtask-${crypto.randomUUID().slice(0, 8)}`;
+					return runSubagent(task, sandboxToolsForSubagent, systemPrompt, controller.signal, 5, subtaskId, (event) => send({ type: "agent_event", turnId, event }));
+				},
 				eventSink: (event) => send({ type: "agent_event", turnId, event }),
 			});
 			await runAgentLoop(

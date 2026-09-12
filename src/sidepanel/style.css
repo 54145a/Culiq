@@ -290,6 +290,38 @@ body[data-popup-active="true"] #view-popup-hint {
 	border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
 }
 
+.usage-badge {
+	display: block;
+	font-size: 0.72rem;
+	color: color-mix(in srgb, currentColor 50%, transparent);
+	padding: 2px 0;
+	margin-top: 2px;
+}
+
+.subtask-card .subtask-body {
+	padding: 6px 8px;
+	border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.subtask-msg {
+	margin-bottom: 6px;
+}
+
+.subtask-tool {
+	font-size: 0.78rem;
+	padding: 3px 0;
+	border-bottom: 1px solid color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.subtask-tool code {
+	color: color-mix(in srgb, currentColor 60%, transparent);
+	margin-right: 6px;
+}
+
+.subtask-tool-content {
+	color: color-mix(in srgb, currentColor 70%, transparent);
+}
+
 .thinking-block {
 	margin-bottom: 4px;
 }
