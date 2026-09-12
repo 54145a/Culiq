@@ -115,15 +115,27 @@ function convertSessionToUI(session: Session): UIMessage[] {
 			for (const block of blocks) {
 				if (block.type === "text" && block.text) {
 					parts.push({ type: "text" as const, text: block.text });
+				} else if (block.type === "thinking" && (block as { thinking: string }).thinking) {
+					parts.push({ type: "thinking" as const, thinking: (block as { thinking: string }).thinking } as never);
 				} else if (block.type === "toolCall") {
-					const output = resultText.get(block.id);
+				const output = resultText.get(block.id);
+				if (output) {
 					parts.push({
 						type: `tool-${block.name}` as const,
 						toolCallId: block.id,
 						input: block.arguments,
-						state: output ? ("output-available" as const) : ("input-available" as const),
-						...(output ? { output } : {}),
+						state: "output-available" as const,
+						output,
 					} as never);
+				} else {
+					parts.push({
+						type: `tool-${block.name}` as const,
+						toolCallId: block.id,
+						input: block.arguments,
+						state: "output-error" as const,
+						errorText: "Tool call was interrupted before a result was received.",
+					} as never);
+				}
 				} else if (block.type === "context" && block.text) {
 					parts.push({ type: "data-context" as const, id: "context", data: block.text } as never);
 				}
@@ -144,14 +156,18 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 		| { type: "text"; text: string }
 		| { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> }
 		| { type: "context"; text: string }
+		| { type: "thinking"; thinking: string }
 	> = [];
 	const out: Session["messages"] = [];
 	for (const part of m.parts) {
-		if (part.type === "text" && part.text) {
-			blocks.push({ type: "text", text: part.text });
-		} else if (part.type === "tool-invocation") {
+		const pt = part as { type: string; [key: string]: unknown };
+		if (pt.type === "text" && pt.text) {
+			blocks.push({ type: "text", text: pt.text as string });
+		} else if (pt.type === "thinking") {
+			if (pt.thinking) blocks.push({ type: "thinking", thinking: pt.thinking as string });
+		} else if (pt.type === "tool-invocation") {
 			// Live-streamed tool calls use the AI SDK's native part type.
-			const tp = part as unknown as { toolCallId: string; toolName: string; input?: unknown; output?: unknown; errorText?: string };
+			const tp = pt as unknown as { toolCallId: string; toolName: string; input?: unknown; output?: unknown; errorText?: string };
 			blocks.push({ type: "toolCall", id: tp.toolCallId, name: tp.toolName, arguments: (tp.input ?? {}) as Record<string, unknown> });
 			if (tp.output != null) {
 				out.push({
@@ -160,15 +176,21 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 					content: [{ type: "text", text: typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output) }],
 				});
 			}
-		} else if (part.type.startsWith("tool-")) {
-			const tp = part as { toolCallId: string; input: unknown; output?: unknown };
-			const name = part.type.slice(5);
+		} else if (pt.type.startsWith("tool-")) {
+			const tp = pt as unknown as { toolCallId: string; input: unknown; output?: unknown; errorText?: string };
+			const name = pt.type.slice(5);
 			blocks.push({ type: "toolCall", id: tp.toolCallId, name, arguments: (tp.input ?? {}) as Record<string, unknown> });
 			if (tp.output != null) {
 				out.push({
 					role: "toolResult",
 					toolCallId: tp.toolCallId,
 					content: [{ type: "text", text: typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output) }],
+				});
+			} else if (tp.errorText) {
+				out.push({
+					role: "toolResult",
+					toolCallId: tp.toolCallId,
+					content: [{ type: "text", text: tp.errorText }],
 				});
 			}
 		} else if (part.type === "data-context") {
@@ -283,6 +305,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	const [customTools, setCustomTools] = useState<CustomToolMeta[]>([]);
 	const [enabledTools, setEnabledTools] = useState<Set<string>>(new Set());
 	const [reasoning, setReasoning] = useState<string>("");
+	const [editingId, setEditingId] = useState<string | null>(null);
 	const logRef = useRef<HTMLUListElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -290,7 +313,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		setNotices((prev) => [...prev, { id: noticeId++, className, text }]);
 	}, []);
 
-	const { messages, status, sendMessage, stop } = useChat({
+	const { messages, status, sendMessage, stop, setMessages } = useChat({
 		id: currentSession.id,
 		// Initial messages for THIS chat id. Because ChatView is remounted per
 		// session (via `key` in main.tsx), useChat re-initializes with the loaded
@@ -350,11 +373,36 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		const isAllEnabled = enabledTools.size === allToolNames.length;
 		chatTransport.setCustomTools(isAllEnabled ? undefined : [...enabledTools]);
 		chatTransport.setReasoning(reasoning || undefined);
+		if (editingId) {
+			setMessages((prev) => {
+				const idx = prev.findIndex((m) => m.id === editingId);
+				return idx >= 0 ? prev.slice(0, idx) : prev;
+			});
+			setEditingId(null);
+		}
 		void sendMessage({ text });
 		setContextMode("none");
-	}, [sendMessage, contextMode, chatTransport, customTools, enabledTools, reasoning]);
+	}, [sendMessage, contextMode, chatTransport, customTools, enabledTools, reasoning, editingId, setMessages]);
 
 	const handleStop = useCallback(() => { void stop(); }, [stop]);
+
+	const startEdit = useCallback((id: string) => {
+		const msg = messages.find((m) => m.id === id);
+		if (!msg) return;
+		const text = msg.parts.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join("");
+		setEditingId(id);
+		if (inputRef.current) {
+			inputRef.current.value = text;
+			inputRef.current.focus();
+		}
+	}, [messages]);
+
+	const cancelEdit = useCallback(() => {
+		setEditingId(null);
+		if (inputRef.current) {
+			inputRef.current.value = "";
+		}
+	}, []);
 
 	const title = useMemo(() => `${messages.length} message${messages.length === 1 ? "" : "s"}`, [messages]);
 
@@ -368,7 +416,13 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 			</div>
 			<ul id="log" ref={logRef} aria-live="polite">
 				{messages.map((msg, i) => (
-					<MessageView key={msg.id ?? i} msg={msg} />
+					<MessageView
+						key={msg.id ?? i}
+						msg={msg}
+						isEditing={msg.id === editingId}
+						onEdit={startEdit}
+						onCancelEdit={cancelEdit}
+					/>
 				))}
 				{notices.map((n) => (
 					<li className={n.className} key={n.id}>{n.text}</li>
@@ -438,6 +492,11 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 					disabled={busy}
 					placeholder="ask the agent…  (Shift+Enter for newline)"
 					onKeyDown={(e) => {
+						if (e.key === "Escape" && editingId) {
+							e.preventDefault();
+							cancelEdit();
+							return;
+						}
 						if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
 							e.preventDefault();
 							(e.target as HTMLTextAreaElement).closest("form")?.requestSubmit();
@@ -456,12 +515,38 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 // Message rendering
 // ---------------------------------------------------------------------------
 
-function MessageView({ msg }: { msg: UIMessage }) {
+function ThinkingBlock({ text }: { text: string }) {
+	const [open, setOpen] = useState(false);
+	return (
+		<div className="thinking-block">
+			<button type="button" className="thinking-toggle" onClick={() => setOpen((v) => !v)}>
+				{open ? "hide thinking" : "show thinking"}
+			</button>
+			{open && <pre className="thinking-content">{text}</pre>}
+		</div>
+	);
+}
+
+function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
+	msg: UIMessage;
+	isEditing?: boolean;
+	onEdit?: (id: string) => void;
+	onCancelEdit?: () => void;
+}) {
 	if (msg.role === "user") {
 		const textParts = msg.parts.filter((p): p is { type: "text"; text: string } => p.type === "text");
+		const text = textParts.map((p) => p.text).join("");
 		return (
-			<li className="msg user">
-				{textParts.map((p) => p.text).join("")}
+			<li className={`msg user ${isEditing ? "editing" : ""}`}>
+				<span className="msg-text">{text}</span>
+				{isEditing ? (
+					<span className="msg-editing">
+						<span className="msg-editing-label">editing</span>
+						<button type="button" className="msg-cancel" onClick={() => onCancelEdit?.()}>cancel</button>
+					</span>
+				) : (
+					<button type="button" className="msg-edit" title="Edit message" onClick={() => onEdit?.(msg.id)}>edit</button>
+				)}
 			</li>
 		);
 	}
@@ -470,21 +555,29 @@ function MessageView({ msg }: { msg: UIMessage }) {
 		const elements: JSX.Element[] = [];
 		let textContent = "";
 		for (let i = 0; i < msg.parts.length; i++) {
-			const part = msg.parts[i];
+			const part = msg.parts[i] as { type: string; [key: string]: unknown };
 			if (part.type === "text") {
-				textContent += part.text;
-			} else if (part.type === "data-context" && typeof (part as { data: unknown }).data === "string") {
+				textContent += part.text as string;
+			} else if (part.type === "thinking") {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
 					textContent = "";
 				}
-				elements.push(<ContextCard key={`ctx-${i}`} text={(part as { data: string }).data} />);
-			} else if (part.type === "data-compress" && typeof (part as { data: unknown }).data === "object") {
+				if (part.thinking) {
+					elements.push(<ThinkingBlock key={`th-${i}`} text={part.thinking as string} />);
+				}
+			} else if (part.type === "data-context" && typeof part.data === "string") {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
 					textContent = "";
 				}
-				elements.push(<CompressNotice key={`cmp-${i}`} data={(part as { data: { beforeTokens: number; afterTokens: number; keptTurns: number; summary: string } }).data} />);
+				elements.push(<ContextCard key={`ctx-${i}`} text={part.data as string} />);
+			} else if (part.type === "data-compress" && typeof part.data === "object") {
+				if (textContent) {
+					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+					textContent = "";
+				}
+				elements.push(<CompressNotice key={`cmp-${i}`} data={part.data as { beforeTokens: number; afterTokens: number; keptTurns: number; summary: string }} />);
 			} else if (part.type === "tool-invocation") {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);

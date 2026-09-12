@@ -52,7 +52,7 @@ export const clickTool: AgentTool = {
 	parameters: {
 		type: "object",
 		properties: {
-			selector: { type: "string", description: "CSS selector targeting the element to click." },
+			selector: { type: "string", description: "CSS selector. Must be confirmed via DOM inspection (`query`, `read_dom`, etc.) — do not infer from element names or attributes." },
 			index: { type: "number", description: "Index when multiple match (default 0)." },
 		},
 		required: ["selector"],
@@ -77,7 +77,7 @@ export const typeTool: AgentTool = {
 	parameters: {
 		type: "object",
 		properties: {
-			selector: { type: "string", description: "CSS selector for the input element." },
+			selector: { type: "string", description: "CSS selector. Must be confirmed via DOM inspection (`query`, `read_dom`, etc.) — do not infer from element names or attributes." },
 			text: { type: "string", description: "Text to type." },
 			submit: { type: "boolean", description: "Submit the form (or press Enter) after typing. Default false." },
 			clear: { type: "boolean", description: "Clear existing value first. Default true." },
