@@ -45,8 +45,9 @@ export const fetchUrlTool: AgentTool = {
 		type: "object",
 		properties: {
 			url: { type: "string", description: "Absolute http(s) URL to fetch." },
-			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: `markdown` (clean Markdown via Defuddle, default), `html` (raw markup), `readable_html` (clean HTML via Defuddle), or `outline` (headings, links, forms)." },
-			afterLoad: { type: "string", enum: ["close", "open"], description: "Close the tab after reading ('close', one-shot) or leave it open ('open') so follow-up tools can use it." },
+			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: `markdown` (clean Markdown via Defuddle, default), `html` (raw markup), `readable_html` (clean HTML via Defuddle), or `outline` (headings, links, forms with CSS selectors)." },
+			newTab: { type: "boolean", description: "Open in a new tab (default true). Set false to navigate the current tab." },
+			afterLoad: { type: "string", enum: ["close", "open"], description: "Close the tab after reading ('close', one-shot) or leave it open ('open') so follow-up tools can use it. Only applies when newTab is true." },
 			maxChars: { type: "number", description: "Truncate the result to this many chars. Default 200000." },
 			probeMime: { type: "boolean", description: "HEAD-probe the URL first and refuse non-textual content types. Default true; set false to fetch anyway." },
 		},
@@ -56,7 +57,8 @@ export const fetchUrlTool: AgentTool = {
 	executionMode: "sequential",
 	async execute(args, signal): Promise<AgentToolResult> {
 		const url = String(args.url);
-		const afterLoad = args.afterLoad === "close" ? "close" : "open";
+		const newTab = args.newTab !== false;
+		const afterLoad = newTab ? (args.afterLoad === "close" ? "close" : "open") : "open";
 		const mode = (args.mode as "markdown" | "html" | "readable_html" | "outline") ?? "markdown";
 		const maxChars = typeof args.maxChars === "number" ? Math.max(100, Math.floor(args.maxChars)) : 200_000;
 		const probeMime = args.probeMime !== false;
@@ -84,7 +86,7 @@ export const fetchUrlTool: AgentTool = {
 		// Delegate navigation to navigate tool (handles chrome.tabs + timeout).
 		let navResult: AgentToolResult;
 		try {
-			navResult = await navigateTool.execute({ url, newTab: true, waitForLoad: true }, signal);
+			navResult = await navigateTool.execute({ url, newTab, waitForLoad: true }, signal);
 		} catch (err) {
 			return { content: [{ type: "text", text: `Navigation failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
 		}

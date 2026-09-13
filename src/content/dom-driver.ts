@@ -3,7 +3,6 @@ import type {
 	ContentRequest,
 	ContentResultMap,
 	ElementSummary,
-	QueryResult,
 	ReadDomResult,
 	TypeResult,
 } from "@shared/transport/content-rpc";
@@ -13,12 +12,9 @@ import { createMarkdownContent } from "defuddle/full";
 const HTML_SNIPPET_LIMIT = 240;
 const TEXT_SNIPPET_LIMIT = 200;
 const DEFAULT_READ_MAX = 8_000;
-const DEFAULT_QUERY_LIMIT = 10;
 
 export async function dispatch(request: ContentRequest): Promise<ContentResultMap[ContentRequest["method"]]> {
 	switch (request.method) {
-		case "query":
-			return query(request);
 		case "click":
 			return click(request);
 		case "type":
@@ -28,30 +24,21 @@ export async function dispatch(request: ContentRequest): Promise<ContentResultMa
 	}
 }
 
-function query(req: Extract<ContentRequest, { method: "query" }>): QueryResult {
-	const limit = req.limit ?? DEFAULT_QUERY_LIMIT;
-	const nodes = safeQueryAll(req.selector);
-	const sliced = req.all === false ? nodes.slice(0, 1) : nodes.slice(0, Math.max(1, limit));
-	return {
-		selector: req.selector,
-		totalMatches: nodes.length,
-		returnedMatches: sliced.length,
-		matches: sliced.map(summarize),
-	};
-}
-
 function click(req: Extract<ContentRequest, { method: "click" }>): ClickResult {
 	const nodes = safeQueryAll(req.selector);
 	if (nodes.length === 0) throw new Error(`No element matches selector: ${req.selector}`);
-	const idx = req.index ?? 0;
-	if (idx < 0 || idx >= nodes.length) {
-		throw new Error(`Index ${idx} out of range for ${nodes.length} matches`);
+	if (nodes.length > 1) {
+		const allMatches = nodes.slice(0, 10).map(summarize);
+		const lines = allMatches.map(
+			(m, i) => `[${i}] <${m.tagName}${m.id ? `#${CSS.escape(m.id)}` : ""}${m.classes.length ? `.${m.classes.map(CSS.escape).join(".")}` : ""}>${m.text ? ` — ${m.text}` : ""}`,
+		);
+		throw new Error(`Selector "${req.selector}" matched ${nodes.length} elements. Use a more specific selector:\n${lines.join("\n")}`);
 	}
-	const el = nodes[idx];
+	const el = nodes[0];
 	scrollIntoCenter(el);
 	const target = el as HTMLElement;
 	if (typeof target.click !== "function") {
-		throw new Error(`Element at index ${idx} is not clickable: <${el.tagName.toLowerCase()}>`);
+		throw new Error(`Element is not clickable: <${el.tagName.toLowerCase()}>`);
 	}
 	target.click();
 	return { selector: req.selector, target: summarize(el) };
@@ -60,6 +47,13 @@ function click(req: Extract<ContentRequest, { method: "click" }>): ClickResult {
 function type(req: Extract<ContentRequest, { method: "type" }>): TypeResult {
 	const nodes = safeQueryAll(req.selector);
 	if (nodes.length === 0) throw new Error(`No element matches selector: ${req.selector}`);
+	if (nodes.length > 1) {
+		const lines = nodes.slice(0, 10).map((n, i) => {
+			const s = summarize(n);
+			return `[${i}] <${s.tagName}${s.id ? `#${CSS.escape(s.id)}` : ""}${s.classes.length ? `.${s.classes.map(CSS.escape).join(".")}` : ""}>${s.text ? ` — ${s.text}` : ""}`;
+		});
+		throw new Error(`Selector "${req.selector}" matched ${nodes.length} elements. Use a more specific selector:\n${lines.join("\n")}`);
+	}
 	const el = nodes[0];
 	scrollIntoCenter(el);
 
@@ -209,6 +203,18 @@ function submitForm(el: HTMLInputElement | HTMLTextAreaElement): boolean {
 	return false;
 }
 
+function cssSelector(el: Element): string {
+	const tag = el.tagName.toLowerCase();
+	if (el.id) return `${tag}#${CSS.escape(el.id)}`;
+	if (el.classList.length > 0) return `${tag}.${Array.from(el.classList).map(CSS.escape).join(".")}`;
+	const parent = el.parentElement;
+	if (!parent) return tag;
+	const siblings = Array.from(parent.children).filter((c) => c.tagName === el.tagName);
+	const idx = siblings.indexOf(el);
+	if (siblings.length === 1) return `${cssSelector(parent)} > ${tag}`;
+	return `${cssSelector(parent)} > ${tag}:nth-of-type(${idx + 1})`;
+}
+
 function outline(root: Element, depth: number): string {
 	const lines: string[] = [];
 	const INTERESTING = new Set([
@@ -239,7 +245,8 @@ function outline(root: Element, depth: number): string {
 			const id = el.id ? `#${el.id}` : "";
 			const cls = el.classList.length > 0 ? `.${Array.from(el.classList).slice(0, 2).join(".")}` : "";
 			const txt = trim(el.textContent ?? "", 80);
-			lines.push(`${"  ".repeat(d)}${tag.toLowerCase()}${id}${cls}${txt ? ` — ${txt}` : ""}`);
+			const sel = cssSelector(el);
+			lines.push(`${"  ".repeat(d)}${tag.toLowerCase()}${id}${cls}${txt ? ` — ${txt}` : ""}  [${sel}]`);
 		}
 		for (const child of Array.from(el.children)) walk(child, INTERESTING.has(tag) ? d + 1 : d);
 	};

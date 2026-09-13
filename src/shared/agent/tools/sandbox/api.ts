@@ -1,6 +1,6 @@
 import { getActiveTab } from "@shared/transport/tab-rpc";
 import type { Capability } from "@shared/config";
-import { readDomTool, queryTool, clickTool, typeTool } from "../browser/dom";
+import { readDomTool, clickTool, typeTool } from "../browser/dom";
 import { navigateTool } from "../browser/navigate";
 import { fetchUrlTool } from "../browser/fetch-url";
 import { useSkillTool } from "../skills/use-skill";
@@ -40,7 +40,6 @@ function ns(prefix: string, methods: Record<string, BridgeSpecEntry>) {
 /** Maps a bridge path to the capability that gates it; entries absent here are always enabled (raw chrome.* / meta helpers). */
 const PATH_CAPABILITY: Record<string, Capability> = {
 	readDom: "read_dom",
-	query: "query",
 	click: "click",
 	type: "type",
 	navigate: "navigate",
@@ -101,15 +100,12 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 		([tabId, world, code]) => evalInAllFrames(Number(tabId), world === "main" ? "MAIN" : "ISOLATED", String(code))),
 	readDom: bridge("Read the active page's DOM (identical to the read_dom tool).",
 		([opts]) => readDomTool.execute((opts ?? {}) as never).then(toolText)),
-	click: bridge("Click an element on the active page (identical to the click tool).",
-		([sel, idx]) => clickTool.execute({ selector: String(sel), index: idx } as never).then(toolText)),
+	click: bridge("Click an element on the active page (identical to the click tool). If multiple elements match, returns an error listing all matches.",
+		([sel]) => clickTool.execute({ selector: String(sel) } as never).then(toolText)),
 	type: bridge("Type text into an input on the active page (identical to the type tool).",
 		([sel, text, opts]) => typeTool.execute({ selector: String(sel), text: String(text), ...(opts ?? {}) } as never).then(toolText)),
 	navigate: bridge("Navigate to a URL on the active tab or a new tab (identical to the navigate tool).",
 		([url, opts]) => navigateTool.execute({ url: String(url), ...(opts ?? {}) } as never).then(toolText)),
-	query: bridge(
-		"Locate elements by CSS selector (identical to the `query` tool). Returns an array of match summaries (tag, id, classes, text, attributes, rect, visibility, disabled). Pass `{ all: false }` for the first match only; `limit` caps results.",
-		([sel, all, limit]) => queryTool.execute({ selector: String(sel), all: all as boolean, limit: limit as number } as never).then(toolText)),
 	useSkill: bridge(
 		"Access a skill's index or a file within it (identical to the `use_skill` tool). Pass `name`; omit `file` for the index, or set `file` (e.g. 'SKILL.md') to read it. `maxChars` truncates file content.",
 		([name, file, maxChars]) => useSkillTool.execute({ name: String(name), file: file as string, maxChars: maxChars as number } as never).then(toolText)),

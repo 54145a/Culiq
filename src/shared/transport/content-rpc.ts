@@ -1,6 +1,5 @@
 export type ContentRequest =
-	| { method: "query"; selector: string; all?: boolean; limit?: number }
-	| { method: "click"; selector: string; index?: number }
+	| { method: "click"; selector: string }
 	| { method: "type"; selector: string; text: string; submit?: boolean; clear?: boolean }
 	| { method: "read_dom"; mode?: "markdown" | "html" | "readable_html" | "outline"; selector?: string; maxChars?: number };
 
@@ -17,13 +16,6 @@ export interface ElementSummary {
 	visible: boolean;
 	disabled: boolean;
 	outerHtmlSnippet: string;
-}
-
-export interface QueryResult {
-	selector: string;
-	totalMatches: number;
-	returnedMatches: number;
-	matches: ElementSummary[];
 }
 
 export interface ClickResult {
@@ -49,7 +41,6 @@ export interface ReadDomResult {
 }
 
 export type ContentResultMap = {
-	query: QueryResult;
 	click: ClickResult;
 	type: TypeResult;
 	read_dom: ReadDomResult;

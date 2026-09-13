@@ -263,7 +263,7 @@ async function buildSendTimeContext(contextMode: ChatContextMode | undefined): P
 
 	if (internal) {
 		blocks.push(
-			`The current page is a browser-internal page: ${currentUrl}. DOM tools (read_dom, query, click, type, screenshot) cannot operate on it. Use navigate with newTab: true to open a web page — navigating without newTab on internal pages will fail.`,
+			`The current page is a browser-internal page: ${currentUrl}. DOM tools (read_dom, click, type, screenshot) cannot operate on it. Use \`fetch_url\` with a new URL to open a web page.`,
 		);
 	}
 

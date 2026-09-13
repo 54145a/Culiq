@@ -5,7 +5,6 @@ export type Capability =
 	| "navigate"
 	| "read_dom"
 	| "screenshot"
-	| "query"
 	| "click"
 	| "type"
 	| "eval_js"
@@ -22,26 +21,22 @@ export type Capability =
 export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	navigate: {
 		description:
-			"Navigate to a URL. **Requires a `url` parameter** — if the user hasn't specified one, ask first. When the current page is a browser-internal page (chrome://, chrome-extension://), always use `newTab: true` — navigating without `newTab` on internal pages will fail. Otherwise opens in the active tab by default. Waits for the page to load by default (`waitForLoad: true`).",
+			"Navigate to a URL. Available via the sandbox bridge. **Requires a `url` parameter**. When the current page is a browser-internal page (chrome://, chrome-extension://), always use `newTab: true`. Waits for the page to load by default (`waitForLoad: true`).",
 	},
 	read_dom: {
 		description:
-			"Read page content. Modes: `text` (innerText, default; best for content), `html` (raw markup; only when attributes matter), `outline` (structural overview of headings/links/forms/landmarks; best when orienting yourself on a new page). Optionally narrow with a CSS selector. Never invent or guess a CSS selector — only pass a selector you have actually observed (e.g. from a prior `query` tool result); a made-up selector will silently match nothing.",
+			"Read page content. Modes: `text` (innerText, default; best for content), `html` (raw markup; only when attributes matter), `outline` (structural overview with CSS selectors for each element; best when orienting yourself on a new page). Optionally narrow with a CSS selector.",
 	},
 	screenshot: {
 		description:
-			"Capture the active tab's currently visible viewport for visual analysis. Use it for images, canvas, charts, layout, colors, or visual state; prefer `read_dom` or `query` for text and structure. Scroll and capture again to inspect another area.",
-	},
-	query: {
-		description:
-			"Locate elements by CSS selector. Returns tag, id, classes, text, attributes, rect, visibility, and disabled state for up to 10 matches. Use this before click/type to confirm the target exists.",
+			"Capture the active tab's currently visible viewport for visual analysis. Use it for images, canvas, charts, layout, colors, or visual state; prefer `read_dom` for text and structure. Scroll and capture again to inspect another area.",
 	},
 	click: {
-		description: "Click the first element matching a CSS selector. Scrolls into view first. Always confirm the target element exists and obtain the selector through DOM inspection before calling this tool. Do not use selectors you have not confirmed.",
+		description: "Click the first element matching a CSS selector. Scrolls into view first. If multiple elements match, an error lists all matches so you can use a more specific selector. Obtain selectors from `read_dom` outline mode.",
 	},
 	type: {
 		description:
-			"Type text into an <input>, <textarea>, or contenteditable element. Set `submit: true` to submit the form (or send Enter) after typing. Always confirm the target element exists and obtain the selector through DOM inspection before calling this tool. Do not use selectors you have not confirmed.",
+			"Type text into an <input>, <textarea>, or contenteditable element. Set `submit: true` to submit the form (or send Enter) after typing. Obtain selectors from `read_dom` outline mode.",
 	},
 	eval_js: {
 		description:
@@ -60,7 +55,7 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	},
 	fetch_url: {
 		description:
-			"Read the content of a URL. By default, opens the page in a new tab, extracts the rendered content, and keeps the tab open for follow-up tools (`read_dom`, `query`, `click`). Set `afterLoad:\"close\"` for one-shot reads that close the tab after extraction. Prefer this over `navigate` + `read_dom` when you need to read page content — it combines navigation and content extraction in one step. `mode` supports `\"markdown\"` (default), `\"html\"`, `\"readable_html\"`, and `\"outline\"`. A HEAD request first checks the content type; binary files are refused by default (`probeMime:true`).",
+			"Read the content of a URL. By default, opens the page in a new tab, extracts the rendered content, and keeps the tab open for follow-up tools (`read_dom`, `click`). Set `afterLoad:\"close\"` for one-shot reads that close the tab after extraction. Set `newTab: false` to navigate the current tab instead of opening a new one. Prefer this over `navigate` + `read_dom` when you need to read page content — it combines navigation and content extraction in one step. `mode` supports `\"markdown\"` (default), `\"html\"`, `\"readable_html\"`, and `\"outline\"`. A HEAD request first checks the content type; binary files are refused by default (`probeMime:true`).",
 	},
 	use_skill: {
 		description:

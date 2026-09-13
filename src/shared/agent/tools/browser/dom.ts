@@ -1,50 +1,6 @@
-import type { ElementSummary } from "@shared/transport/content-rpc";
 import { callContent } from "@shared/transport/tab-rpc";
 import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
-
-function describe(el: ElementSummary): string {
-	const id = el.id ? `#${el.id}` : "";
-	const cls = el.classes.length > 0 ? `.${el.classes.slice(0, 3).join(".")}` : "";
-	const role = el.role ? ` role=${el.role}` : "";
-	const flags = [el.visible ? "visible" : "hidden", el.disabled ? "disabled" : null].filter(Boolean).join(" ");
-	const text = el.text ? ` — ${el.text}` : "";
-	return `<${el.tagName}${id}${cls}${role}> [${flags}]${text}`;
-}
-
-export const queryTool: AgentTool = {
-	name: "query",
-	description: CAPABILITY_INFO.query.description,
-	parameters: {
-		type: "object",
-		properties: {
-			selector: { type: "string", description: "CSS selector, e.g. 'button.primary' or 'input[name=email]'." },
-			all: {
-				type: "boolean",
-				description: "If false, return only the first match. Default true (return up to `limit`).",
-			},
-			limit: { type: "number", description: "Max matches to return when all=true. Default 10." },
-		},
-		required: ["selector"],
-		additionalProperties: false,
-	},
-	async execute(args) {
-		const selector = String(args.selector);
-		const result = await callContent({
-			method: "query",
-			selector,
-			...(args.all !== undefined ? { all: Boolean(args.all) } : {}),
-			...(args.limit !== undefined ? { limit: Number(args.limit) } : {}),
-		});
-
-		const header = `selector: ${selector}\ntotal matches: ${result.totalMatches} (returned ${result.returnedMatches})`;
-		if (result.matches.length === 0) {
-			return { content: [{ type: "text", text: `${header}\n(no matches)` }] };
-		}
-		const lines = result.matches.map((m, i) => `[${i}] ${describe(m)}`);
-		return { content: [{ type: "text", text: `${header}\n${lines.join("\n")}` }] };
-	},
-};
 
 export const clickTool: AgentTool = {
 	name: "click",
@@ -52,22 +8,17 @@ export const clickTool: AgentTool = {
 	parameters: {
 		type: "object",
 		properties: {
-			selector: { type: "string", description: "CSS selector. Must be confirmed via DOM inspection (`query`, `read_dom`, etc.) — do not infer from element names or attributes." },
-			index: { type: "number", description: "Index when multiple match (default 0)." },
+			selector: { type: "string", description: "CSS selector. Obtain from `read_dom` outline mode — do not guess." },
 		},
 		required: ["selector"],
 		additionalProperties: false,
 	},
 	async execute(args) {
 		const selector = String(args.selector);
-		const result = await callContent({
-			method: "click",
-			selector,
-			...(args.index !== undefined ? { index: Number(args.index) } : {}),
-		});
-		return {
-			content: [{ type: "text", text: `clicked: ${describe(result.target)}` }],
-		};
+		const result = await callContent({ method: "click", selector });
+		const el = result.target;
+		const desc = `<${el.tagName}${el.id ? `#${el.id}` : ""}${el.classes.length ? `.${el.classes.slice(0, 3).join(".")}` : ""}>${el.text ? ` — ${el.text}` : ""}`;
+		return { content: [{ type: "text", text: `clicked: ${desc}` }] };
 	},
 };
 
@@ -77,7 +28,7 @@ export const typeTool: AgentTool = {
 	parameters: {
 		type: "object",
 		properties: {
-			selector: { type: "string", description: "CSS selector. Must be confirmed via DOM inspection (`query`, `read_dom`, etc.) — do not infer from element names or attributes." },
+			selector: { type: "string", description: "CSS selector. Obtain from `read_dom` outline mode — do not guess." },
 			text: { type: "string", description: "Text to type." },
 			submit: { type: "boolean", description: "Submit the form (or press Enter) after typing. Default false." },
 			clear: { type: "boolean", description: "Clear existing value first. Default true." },
@@ -96,11 +47,13 @@ export const typeTool: AgentTool = {
 			...(args.clear !== undefined ? { clear: Boolean(args.clear) } : {}),
 		});
 		const submittedStr = result.submitted ? "submitted form" : "no submit";
+		const el = result.target;
+		const desc = `<${el.tagName}${el.id ? `#${el.id}` : ""}${el.classes.length ? `.${el.classes.slice(0, 3).join(".")}` : ""}>${el.text ? ` — ${el.text}` : ""}`;
 		return {
 			content: [
 				{
 					type: "text",
-					text: `typed into ${describe(result.target)}\nvalue: ${JSON.stringify(result.finalValue)}\n${submittedStr}`,
+					text: `typed into ${desc}\nvalue: ${JSON.stringify(result.finalValue)}\n${submittedStr}`,
 				},
 			],
 		};
@@ -113,7 +66,7 @@ export const readDomTool: AgentTool = {
 	parameters: {
 		type: "object",
 		properties: {
-			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: 'markdown' (clean Markdown via Defuddle, default), 'html' (raw markup), 'readable_html' (clean HTML via Defuddle), or 'outline' (headings, links, forms)." },
+			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: 'markdown' (clean Markdown via Defuddle, default), 'html' (raw markup), 'readable_html' (clean HTML via Defuddle), or 'outline' (headings, links, forms with CSS selectors)." },
 			selector: { type: "string", description: "Optional CSS selector to limit scope." },
 			maxChars: { type: "number", description: "Truncate output to this many chars. Default 8000." },
 			tabId: { type: "number", description: "Read from a specific tab instead of the active tab. Used internally; not exposed to agents." },
@@ -121,7 +74,6 @@ export const readDomTool: AgentTool = {
 		additionalProperties: false,
 	},
 	async execute(args) {
-		// If a specific tabId is requested, switch to it and restore afterward.
 		const targetTabId = args.tabId as number | undefined;
 		let originalTabId: number | undefined;
 		if (targetTabId !== undefined) {
@@ -141,7 +93,6 @@ export const readDomTool: AgentTool = {
 				content: [{ type: "text", text: `${header}\n\n${result.content}` }],
 			};
 		} finally {
-			// Restore the original active tab after reading.
 			if (targetTabId !== undefined && originalTabId !== undefined) {
 				await chrome.tabs.update(originalTabId, { active: true }).catch(() => {});
 			}
@@ -149,4 +100,4 @@ export const readDomTool: AgentTool = {
 	},
 };
 
-export const domTools: AgentTool[] = [queryTool, clickTool, typeTool, readDomTool];
+export const domTools: AgentTool[] = [clickTool, typeTool, readDomTool];

@@ -118,6 +118,7 @@ async function streamAssistantResponse(
 	);
 
 	let started = false;
+	let usageEmitted = false;
 	for await (const event of stream) {
 		if (event.type === "start") {
 			started = true;
@@ -129,6 +130,7 @@ async function streamAssistantResponse(
 				delta: { kind: "text", contentIndex: event.contentIndex, text: event.delta },
 			});
 		} else if (event.type === "usage") {
+			usageEmitted = true;
 			if (cumulative) {
 				cumulative.inputTokens += event.usage.inputTokens;
 				cumulative.outputTokens += event.usage.outputTokens;
@@ -140,6 +142,17 @@ async function streamAssistantResponse(
 			});
 		} else if (event.type === "done" || event.type === "error") {
 			if (!started) emit({ type: "message_start", message: event.message });
+			// Fallback: if usage was set on the message but the usage event was never
+			// pushed (e.g. the AI SDK's finish event lacked totalUsage), emit it now.
+			if (event.type === "done" && !usageEmitted && event.message.usage && cumulative) {
+				cumulative.inputTokens += event.message.usage.inputTokens;
+				cumulative.outputTokens += event.message.usage.outputTokens;
+				emit({
+					type: "message_usage",
+					usage: event.message.usage,
+					cumulative,
+				});
+			}
 			return event.message;
 		}
 	}
