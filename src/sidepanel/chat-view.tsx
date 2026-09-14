@@ -188,6 +188,12 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 					toolCallId: tp.toolCallId,
 					content: [{ type: "text", text: typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output) }],
 				});
+			} else if (tp.errorText) {
+				out.push({
+					role: "toolResult",
+					toolCallId: tp.toolCallId,
+					content: [{ type: "text", text: tp.errorText }],
+				});
 			}
 		} else if (pt.type.startsWith("tool-")) {
 			const tp = pt as unknown as { toolCallId: string; input: unknown; output?: unknown; errorText?: string };

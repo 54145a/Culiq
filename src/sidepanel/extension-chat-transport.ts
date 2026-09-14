@@ -44,7 +44,7 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 				const data = (part as { data?: unknown }).data;
 				if (typeof data === "string" && data) content.push({ type: "context", text: data } as ContextContent);
 			} else if (type === "tool-invocation") {
-				const tp = part as { toolCallId: string; toolName: string; input?: unknown; output?: unknown };
+				const tp = part as { toolCallId: string; toolName: string; input?: unknown; output?: unknown; errorText?: string };
 				content.push({
 					type: "toolCall",
 					id: tp.toolCallId,
@@ -53,9 +53,11 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 				} as ToolCallContent);
 				if (tp.output != null) {
 					results.push(toolResult(tp.toolCallId, tp.output));
+				} else if (tp.errorText) {
+					results.push(toolResult(tp.toolCallId, tp.errorText));
 				}
 			} else if (typeof type === "string" && type.startsWith("tool-")) {
-				const tp = part as { toolCallId: string; input: unknown; output?: unknown };
+				const tp = part as { toolCallId: string; input: unknown; output?: unknown; errorText?: string };
 				content.push({
 					type: "toolCall",
 					id: tp.toolCallId,
@@ -64,6 +66,8 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 				} as ToolCallContent);
 				if (tp.output != null) {
 					results.push(toolResult(tp.toolCallId, tp.output));
+				} else if (tp.errorText) {
+					results.push(toolResult(tp.toolCallId, tp.errorText));
 				}
 			}
 		}
