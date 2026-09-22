@@ -1,5 +1,9 @@
 import type { AgentEvent } from "../agent/types";
 
+// Unique per event so the SDK's (type, id) merge cannot collapse distinct
+// API calls into one badge.
+let usageSeq = 0;
+
 /**
  * Maps an AgentEvent (from the background service worker) to a UIMessageChunk
  * that can be consumed by the AI SDK's useChat hook via processUIMessageStream.
@@ -82,7 +86,7 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 		case "message_usage":
 			return {
 				type: "data-usage",
-				id: "usage",
+				id: `usage-${++usageSeq}`,
 				data: {
 					input: event.usage.inputTokens,
 					output: event.usage.outputTokens,

@@ -112,6 +112,7 @@ function convertSessionToUI(session: Session): UIMessage[] {
 			// assistant
 			const blocks = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 			const parts: UIMessage["parts"] = [];
+			let usageRestored = 0;
 			for (const block of blocks) {
 				const b = block as unknown as { type: string; [key: string]: unknown };
 				if (b.type === "text" && b.text) {
@@ -144,11 +145,23 @@ function convertSessionToUI(session: Session): UIMessage[] {
 					parts.push({ type: "data-compress" as const, id: "compress", data: b.summary as string } as never);
 				} else if (b.type === "subtask" && b.messages) {
 					parts.push({ type: "data-subtask" as const, id: `subtask-${b.id as string}`, data: b.messages } as never);
+				} else if (b.type === "usage") {
+					const u = b as { input?: number; output?: number; totalIn?: number; totalOut?: number };
+					parts.push({
+						type: "data-usage" as const,
+						id: `usage-r${usageRestored++}`,
+						data: {
+							input: u.input ?? 0,
+							output: u.output ?? 0,
+							...(u.totalIn !== undefined ? { totalIn: u.totalIn } : {}),
+							...(u.totalOut !== undefined ? { totalOut: u.totalOut } : {}),
+						},
+					} as never);
 				}
 			}
 			const usage = (m as { usage?: { inputTokens: number; outputTokens: number } }).usage;
-			if (usage) {
-				parts.push({ type: "data-usage" as const, id: "usage", data: { input: usage.inputTokens, output: usage.outputTokens } } as never);
+			if (usage && usageRestored === 0) {
+				parts.push({ type: "data-usage" as const, id: "usage-r0", data: { input: usage.inputTokens, output: usage.outputTokens } } as never);
 			}
 			return { id: (m as { id?: string }).id ?? crypto.randomUUID(), role: "assistant" as const, parts };
 		});
@@ -169,6 +182,7 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 		| { type: "thinking"; thinking: string }
 		| { type: "compress"; summary: string }
 		| { type: "subtask"; id: string; messages: unknown }
+		| { type: "usage"; input: number; output: number; totalIn?: number; totalOut?: number }
 	> = [];
 	const out: Session["messages"] = [];
 	let usage: { inputTokens: number; outputTokens: number } | undefined;
@@ -223,8 +237,19 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 			const id = (part as { id?: string }).id ?? "subtask";
 			if (data) blocks.push({ type: "subtask", id, messages: data } as never);
 		} else if (pt.type === "data-usage") {
-			const data = (part as { data: unknown }).data as { input?: number; output?: number } | undefined;
-			if (data && typeof data === "object") usage = { inputTokens: data.input ?? 0, outputTokens: data.output ?? 0 };
+			const data = (part as { data: unknown }).data as
+				| { input?: number; output?: number; totalIn?: number; totalOut?: number }
+				| undefined;
+			if (data && typeof data === "object") {
+				blocks.push({
+					type: "usage",
+					input: data.input ?? 0,
+					output: data.output ?? 0,
+					...(data.totalIn !== undefined ? { totalIn: data.totalIn } : {}),
+					...(data.totalOut !== undefined ? { totalOut: data.totalOut } : {}),
+				});
+				usage = { inputTokens: data.input ?? 0, outputTokens: data.output ?? 0 };
+			}
 		}
 	}
 	const assistantMsg: Session["messages"][number] = { role: "assistant", content: blocks as never, stopReason: "end" };

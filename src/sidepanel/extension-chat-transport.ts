@@ -55,6 +55,8 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 					results.push(toolResult(tp.toolCallId, tp.output));
 				} else if (tp.errorText) {
 					results.push(toolResult(tp.toolCallId, tp.errorText));
+				} else {
+					results.push(toolResult(tp.toolCallId, INTERRUPTED_TOOL_RESULT));
 				}
 			} else if (typeof type === "string" && type.startsWith("tool-")) {
 				const tp = part as { toolCallId: string; input: unknown; output?: unknown; errorText?: string };
@@ -68,6 +70,8 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 					results.push(toolResult(tp.toolCallId, tp.output));
 				} else if (tp.errorText) {
 					results.push(toolResult(tp.toolCallId, tp.errorText));
+				} else {
+					results.push(toolResult(tp.toolCallId, INTERRUPTED_TOOL_RESULT));
 				}
 			}
 		}
@@ -84,6 +88,61 @@ function toolResult(toolCallId: string, output: unknown): ToolResultMessage {
 		toolCallId,
 		content: [{ type: "text", text } as ToolResultContent],
 	};
+}
+
+/**
+ * Answer for a tool call that never produced a result — the turn was aborted, or
+ * the stream closed before the tool finished. Providers reject a conversation
+ * whose assistant tool call has no matching tool result ("Tool result is
+ * missing"), so every tool call must be answered. The session-restore path
+ * already synthesises this reply; the live path must do the same or the NEXT
+ * message fails to send.
+ */
+const INTERRUPTED_TOOL_RESULT = "Tool call was interrupted before a result was received.";
+
+/**
+ * Sub-agent invocations arrive under two names: the native `subtask` tool and
+ * the sandbox bridge's `sandbox.subtask`. Both wrap the same `runSubagent` call
+ * and tag their internal events with a `subtaskId`, so both must be routed into
+ * the subtask buffer — otherwise the sub-agent's events leak into the main
+ * message and its `agent_end` closes the main stream early.
+ */
+function isSubtaskTool(name: string): boolean {
+	return name === "subtask" || name.endsWith(".subtask");
+}
+
+/**
+ * Session-wide token baseline: sum every per-call usage entry already present
+ * in the message history — main `data-usage` parts plus sub-agent calls inside
+ * `data-subtask` payloads. Recomputed from raw per-call values on every send
+ * (never from stored cumulative totals) so editing history, reloading a stored
+ * session, or switching sessions stays exact without double-counting.
+ */
+function sumPriorUsage(messages: UIMessage[]): { input: number; output: number } {
+	let input = 0;
+	let output = 0;
+	for (const m of messages) {
+		if (m.role !== "assistant") continue;
+		for (const part of m.parts) {
+			const pt = part as { type?: string; data?: unknown };
+			if (pt.type === "data-usage") {
+				const d = pt.data as { input?: number; output?: number } | undefined;
+				if (d && typeof d === "object") {
+					input += d.input ?? 0;
+					output += d.output ?? 0;
+				}
+			} else if (pt.type === "data-subtask") {
+				const msgs = pt.data as Array<{ usage?: { inputTokens?: number; outputTokens?: number } }> | undefined;
+				if (Array.isArray(msgs)) {
+					for (const sm of msgs) {
+						input += sm.usage?.inputTokens ?? 0;
+						output += sm.usage?.outputTokens ?? 0;
+					}
+				}
+			}
+		}
+	}
+	return { input, output };
 }
 
 type SendFn = (msg: PanelToBg) => void;
@@ -174,12 +233,27 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					}
 				};
 
-			this.handlers.set(turnId, (event: AgentEvent) => {
+				// The SW's `cumulative` resets on every user send; carry the whole
+				// session instead by seeding from prior history and growing it with
+				// every API call (main agent and sub-agents alike) as its usage
+				// event passes through.
+				let sessionTotal = sumPriorUsage(options.messages);
+
+			this.handlers.set(turnId, (rawEvent: AgentEvent) => {
 				if (closed) return;
+				let event = rawEvent;
 
 				try {
+					// Intercept before the subtask buffering below so sub-agent usage
+					// counts toward the session total and its card shows session-to-now.
+					if (event.type === "message_usage") {
+						sessionTotal.input += event.usage.inputTokens;
+						sessionTotal.output += event.usage.outputTokens;
+						event = { ...event, cumulative: { inputTokens: sessionTotal.input, outputTokens: sessionTotal.output } };
+					}
+
 					// Subtask event routing
-					if (event.type === "tool_execution_start" && event.toolName === "subtask") {
+					if (event.type === "tool_execution_start" && isSubtaskTool(event.toolName)) {
 						activeSubtaskId = event.toolCallId;
 						subtaskEvents.set(event.toolCallId, []);
 						// Emit tool card for the subtask invocation itself
@@ -191,9 +265,11 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 						return;
 					}
 
-					if (event.subtaskId && activeSubtaskId) {
-						// Buffer subtask internal events
-						const buffered = subtaskEvents.get(activeSubtaskId);
+					// Every sub-agent event carries a `subtaskId`; it must never reach the
+					// main message or the main stream's lifecycle handling. Route it to the
+					// buffer of whichever subtask invocation is currently running.
+					if (event.subtaskId) {
+						const buffered = activeSubtaskId ? subtaskEvents.get(activeSubtaskId) : undefined;
 						if (buffered) buffered.push(event);
 						return;
 					}
@@ -239,7 +315,9 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 						}
 					}
 
-					if (event.type === "agent_end") {
+					// Only the main agent's end closes the stream; a sub-agent's end (already
+					// buffered above) must never terminate the outer turn.
+					if (event.type === "agent_end" && !event.subtaskId) {
 						setTimeout(finish, 50);
 					}
 				} catch (err) {
