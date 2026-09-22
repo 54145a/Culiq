@@ -1,6 +1,6 @@
 import type { CustomToolMeta } from "./types";
 import { extractMetaFromArtifact } from "./parse";
-import { file, dir, write } from "@shared/opfs";
+import { readText, listDir, write, remove } from "@shared/opfs";
 
 const TOOLS_DIR = "tools";
 
@@ -9,7 +9,7 @@ function toolFile(name: string, f: string): string {
 }
 
 export async function deleteUserCustomTool(name: string): Promise<void> {
-	await dir(`${TOOLS_DIR}/${name}`).remove();
+	await remove(`${TOOLS_DIR}/${name}`);
 }
 
 interface StoredToolEntry {
@@ -36,13 +36,13 @@ function isPackageMeta(v: unknown): v is StoredPackageMeta {
 export async function listUserCustomTools(): Promise<CustomToolMeta[]> {
 	let names: string[];
 	try {
-		names = (await dir(TOOLS_DIR).children()).map((c) => c.name).sort();
+		names = await listDir(TOOLS_DIR);
 	} catch {
 		return [];
 	}
 	const out: CustomToolMeta[] = [];
 	for (const pkgName of names) {
-		const metaRaw = await file(toolFile(pkgName, "culiq-tool.meta.json")).text();
+		const metaRaw = await readText(toolFile(pkgName, "culiq-tool.meta.json"));
 		if (!metaRaw) continue;
 		try {
 			const parsed = JSON.parse(metaRaw);
@@ -80,7 +80,7 @@ export async function listUserCustomTools(): Promise<CustomToolMeta[]> {
 }
 
 export async function getUserCustomToolArtifact(name: string): Promise<string | null> {
-	const content = await file(toolFile(name, "culiq-tool.js")).text();
+	const content = await readText(toolFile(name, "culiq-tool.js"));
 	return content || null;
 }
 

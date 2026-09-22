@@ -5,7 +5,7 @@ import { navigateTool } from "../browser/navigate";
 import { fetchUrlTool } from "../browser/fetch-url";
 import { useSkillTool } from "../skills/use-skill";
 import { listTabsTool, switchTabTool, reloadTabTool } from "../browser/tabs";
-import { file, dir, write } from "@shared/opfs";
+import { readText, listDirEntries, write, remove, createDir } from "@shared/opfs";
 
 /**
  * Single source of truth for the sandbox's extension bridge. Each entry
@@ -129,39 +129,37 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 	// ── Filesystem (bridge to opfs.ts) ──────────────────────────────────────
 	...ns("fs", {
 		read: bridge("Read a file from OPFS. Returns the file content as a string.",
-			async ([path]) => file(String(path)).text()),
+			async ([path]) => await readText(String(path)) ?? ""),
 		write: bridge("Write a string to a file in OPFS.",
 			async ([path, content]) => { await write(String(path), String(content)); }),
 		list: bridge("List files and directories in an OPFS path.",
-			async ([path]) => {
-				const children = await dir(String(path)).children();
-				return children.map((c) => ({ name: c.name, kind: c.kind }));
-			}),
+			async ([path]) => listDirEntries(String(path))),
 		delete: bridge("Delete a file or directory from OPFS.",
-			async ([path]) => { await file(String(path)).remove(); }),
+			async ([path]) => { await remove(String(path)); }),
 		mkdir: bridge("Create a directory in OPFS.",
-			async ([path]) => { await dir(String(path)).create(); }),
+			async ([path]) => { await createDir(String(path)); }),
 	}),
 	tree: bridge("Recursively list all files and directories under a path, returning a formatted tree string.",
 		async ([path]) => {
 			const p = String(path || "");
 			const lines: string[] = [];
-			async function walk(d: any, prefix: string) {
-				const children = await d.children();
-				for (let i = 0; i < children.length; i++) {
-					const child = children[i];
-					const isLast = i === children.length - 1;
+			async function walk(dirPath: string, prefix: string) {
+				const entries = await listDirEntries(dirPath);
+				for (let i = 0; i < entries.length; i++) {
+					const child = entries[i];
+					const isLast = i === entries.length - 1;
 					const connector = isLast ? "└── " : "├── ";
 					const childPrefix = isLast ? "    " : "│   ";
+					const childPath = dirPath ? `${dirPath}/${child.name}` : child.name;
 					if (child.kind === "file") {
 						lines.push(`${prefix}${connector}${child.name}`);
 					} else {
 						lines.push(`${prefix}${connector}${child.name}/`);
-						await walk(child, `${prefix}${childPrefix}`);
+						await walk(childPath, `${prefix}${childPrefix}`);
 					}
 				}
 			}
-			await walk(dir(p), "");
+			await walk(p, "");
 			return lines.join("\n") || "(empty)";
 		}),
 	// ── Fetch (bridge to extension context, CORS-free) ──────────────────────

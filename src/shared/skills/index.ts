@@ -1,7 +1,7 @@
 import { listBuiltinSkills } from "./builtin";
 import { parseSkillMarkdown } from "./frontmatter";
 import { deleteSkillMeta, getSkillMeta, setSkillEnabled as setMetaEnabled, setSkillMeta } from "./storage";
-import { file as opfsFile, dir, write } from "@shared/opfs";
+import { readText, listDir, write, remove } from "@shared/opfs";
 
 export interface Skill {
 	id: string;
@@ -30,7 +30,7 @@ function skillFilePath(name: string, file: string): string {
 
 /** List user skills stored in OPFS. */
 export async function listUserSkills(): Promise<Skill[]> {
-	const names = (await dir(SKILLS_DIR).children()).map((c) => c.name).sort();
+	const names = await listDir(SKILLS_DIR);
 	const skills: Skill[] = [];
 	for (const name of names) {
 		const skill = await getUserSkill(name);
@@ -40,7 +40,7 @@ export async function listUserSkills(): Promise<Skill[]> {
 }
 
 export async function getUserSkill(name: string): Promise<Skill | undefined> {
-	const content = await opfsFile(skillFilePath(name, "SKILL.md")).text();
+	const content = await readText(skillFilePath(name, "SKILL.md"));
 	if (!content) return undefined;
 	let parsed: ReturnType<typeof parseSkillMarkdown>;
 	try {
@@ -57,10 +57,10 @@ export async function getUserSkill(name: string): Promise<Skill | undefined> {
 	};
 
 	const scripts: Record<string, string> = {};
-	const files = (await dir(skillDir(name)).children()).map((c) => c.name);
+	const files = await listDir(skillDir(name));
 	for (const file of files) {
 		if (file === "SKILL.md") continue;
-		scripts[file] = await opfsFile(skillFilePath(name, file)).text();
+		scripts[file] = await readText(skillFilePath(name, file)) ?? "";
 	}
 
 	return {
@@ -90,7 +90,7 @@ export async function saveUserSkill(skill: Skill): Promise<void> {
 }
 
 export async function deleteUserSkill(name: string): Promise<void> {
-	await dir(skillDir(name)).remove();
+	await remove(skillDir(name));
 	await deleteSkillMeta(name);
 }
 
