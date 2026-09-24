@@ -25,7 +25,7 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	},
 	read_dom: {
 		description:
-			"Read page content. Modes: `text` (innerText, default; best for content), `html` (raw markup; only when attributes matter), `outline` (structural overview with CSS selectors for each element; best when orienting yourself on a new page). Optionally narrow with a CSS selector.",
+			"Read page content. Modes: `markdown` (clean Markdown via Defuddle, default), `readable_html` (cleaned HTML via Defuddle), `html` (raw markup; only when attributes matter), `outline` (structural overview with CSS selectors for each element; best when orienting yourself on a new page; may be empty on bare pages with no headings/links/controls — use `markdown` for actual content). Optionally narrow with a CSS selector.",
 	},
 	screenshot: {
 		description:
@@ -55,7 +55,7 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	},
 	fetch_url: {
 		description:
-			"Read the content of a URL. By default, opens the page in a new tab, extracts the rendered content, and keeps the tab open for follow-up tools (`read_dom`, `click`). Set `afterLoad:\"close\"` for one-shot reads that close the tab after extraction. Set `newTab: false` to navigate the current tab instead of opening a new one. Prefer this over `navigate` + `read_dom` when you need to read page content — it combines navigation and content extraction in one step. `mode` supports `\"markdown\"` (default), `\"html\"`, `\"readable_html\"`, and `\"outline\"`. A HEAD request first checks the content type; binary files are refused by default (`probeMime:true`).",
+			"Read the content of a URL. By default, opens the page in a new tab, extracts the rendered content, and keeps the tab open for follow-up tools (`read_dom`, `click`). Set `afterLoad:\"close\"` for one-shot reads that close the tab after extraction. Set `newTab: false` to navigate the current tab instead of opening a new one. Prefer this over `navigate` + `read_dom` when you need to read page content — it combines navigation and content extraction in one step. `mode` supports `\"markdown\"` (default), `\"html\"`, `\"readable_html\"`, and `\"outline\"` (`outline` may be empty on bare pages with no headings/links/controls — use `markdown` for actual content). A HEAD request first checks the content type; binary files are refused by default (`probeMime:true`).",
 	},
 	use_skill: {
 		description:

@@ -66,7 +66,7 @@ export const readDomTool: AgentTool = {
 	parameters: {
 		type: "object",
 		properties: {
-			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: 'markdown' (clean Markdown via Defuddle, default), 'html' (raw markup), 'readable_html' (clean HTML via Defuddle), or 'outline' (headings, links, forms with CSS selectors)." },
+			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: 'markdown' (clean Markdown via Defuddle, default), 'html' (raw markup), 'readable_html' (clean HTML via Defuddle), or 'outline' (headings, links, forms with CSS selectors; may be empty on bare pages with no headings/links/controls — use 'markdown' for actual content)." },
 			selector: { type: "string", description: "Optional CSS selector to limit scope." },
 			maxChars: { type: "number", description: "Truncate output to this many chars. Default 8000." },
 			tabId: { type: "number", description: "Read from a specific tab instead of the active tab. Used internally; not exposed to agents." },
