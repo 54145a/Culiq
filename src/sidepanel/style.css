@@ -672,10 +672,6 @@ form {
 	font-size: 0.78rem;
 }
 
-.context-field-multi {
-	align-items: flex-start;
-}
-
 .context-field-multi select {
 	min-width: 0;
 }
