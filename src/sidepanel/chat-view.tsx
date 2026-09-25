@@ -118,7 +118,14 @@ function convertSessionToUI(session: Session): UIMessage[] {
 				if (b.type === "text" && b.text) {
 					parts.push({ type: "text" as const, text: b.text as string });
 				} else if (b.type === "thinking" && b.thinking) {
-					parts.push({ type: "thinking" as const, thinking: b.thinking as string } as never);
+					const signature = b.signature as string | undefined;
+					parts.push({
+						type: "reasoning" as const,
+						id: `reasoning-${parts.length}`,
+						text: b.thinking as string,
+						state: "done" as const,
+						...(signature ? { providerMetadata: { anthropic: { signature } } } : {}),
+					} as never);
 				} else if (b.type === "toolCall") {
 				const output = resultText.get(b.id as string);
 				const toolName = b.name as string;
@@ -179,7 +186,7 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 		| { type: "text"; text: string }
 		| { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> }
 		| { type: "context"; text: string }
-		| { type: "thinking"; thinking: string }
+		| { type: "thinking"; thinking: string; signature?: string }
 		| { type: "compress"; summary: string }
 		| { type: "subtask"; id: string; messages: unknown }
 		| { type: "usage"; input: number; output: number; totalIn?: number; totalOut?: number }
@@ -190,8 +197,12 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 		const pt = part as { type: string; [key: string]: unknown };
 		if (pt.type === "text" && pt.text) {
 			blocks.push({ type: "text", text: pt.text as string });
-		} else if (pt.type === "thinking") {
-			if (pt.thinking) blocks.push({ type: "thinking", thinking: pt.thinking as string });
+		} else if (pt.type === "reasoning") {
+			const text = pt.text as string | undefined;
+			if (text) {
+				const signature = (pt.providerMetadata as { anthropic?: { signature?: string } } | undefined)?.anthropic?.signature;
+				blocks.push({ type: "thinking", thinking: text, ...(signature ? { signature } : {}) });
+			}
 		} else if (pt.type === "tool-invocation") {
 			// Live-streamed tool calls use the AI SDK's native part type.
 			const tp = pt as unknown as { toolCallId: string; toolName: string; input?: unknown; output?: unknown; errorText?: string };
@@ -668,13 +679,13 @@ function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
 			const part = msg.parts[i] as { type: string; [key: string]: unknown };
 			if (part.type === "text") {
 				textContent += part.text as string;
-			} else if (part.type === "thinking") {
+			} else if (part.type === "reasoning") {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
 					textContent = "";
 				}
-				if (part.thinking) {
-					elements.push(<ThinkingBlock key={`th-${i}`} text={part.thinking as string} />);
+				if (part.text) {
+					elements.push(<ThinkingBlock key={`th-${i}`} text={part.text as string} />);
 				}
 			} else if (part.type === "data-context" && typeof part.data === "string") {
 				if (textContent) {

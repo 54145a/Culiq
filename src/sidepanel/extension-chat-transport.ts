@@ -2,9 +2,11 @@ import type { ChatTransport, UIMessage, UIMessageChunk } from "ai";
 import type { AgentEvent } from "@shared/agent/types";
 import type {
 	AssistantContent,
+	AssistantMessage,
 	ContextContent,
 	Message,
 	TextContent,
+	ThinkingContent,
 	ToolCallContent,
 	ToolResultContent,
 	ToolResultMessage,
@@ -33,10 +35,20 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 
 		const content: AssistantContent[] = [];
 		const results: ToolResultMessage[] = [];
+		let reasoningContent = "";
 		for (const part of m.parts) {
 			const type = (part as { type?: string }).type;
 			if (type === "text" && (part as { text?: string }).text) {
 				content.push({ type: "text", text: (part as { text: string }).text } as TextContent);
+			} else if (type === "reasoning") {
+				const rp = part as { text?: string; signature?: string; providerMetadata?: { anthropic?: { signature?: string } } };
+				const text = rp.text ?? "";
+				const signature = rp.signature ?? rp.providerMetadata?.anthropic?.signature;
+				if (signature) {
+					content.push({ type: "thinking", thinking: text, signature } as ThinkingContent);
+				} else if (text) {
+					reasoningContent = reasoningContent ? `${reasoningContent}\n${text}` : text;
+				}
 			} else if (type === "data-context") {
 				const data = (part as { data?: unknown }).data;
 				if (typeof data === "string" && data) content.push({ type: "context", text: data } as ContextContent);
@@ -75,7 +87,9 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 				}
 			}
 		}
-		out.push({ role: "assistant", content, stopReason: "end" });
+		const assistantMessage: AssistantMessage = { role: "assistant", content, stopReason: "end" };
+		if (reasoningContent) assistantMessage.reasoningContent = reasoningContent;
+		out.push(assistantMessage);
 		out.push(...results);
 	}
 	return out;
@@ -212,6 +226,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 			start: (controller) => {
 				let closed = false;
 				const textStartSent = new Set<string>();
+				const reasoningStartSent = new Set<string>();
 				let activeSubtaskId: string | null = null;
 				const subtaskEvents = new Map<string, AgentEvent[]>();
 
@@ -293,6 +308,17 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					// New LLM call within the same turn: reset so text-start is sent again
 					if (event.type === "turn_start") {
 						textStartSent.clear();
+						reasoningStartSent.clear();
+					}
+
+					// Handle reasoning-delta: ensure reasoning-start is sent first for this
+					// id. No early return — the delta itself is mapped by agentEventToChunk.
+					if (event.type === "message_update" && event.delta.kind === "reasoning") {
+						const id = event.delta.id;
+						if (!reasoningStartSent.has(id)) {
+							safeEnqueue({ type: "reasoning-start", id } as UIMessageChunk);
+							reasoningStartSent.add(id);
+						}
 					}
 
 					// Handle text-delta: ensure text-start is sent first

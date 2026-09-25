@@ -27,6 +27,14 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 				if (!delta.text) return null;
 				return { type: "text-delta", delta: delta.text, id: String(delta.contentIndex) };
 			}
+			if (delta.kind === "reasoning") {
+				return {
+					type: "reasoning-delta",
+					id: delta.id,
+					delta: delta.text,
+					...(delta.signature ? { providerMetadata: { anthropic: { signature: delta.signature } } } : {}),
+				};
+			}
 			return null;
 		}
 

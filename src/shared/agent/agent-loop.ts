@@ -129,6 +129,17 @@ async function streamAssistantResponse(
 				message: event.partial,
 				delta: { kind: "text", contentIndex: event.contentIndex, text: event.delta },
 			});
+		} else if (event.type === "reasoning_delta") {
+			emit({
+				type: "message_update",
+				message: event.partial,
+				delta: {
+					kind: "reasoning",
+					id: event.id,
+					text: event.delta,
+					...(event.signature ? { signature: event.signature } : {}),
+				},
+			});
 		} else if (event.type === "usage") {
 			usageEmitted = true;
 			if (cumulative) {

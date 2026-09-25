@@ -161,6 +161,9 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 			const indexByPartId = new Map<string, number>();
 			const toolIndexes: number[] = [];
 			const thinkingByPartId = new Map<string, number>();
+			const reasoningIndexByPartId = new Map<string, number>();
+			const signatureByPartId = new Map<string, string>();
+			let reasoningCount = 0;
 
 			for await (const part of result.fullStream) {
 				switch (part.type) {
@@ -186,6 +189,7 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 						break;
 					}
 					case "reasoning-start": {
+						reasoningIndexByPartId.set(part.id, reasoningCount++);
 						if (model.provider === "anthropic") {
 							partial.content.push({ type: "thinking", thinking: "" });
 							thinkingByPartId.set(part.id, partial.content.length - 1);
@@ -193,13 +197,25 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 						break;
 					}
 					case "reasoning-delta": {
+						const sig = (part.providerMetadata as { anthropic?: { signature?: string } } | undefined)?.anthropic?.signature;
+						if (sig) signatureByPartId.set(part.id, (signatureByPartId.get(part.id) ?? "") + sig);
+						const ri = reasoningIndexByPartId.get(part.id);
+						if (ri !== undefined) {
+							const signature = signatureByPartId.get(part.id);
+							stream.push({
+								type: "reasoning_delta",
+								id: String(ri),
+								delta: part.text,
+								...(signature ? { signature } : {}),
+								partial,
+							});
+						}
 						if (model.provider === "anthropic") {
 							const ci = thinkingByPartId.get(part.id);
 							if (ci === undefined) break;
 							const block = partial.content[ci];
 							if (block.type !== "thinking") break;
 							block.thinking += part.text;
-							const sig = (part.providerMetadata as { anthropic?: { signature?: string } } | undefined)?.anthropic?.signature;
 							if (sig) block.signature = (block.signature ?? "") + sig;
 						} else {
 							partial.reasoningContent = (partial.reasoningContent ?? "") + part.text;

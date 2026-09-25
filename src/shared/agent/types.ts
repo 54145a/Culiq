@@ -50,7 +50,11 @@ export type AgentEvent =
 	| WithSubtaskId<{ type: "turn_start"; turnIndex: number }>
 	| WithSubtaskId<{ type: "context_sent"; text: string }>
 	| WithSubtaskId<{ type: "message_start"; message: Message }>
-	| WithSubtaskId<{ type: "message_update"; message: AssistantMessage; delta: { kind: "text"; contentIndex: number; text: string } }>
+	| WithSubtaskId<{
+			type: "message_update";
+			message: AssistantMessage;
+			delta: { kind: "text"; contentIndex: number; text: string } | { kind: "reasoning"; id: string; text: string; signature?: string };
+	  }>
 	| WithSubtaskId<{ type: "message_end"; message: Message }>
 	| WithSubtaskId<{ type: "tool_execution_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }>
 	| WithSubtaskId<{
