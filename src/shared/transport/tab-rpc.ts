@@ -6,13 +6,23 @@ import {
 } from "@shared/transport/content-rpc";
 
 const RPC_TIMEOUT_MS = 15_000;
-const PROTECTED_URL = /^(chrome|chrome-extension|edge|about|devtools):/i;
+const PROTECTED_URL = /^(chrome|chrome-extension|moz-extension|edge|about|devtools):/i;
 
 export function isProtectedUrl(url: string): boolean {
 	return PROTECTED_URL.test(url);
 }
 
 let panelWindowId: number | undefined;
+let targetTabId: number | undefined;
+
+/**
+ * Pin the tab the tools operate on (used by `switch_tab` and `navigate`) so that
+ * later calls in the same turn follow the selected tab instead of the panel's.
+ * Cleared between turns by the background.
+ */
+export function setTargetTab(tabId: number | undefined): void {
+	targetTabId = tabId;
+}
 
 /** The window that hosts the active panel; the target tab lives next to it. */
 export function setPanelWindow(windowId: number | undefined): void {
@@ -37,6 +47,12 @@ export async function getPanelWindowTab(): Promise<chrome.tabs.Tab | undefined> 
  * tab in a normal window. Never throws; getActiveTab() adds the guards.
  */
 export async function findTargetTab(): Promise<chrome.tabs.Tab | undefined> {
+	if (targetTabId !== undefined) {
+		const pinned = await chrome.tabs.get(targetTabId).catch(() => undefined);
+		if (pinned?.url && !PROTECTED_URL.test(pinned.url)) return pinned;
+		targetTabId = undefined;
+	}
+
 	const panelTab = await getPanelWindowTab();
 	if (panelTab?.url && !PROTECTED_URL.test(panelTab.url)) return panelTab;
 

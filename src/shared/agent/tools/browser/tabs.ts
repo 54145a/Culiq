@@ -1,4 +1,4 @@
-import { getActiveTab } from "@shared/transport/tab-rpc";
+import { getActiveTab, setTargetTab } from "@shared/transport/tab-rpc";
 import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 import { waitForTabComplete } from "./wait";
@@ -48,6 +48,7 @@ export const switchTabTool: AgentTool = {
 		const tab = await chrome.tabs.get(tabId);
 		await chrome.tabs.update(tabId, { active: true });
 		if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true });
+		setTargetTab(tabId);
 		return {
 			content: [
 				{

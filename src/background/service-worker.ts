@@ -7,7 +7,7 @@ import { ensureCustomToolsLoaded, refreshCustomTools, syncBuiltinTools } from "@
 import { runSubagent } from "@shared/agent/subagent";
 import { CAPABILITY_INFO, loadSettings, resolveDefaultModel, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
-import { findTargetTab, isProtectedUrl, setPanelWindow } from "@shared/transport/tab-rpc";
+import { findTargetTab, isProtectedUrl, setPanelWindow, setTargetTab } from "@shared/transport/tab-rpc";
 import { type ChatContextMode } from "@shared/transport/protocol";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
@@ -148,6 +148,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		const { provider, model } = resolved;
 		const controller = new AbortController();
 		activeTurns.set(turnId, { controller, port });
+		setTargetTab(undefined);
 
 		// Per-model capability overrides. All capabilities are enabled by default
 		// (including every sandbox-exposed tool); only the model's own disabled list

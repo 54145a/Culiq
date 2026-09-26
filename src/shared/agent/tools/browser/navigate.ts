@@ -1,4 +1,4 @@
-import { getActiveTab } from "@shared/transport/tab-rpc";
+import { getActiveTab, setTargetTab } from "@shared/transport/tab-rpc";
 import { CAPABILITY_INFO } from "@shared/config";
 import { isStandaloneMode } from "@shared/standalone";
 import type { AgentTool } from "../../types";
@@ -63,11 +63,14 @@ export const navigateTool: AgentTool = {
 			tabId = updated.id;
 		}
 
+		setTargetTab(tabId);
+
 		if (waitForLoad) {
 			try {
 				await waitForTabComplete(tabId, signal, url);
 			} catch {
-				// Timed out or aborted — page may still be usable.
+				// A load timeout still leaves a usable page; an aborted turn must stop here.
+				if (signal?.aborted) throw new DOMException("aborted", "AbortError");
 			}
 		}
 
