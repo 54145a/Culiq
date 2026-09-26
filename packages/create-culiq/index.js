@@ -19,6 +19,16 @@ if (!/^(?:@[^/]+\/)?[a-zA-Z0-9._-]+$/.test(name)) {
 }
 
 const target = resolve(process.cwd(), name);
+// Tool names reach the model providers, which only accept [A-Za-z0-9_-]; a
+// scoped package name (@scope/tool) is valid for package.json but not for a tool.
+const toolName = name
+	.replace(/^@[^/]+\//, "")
+	.replace(/[^a-zA-Z0-9_-]/g, "_")
+	.slice(0, 64);
+if (!toolName) {
+	console.error(`Cannot derive a tool name from: ${name}`);
+	process.exit(1);
+}
 try {
 	mkdirSync(target, { recursive: true });
 } catch (err) {
@@ -36,11 +46,12 @@ writeFileSync(pkgPath, pkg);
 // Replace name in culiq-tool.js
 const toolPath = resolve(target, "culiq-tool.js");
 const tool = readFileSync(toolPath, "utf8")
-	.replace(/name:\s*"my-tool"/g, `name: "${name}"`)
-	.replace(/name:\s*"my_tool"/g, `name: "${name}"`);
+	.replace(/name:\s*"my-tool"/g, `name: "${toolName}"`)
+	.replace(/name:\s*"my_tool"/g, `name: "${toolName}"`);
 writeFileSync(toolPath, tool);
 
 console.log(`Created ${name}`);
+console.log(`  tool name: ${toolName}`);
 console.log(`  cd ${name}`);
 console.log(`  pnpm install`);
 console.log(`  pnpm check    # type-check your tool`);
