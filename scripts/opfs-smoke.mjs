@@ -157,5 +157,16 @@ const makeApi = () => {
 	await expectRejects("traversal rejected in the middle", () => api.readText("tools/../../x"));
 }
 
+// 8. the root can be listed but never deleted (sandbox fs.delete("") / dir("").remove())
+{
+	const api = makeApi();
+	await api.write("skills/keep/SKILL.md", "keep me");
+	await expectRejects("remove('') rejected", () => api.remove(""));
+	await expectRejects("remove('.') rejected", () => api.remove("."));
+	await expectRejects("remove('./') rejected", () => api.remove("./"));
+	expect("root survived", await api.readText("skills/keep/SKILL.md"), "keep me");
+	expect("root still lists", await api.listDir(""), ["skills"]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -29,6 +29,15 @@ function resolvePath(path: string): string {
 	return assertSafePath(path) || ".";
 }
 
+/** The root can be listed, but deleting it would wipe every persisted skill and tool. */
+function assertDeletable(path: string): string {
+	const cleaned = assertSafePath(path);
+	if (cleaned === "" || cleaned === ".") {
+		throw new Error(`Invalid path (refusing to delete the OPFS root): "${path}"`);
+	}
+	return cleaned;
+}
+
 /**
  * Map the humanfs API onto the small surface the extension uses. Preserves the
  * contract of the previous hand-written wrapper: missing files read as `null`,
@@ -43,7 +52,7 @@ export function createFsApi(getBackend: () => Promise<OpfsBackend>): OpfsApi {
 
 		readText: async (path) => (await (await getBackend()).text(resolvePath(path))) ?? null,
 
-		remove: async (path) => (await getBackend()).deleteAll(resolvePath(path)),
+		remove: async (path) => (await getBackend()).deleteAll(assertDeletable(path)),
 
 		listDir: async (path) => {
 			const names: string[] = [];
