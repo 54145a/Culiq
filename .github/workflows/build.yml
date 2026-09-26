@@ -70,7 +70,9 @@ jobs:
           (cd dist-${{ matrix.target }} && zip -qr "../artifacts/culiq-${{ steps.meta.outputs.tag }}-${{ matrix.target }}.${{ matrix.ext }}" .)
 
       # AMO credentials are optional: without them the unsigned xpi ships instead,
-      # so a release never hinges on the secrets being present.
+      # so a release never hinges on the secrets being present. The signed xpi is
+      # copied here rather than in a later step, because continue-on-error masks
+      # the outcome (a failed sign still reports success).
       - name: Sign Firefox build (AMO unlisted)
         id: sign
         if: matrix.target == 'firefox' && steps.meta.outputs.version != ''
@@ -79,16 +81,21 @@ jobs:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
+          if [[ -z "$AMO_JWT_ISSUER" || -z "$AMO_JWT_SECRET" ]]; then
+            echo "::warning::AMO credentials are not configured — releasing the unsigned xpi"
+            exit 0
+          fi
           pnpm exec web-ext sign \
             --source-dir=dist-firefox \
             --artifacts-dir=signed \
             --api-key="$AMO_JWT_ISSUER" \
             --api-secret="$AMO_JWT_SECRET" \
             --channel=unlisted
+          cp signed/*.xpi "artifacts/culiq-${{ steps.meta.outputs.tag }}-firefox.xpi"
 
-      - name: Prefer the signed xpi
-        if: steps.sign.outcome == 'success'
-        run: cp signed/*.xpi "artifacts/culiq-${{ steps.meta.outputs.tag }}-firefox.xpi"
+      - name: Report a failed AMO signing attempt
+        if: steps.sign.outcome == 'failure'
+        run: echo "::warning::AMO signing failed — releasing the unsigned xpi"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -113,4 +120,5 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+          draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
