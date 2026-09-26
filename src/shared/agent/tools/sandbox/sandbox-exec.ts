@@ -99,6 +99,10 @@ export function closeSandbox(signal: AbortSignal): void {
 	if (!session) return;
 	sessions.delete(signal);
 	pendingContext.delete(signal);
+	for (const [id, pending] of session.pending) {
+		session.pending.delete(id);
+		pending.resolve({ ok: false, error: "sandbox closed before the call finished" });
+	}
 	session.transport.close();
 }
 
