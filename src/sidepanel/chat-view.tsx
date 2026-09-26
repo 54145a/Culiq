@@ -732,16 +732,24 @@ function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
 			elements.push(<div className="text md" key="t-end" dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
 		}
 		if (elements.length === 0) return null;
-		const hasNonText = elements.some((e) => e.type === ToolCardView || e.type === ContextCard || e.type === UsageBadge || e.type === SubtaskCard);
-		if (!hasNonText) {
+		const isCard = (el: JSX.Element) =>
+			el.type === ToolCardView || el.type === ContextCard || el.type === UsageBadge || el.type === SubtaskCard;
+		if (elements.every((el) => !isCard(el))) {
 			return <li className="msg assistant">{elements}</li>;
+		}
+		// Consecutive in-flow elements share one bubble — thinking sits directly
+		// above its answer instead of occupying a mostly-empty bubble of its own,
+		// which read as a blank gap between the two. Cards and badges stand alone.
+		const groups: JSX.Element[][] = [];
+		for (const el of elements) {
+			const last = groups[groups.length - 1];
+			if (isCard(el) || !last || isCard(last[0])) groups.push([el]);
+			else last.push(el);
 		}
 		return (
 			<>
-				{elements.map((el, i) =>
-					(el.type === ToolCardView || el.type === ContextCard || el.type === UsageBadge || el.type === SubtaskCard)
-						? el
-						: <li className="msg assistant" key={`a-${i}`}>{el}</li>,
+				{groups.map((group, i) =>
+					isCard(group[0]) ? group[0] : <li className="msg assistant" key={`a-${i}`}>{group}</li>,
 				)}
 			</>
 		);
