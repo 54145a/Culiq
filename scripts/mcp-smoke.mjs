@@ -1,5 +1,5 @@
 /**
- * Smoke test: validates the exact MCP integration path Curio relies on —
+ * Smoke test: validates the exact MCP integration path Culiq relies on —
  * `@ai-sdk/mcp` createMCPClient over Streamable HTTP (initialize, tools/list,
  * tools/call, close) against a minimal in-process MCP server.
  *

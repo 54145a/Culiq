@@ -8,8 +8,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -17,115 +21,96 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [chrome, firefox]
+        include:
+          - target: chrome
+            ext: zip
+          - target: firefox
+            ext: xpi
     steps:
       - uses: actions/checkout@v4
+
+      # Chrome MV3 accepts only 1-4 dot-separated integers, so a beta tag
+      # (v1.3.0-beta.1) becomes manifest version 1.3.0; the beta lives on the tag
+      # and in the GitHub release's prerelease flag.
+      - name: Resolve tag and version
+        id: meta
+        uses: actions/github-script@v7
         with:
-          fetch-depth: 0
+          script: |
+            const tag = context.ref.startsWith("refs/tags/") ? context.ref.replace("refs/tags/", "") : "";
+            const match = /^v(\d+(?:\.\d+){0,3})(?:-[0-9A-Za-z.-]+)?$/.exec(tag);
+            core.setOutput("tag", match ? tag : `dev-${context.sha.slice(0, 7)}`);
+            core.setOutput("version", match ? match[1] : "");
 
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          cache: "pnpm"
+          node-version-file: .nvmrc
+          cache: pnpm
 
-      - name: Resolve package version
-        id: ver
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            tag="${GITHUB_REF_NAME}"
-            version="${tag#v}"
-            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-            echo "version=${version}" >> "$GITHUB_OUTPUT"
-          else
-            short_sha=$(echo "${GITHUB_SHA}" | cut -c1-7)
-            echo "tag=dev-${short_sha}" >> "$GITHUB_OUTPUT"
-            echo "version=" >> "$GITHUB_OUTPUT"
-          fi
+      - run: pnpm install --frozen-lockfile
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
+      - name: Lint, type check and smoke tests
         if: matrix.target == 'chrome'
-        run: pnpm lint
+        run: pnpm lint && pnpm check && pnpm test
 
-      - name: Type check
-        if: matrix.target == 'chrome'
-        run: pnpm check
-
-      - name: Build extension (${{ matrix.target }})
+      - name: Build ${{ matrix.target }}
         env:
-          VERSION: ${{ steps.ver.outputs.version }}
+          VERSION: ${{ steps.meta.outputs.version }}
         run: pnpm build:${{ matrix.target }}
 
-      - name: Package archive
-        id: pkg
+      - name: Verify built manifest matches the tag
+        if: steps.meta.outputs.version != ''
+        run: node scripts/verify-manifest-version.mjs ${{ matrix.target }} ${{ steps.meta.outputs.version }}
+
+      - name: Package ${{ matrix.ext }}
         run: |
           mkdir -p artifacts
-          ext="zip"
-          if [[ "${{ matrix.target }}" == "firefox" ]]; then
-            ext="xpi"
-          fi
-          out="curio-${{ steps.ver.outputs.tag }}-${{ matrix.target }}.${ext}"
-          cd "dist-${{ matrix.target }}"
-          zip -r "../artifacts/${out}" .
-          cd ..
-          echo "ext=${ext}" >> "$GITHUB_OUTPUT"
-          ls -la artifacts
+          (cd dist-${{ matrix.target }} && zip -qr "../artifacts/culiq-${{ steps.meta.outputs.tag }}-${{ matrix.target }}.${{ matrix.ext }}" .)
 
-      - name: Sign Firefox build (AMO unlisted, tag only)
-        if: matrix.target == 'firefox' && startsWith(github.ref, 'refs/tags/v')
+      # AMO credentials are optional: without them the unsigned xpi ships instead,
+      # so a release never hinges on the secrets being present.
+      - name: Sign Firefox build (AMO unlisted)
+        id: sign
+        if: matrix.target == 'firefox' && steps.meta.outputs.version != ''
+        continue-on-error: true
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
-          rm -rf signed
           pnpm exec web-ext sign \
             --source-dir=dist-firefox \
             --artifacts-dir=signed \
             --api-key="$AMO_JWT_ISSUER" \
             --api-secret="$AMO_JWT_SECRET" \
             --channel=unlisted
-          signed_file=$(ls signed/*.xpi 2>/dev/null | head -n1)
-          if [[ -z "$signed_file" ]]; then
-            echo "::error::web-ext sign produced no .xpi"
-            ls -la signed || true
-            exit 1
-          fi
-          target="artifacts/curio-${{ steps.ver.outputs.tag }}-firefox.xpi"
-          rm -f "$target"
-          cp "$signed_file" "$target"
-          echo "Signed xpi → $target"
-          ls -la artifacts
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - name: Prefer the signed xpi
+        if: steps.sign.outcome == 'success'
+        run: cp signed/*.xpi "artifacts/culiq-${{ steps.meta.outputs.tag }}-firefox.xpi"
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: curio-${{ steps.ver.outputs.tag }}-${{ matrix.target }}
-          path: artifacts/*.${{ steps.pkg.outputs.ext }}
+          name: culiq-${{ steps.meta.outputs.tag }}-${{ matrix.target }}
+          path: artifacts/*.${{ matrix.ext }}
           retention-days: 30
 
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: List downloaded files
-        run: ls -la artifacts
-
-      - name: Attach to GitHub release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/*.zip
-            artifacts/*.xpi
+          files: artifacts/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
