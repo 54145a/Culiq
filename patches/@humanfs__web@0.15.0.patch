@@ -1,0 +1,9 @@
+diff --git a/src/web-hfs.js b/src/web-hfs.js
+index cae7504605847be53ddefeb673250fcf40b1b52d..3dd899fde0a8bd64c32de40bc6b21ce38b35de40 100644
+--- a/src/web-hfs.js
++++ b/src/web-hfs.js
+@@ -665,4 +665,3 @@ export class WebHfs extends Hfs {
+ 	}
+ }
+ 
+-export const hfs = new WebHfs({ root: await navigator.storage.getDirectory() });

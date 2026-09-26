@@ -1,2 +1,4 @@
 allowBuilds:
   esbuild: true
+patchedDependencies:
+  '@humanfs/web@0.15.0': patches/@humanfs__web@0.15.0.patch
