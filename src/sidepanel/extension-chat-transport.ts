@@ -8,11 +8,11 @@ import type {
 	TextContent,
 	ThinkingContent,
 	ToolCallContent,
-	ToolResultContent,
 	ToolResultMessage,
 } from "@shared/ai/types";
 import type { BgToPanel, ChatContextMode, PanelToBg } from "@shared/transport/protocol";
 import { agentEventToChunk } from "@shared/ai/agent-event-to-chunk";
+import { toolOutputToContent } from "@shared/ai/tool-output";
 
 /**
  * Convert the UI message history (`useChat`'s UIMessage[]) into the agent's
@@ -96,11 +96,10 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 }
 
 function toolResult(toolCallId: string, output: unknown): ToolResultMessage {
-	const text = typeof output === "string" ? output : JSON.stringify(output);
 	return {
 		role: "toolResult",
 		toolCallId,
-		content: [{ type: "text", text } as ToolResultContent],
+		content: toolOutputToContent(output),
 	};
 }
 
@@ -395,7 +394,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 			} else if (event.type === "tool_execution_end") {
 				const last = messages[messages.length - 1];
 				if (last?.role === "toolResult" && !last.content.includes(": ")) {
-					const resultText = event.result.content.map((c) => c.text).join("\n");
+					const resultText = event.result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
 					last.content = `[${event.toolName}] ${resultText}`;
 				}
 			} else if (event.type === "message_usage") {

@@ -64,7 +64,6 @@ Import the `.xpi` file directly from `about:addons`.
 ```bash
 git clone https://github.com/54145a/Culiq.git
 cd Culiq
-corepack enable        # enable pnpm (or install pnpm yourself)
 pnpm install
 pnpm run build         # produces dist-chrome/ and dist-firefox/
 # or build individually:
@@ -72,7 +71,7 @@ pnpm run build         # produces dist-chrome/ and dist-firefox/
 # pnpm run build:firefox
 ```
 
-Node 22.18+ is required (see `.nvmrc`); the smoke tests import TypeScript directly and rely on Node's type stripping.
+Node 22.18+ and [pnpm](https://pnpm.io/installation) are required (see `.nvmrc`); the smoke tests import TypeScript directly and rely on Node's type stripping.
 
 Load the unpacked extension: use `dist-chrome/` in Chrome, or `about:debugging#/runtime/this-firefox` → `dist-firefox/manifest.json` in Firefox.
 

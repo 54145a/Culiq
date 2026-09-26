@@ -64,7 +64,6 @@
 ```bash
 git clone https://github.com/54145a/Culiq.git
 cd Culiq
-corepack enable        # 启用 pnpm（或自行安装 pnpm）
 pnpm install
 pnpm run build         # 同时产出 dist-chrome/ 和 dist-firefox/
 # 或单独构建：
@@ -72,9 +71,9 @@ pnpm run build         # 同时产出 dist-chrome/ 和 dist-firefox/
 # pnpm run build:firefox
 ```
 
-加载已解压的扩展程序，Chrome 选 `dist-chrome/`，Firefox 用 `about:debugging#/runtime/this-firefox` 选 `dist-firefox/manifest.json`。
+需要 Node 22.18+ 与 [pnpm](https://pnpm.io/installation)（见 `.nvmrc`）；smoke test 直接 import TypeScript，依赖 Node 的类型剥离。
 
-需要 Node 22.18+（见 `.nvmrc`）；smoke test 直接 import TypeScript，依赖 Node 的类型剥离。
+加载已解压的扩展程序，Chrome 选 `dist-chrome/`，Firefox 用 `about:debugging#/runtime/this-firefox` 选 `dist-firefox/manifest.json`。
 
 ### 配置
 

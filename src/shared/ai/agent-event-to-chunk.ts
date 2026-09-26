@@ -1,4 +1,5 @@
 import type { AgentEvent } from "../agent/types";
+import type { ImageContent } from "./types";
 
 // Unique per event so the SDK's (type, id) merge cannot collapse distinct
 // API calls into one badge.
@@ -50,26 +51,29 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 			];
 		}
 
-		case "tool_execution_end":
+		case "tool_execution_end": {
+			const text = event.result.content
+				.filter((c) => c.type === "text")
+				.map((c) => c.text)
+				.join("\n");
 			if (event.isError) {
-				const errorText = event.result.content
-					.filter((c) => c.type === "text")
-					.map((c) => c.text)
-					.join("\n");
 				return {
 					type: "tool-output-error",
 					toolCallId: event.toolCallId,
-					errorText,
+					errorText: text,
 				};
 			}
+			// A screenshot carries an image block; the panel renders `{ text, images }`,
+			// so hand it that shape instead of flattening to text and dropping the image.
+			const images = event.result.content
+				.filter((c): c is ImageContent => c.type === "image")
+				.map((c) => ({ mediaType: c.mediaType, data: c.data }));
 			return {
 				type: "tool-output-available",
 				toolCallId: event.toolCallId,
-				output: event.result.content
-					.filter((c) => c.type === "text")
-					.map((c) => c.text)
-					.join("\n"),
+				output: images.length > 0 ? { text, images } : text,
 			};
+		}
 
 		case "turn_start":
 			return { type: "start-step" };

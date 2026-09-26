@@ -27,14 +27,14 @@ jobs:
           - target: firefox
             ext: xpi
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Chrome MV3 accepts only 1-4 dot-separated integers, so a beta tag
       # (v1.3.0-beta.1) becomes manifest version 1.3.0; the beta lives on the tag
       # and in the GitHub release's prerelease flag.
       - name: Resolve tag and version
         id: meta
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const tag = context.ref.startsWith("refs/tags/") ? context.ref.replace("refs/tags/", "") : "";
@@ -42,9 +42,9 @@ jobs:
             core.setOutput("tag", match ? tag : `dev-${context.sha.slice(0, 7)}`);
             core.setOutput("version", match ? match[1] : "");
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -97,7 +97,7 @@ jobs:
         if: steps.sign.outcome == 'failure'
         run: echo "::warning::AMO signing failed — releasing the unsigned xpi"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: culiq-${{ steps.meta.outputs.tag }}-${{ matrix.target }}
           path: artifacts/*.${{ matrix.ext }}
@@ -110,12 +110,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           generate_release_notes: true

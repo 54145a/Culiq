@@ -230,7 +230,7 @@ async function runToolCall(
 		type: "tool_execution_end",
 		toolCallId: toolCall.id,
 		toolName: toolCall.name,
-		result: { ...result, content: result.content.filter((block) => block.type === "text") },
+		result,
 		isError,
 	});
 

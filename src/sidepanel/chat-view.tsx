@@ -10,6 +10,7 @@ import { ExtensionChatTransport } from "./extension-chat-transport";
 import { getPanelWindowId } from "./window";
 import type { BgToPanel, PanelToBg } from "@shared/transport/protocol";
 import type { ImageContent } from "@shared/ai/types";
+import { toolOutputText, toolOutputToContent } from "@shared/ai/tool-output";
 import { listUserCustomTools } from "@shared/custom-tools/storage";
 import type { CustomToolMeta } from "@shared/custom-tools/types";
 
@@ -175,6 +176,15 @@ function convertSessionToUI(session: Session): UIMessage[] {
 		});
 }
 
+/**
+ * Sessions keep tool results as text: image blocks are stripped by
+ * `upsertSession` anyway, and an in-memory screenshot would otherwise reach
+ * the exported session as base64.
+ */
+function persistedToolResult(output: unknown): Array<{ type: "text"; text: string }> {
+	return toolOutputToContent(output).filter((c): c is { type: "text"; text: string } => c.type === "text");
+}
+
 function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 	if (m.role === "user") {
 		const text = m.parts
@@ -212,7 +222,7 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 				out.push({
 					role: "toolResult",
 					toolCallId: tp.toolCallId,
-					content: [{ type: "text", text: typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output) }],
+					content: persistedToolResult(tp.output),
 				});
 			} else if (tp.errorText) {
 				out.push({
@@ -229,7 +239,7 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 				out.push({
 					role: "toolResult",
 					toolCallId: tp.toolCallId,
-					content: [{ type: "text", text: typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output) }],
+					content: persistedToolResult(tp.output),
 				});
 			} else if (tp.errorText) {
 				out.push({
@@ -319,7 +329,7 @@ function ContextCard({ text, label = "sent" }: { text: string; label?: string })
 function ToolCardView({ toolName, part }: { toolName: string; part: { toolCallId: string; input: unknown; state: string; output?: unknown; errorText?: string } }) {
 	const [expanded, setExpanded] = useState(false);
 	const status = part.state.includes("error") ? "error" : part.state.includes("available") && part.output !== undefined ? "ok" : "running";
-	const result = part.errorText ?? (typeof part.output === "string" ? part.output : part.output ? JSON.stringify(part.output) : "");
+	const result = part.errorText ?? toolOutputText(part.output);
 	// Check if output contains image data
 	const images = typeof part.output === "object" && part.output !== null && "images" in part.output
 		? (part.output as { images: Array<{ mediaType: string; data: string }> }).images

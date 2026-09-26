@@ -129,3 +129,75 @@ await run("fixed mapping", [
 	{ type: "finish-step" },
 	{ type: "finish", finishReason: "stop" },
 ]);
+
+// 6: screenshot — the tool_execution_end event must reach the panel as
+//    { text, images }, the shape ToolCardView renders as an <img>.
+const { agentEventToChunk } = await import("../src/shared/ai/agent-event-to-chunk.ts");
+const shotChunk = agentEventToChunk({
+	type: "tool_execution_end",
+	toolCallId: "shot-1",
+	toolName: "screenshot",
+	isError: false,
+	result: {
+		content: [
+			{ type: "text", text: "Captured the active tab's visible viewport." },
+			{ type: "image", mediaType: "image/png", encoding: "base64", data: "aGVsbG8=" },
+		],
+	},
+});
+const shotOutput = shotChunk?.output;
+const shotOk =
+	shotOutput &&
+	typeof shotOutput === "object" &&
+	shotOutput.text.includes("Captured") &&
+	Array.isArray(shotOutput.images) &&
+	shotOutput.images.length === 1 &&
+	shotOutput.images[0].data === "aGVsbG8=";
+console.log(`\n=== screenshot chunk ===\n${shotOk ? "OK: image block preserved in tool output" : `!!! BAD: ${JSON.stringify(shotChunk)}`}`);
+if (!shotOk) process.exitCode = 1;
+
+const errChunk = agentEventToChunk({
+	type: "tool_execution_end",
+	toolCallId: "shot-2",
+	toolName: "screenshot",
+	isError: true,
+	result: { content: [{ type: "text", text: "capture failed" }] },
+});
+if (errChunk.type !== "tool-output-error" || errChunk.errorText !== "capture failed") {
+	console.log(`!!! BAD error chunk: ${JSON.stringify(errChunk)}`);
+	process.exitCode = 1;
+}
+
+// 7: tool output consumers — the base64 must not leak into display text, and a
+//    follow-up turn must still receive the screenshot as an image block.
+const { toolOutputText, toolOutputToContent } = await import("../src/shared/ai/tool-output.ts");
+const shot = { text: "Captured the active tab's visible viewport.", images: [{ mediaType: "image/png", data: "aGVsbG8=" }] };
+const checks = [
+	["display text excludes base64", toolOutputText(shot), "Captured the active tab's visible viewport."],
+	["plain string output", toolOutputText("plain"), "plain"],
+	["object without images still serialises", toolOutputText({ a: 1 }), '{"a":1}'],
+	["output with only images", toolOutputText({ images: shot.images }), ""],
+];
+for (const [label, actual, want] of checks) {
+	if (actual !== want) {
+		console.log(`!!! BAD ${label}: ${JSON.stringify(actual)} (want ${JSON.stringify(want)})`);
+		process.exitCode = 1;
+	}
+}
+const converted = toolOutputToContent(shot);
+const imageBlock = converted.find((c) => c.type === "image");
+const okContent =
+	converted.length === 2 &&
+	converted[0].type === "text" &&
+	converted[0].text === shot.text &&
+	imageBlock?.mediaType === "image/png" &&
+	imageBlock?.data === "aGVsbG8=";
+if (!okContent) {
+	console.log(`!!! BAD image content blocks: ${JSON.stringify(converted)}`);
+	process.exitCode = 1;
+}
+if (toolOutputToContent("plain").length !== 1) {
+	console.log("!!! BAD string conversion");
+	process.exitCode = 1;
+}
+console.log(`\n=== tool output consumers ===\n${okContent ? "OK: text for display, image block for the next turn" : "FAILED"}`);

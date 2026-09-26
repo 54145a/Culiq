@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message, TextContent, Tool, ToolResultContent, ToolResultMessage } from "../ai/types";
+import type { AssistantMessage, Message, Tool, ToolResultContent, ToolResultMessage } from "../ai/types";
 import type { ContextManagementConfig } from "../config";
 
 export type ProviderId = string;
@@ -10,7 +10,7 @@ export interface AgentToolResult {
 }
 
 export interface AgentToolDisplayResult {
-	content: TextContent[];
+	content: ToolResultContent[];
 	isError?: boolean;
 }
 
