@@ -9,5 +9,14 @@ import { getCustomTools } from "@shared/custom-tools";
 const builtinRegistry: AgentTool[] = [noopTool, subtaskTool, ...browserTools, ...skillTools, ...sandboxTools];
 
 export function getTools(): AgentTool[] {
-	return [...builtinRegistry, ...getCustomTools()];
+	const taken = new Set(builtinRegistry.map((tool) => tool.name));
+	const custom = getCustomTools().filter((tool) => {
+		if (taken.has(tool.name)) {
+			console.warn(`[culiq] custom tool "${tool.name}" skipped: the name is already in use`);
+			return false;
+		}
+		taken.add(tool.name);
+		return true;
+	});
+	return [...builtinRegistry, ...custom];
 }
