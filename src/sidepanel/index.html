@@ -3,41 +3,11 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Curio</title>
+		<title>Culiq</title>
 		<link rel="stylesheet" href="./style.css" />
 	</head>
 	<body>
-		<header>
-			<div class="brand">
-				<h1>Curio</h1>
-				<div class="header-actions">
-					<span id="status" data-state="pending">connecting…</span>
-					<button id="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme">◐</button>
-				</div>
-			</div>
-			<nav role="tablist">
-				<button type="button" role="tab" data-view="chat" aria-selected="true">Chat</button>
-				<button type="button" role="tab" data-view="sessions" aria-selected="false">Sessions</button>
-				<button type="button" role="tab" data-view="settings" aria-selected="false">Settings</button>
-			</nav>
-		</header>
-
-		<section id="view-chat" class="view" data-active="true">
-			<div class="chat-actions">
-				<span id="chat-title"></span>
-				<button id="new-session" type="button" title="Start a fresh conversation">+ New</button>
-			</div>
-			<ul id="log" aria-live="polite"></ul>
-			<form id="form">
-				<textarea id="input" rows="1" placeholder="ask the agent…  (Shift+Enter for newline)"></textarea>
-				<button type="submit">send</button>
-			</form>
-		</section>
-
-		<section id="view-sessions" class="view" data-active="false"></section>
-
-		<section id="view-settings" class="view" data-active="false"></section>
-
-		<script type="module" src="./main.ts"></script>
+		<div id="app"></div>
+		<script type="module" src="./main.tsx"></script>
 	</body>
 </html>

@@ -1,2 +1,2 @@
 export * from "./types";
-export { runAgentLoop, type AgentEventSink } from "./agent-loop";
+export { runAgentLoop } from "./agent-loop";

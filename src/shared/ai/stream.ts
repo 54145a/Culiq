@@ -1,6 +1,4 @@
-import { streamAnthropic } from "./providers/anthropic";
-import { streamOpenAI } from "./providers/openai";
-import type { AssistantMessage, Context, Model, StreamEvent, StreamOptions } from "./types";
+import type { AssistantMessage, StreamEvent } from "./types";
 
 export class EventStream implements AsyncIterable<StreamEvent> {
 	private queue: StreamEvent[] = [];
@@ -49,20 +47,4 @@ export class EventStream implements AsyncIterable<StreamEvent> {
 			},
 		};
 	}
-}
-
-export function streamSimple(model: Model, context: Context, options: StreamOptions): EventStream {
-	const stream = new EventStream();
-	const run = model.provider === "anthropic" ? streamAnthropic : streamOpenAI;
-	void run(model, context, options, stream).catch((err) => {
-		const message: AssistantMessage = {
-			role: "assistant",
-			content: [],
-			stopReason: options.signal?.aborted ? "aborted" : "error",
-			errorMessage: err instanceof Error ? err.message : String(err),
-		};
-		stream.push({ type: "error", error: message.errorMessage ?? "unknown", message });
-		stream.end();
-	});
-	return stream;
 }

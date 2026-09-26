@@ -1,8 +1,7 @@
 export type ContentRequest =
-	| { method: "query"; selector: string; all?: boolean; limit?: number }
-	| { method: "click"; selector: string; index?: number }
+	| { method: "click"; selector: string }
 	| { method: "type"; selector: string; text: string; submit?: boolean; clear?: boolean }
-	| { method: "read_dom"; mode?: "text" | "html" | "outline"; selector?: string; maxChars?: number };
+	| { method: "read_dom"; mode?: "markdown" | "html" | "readable_html" | "outline"; selector?: string; maxChars?: number };
 
 export type ContentMethod = ContentRequest["method"];
 
@@ -17,13 +16,6 @@ export interface ElementSummary {
 	visible: boolean;
 	disabled: boolean;
 	outerHtmlSnippet: string;
-}
-
-export interface QueryResult {
-	selector: string;
-	totalMatches: number;
-	returnedMatches: number;
-	matches: ElementSummary[];
 }
 
 export interface ClickResult {
@@ -41,7 +33,7 @@ export interface TypeResult {
 export interface ReadDomResult {
 	url: string;
 	title: string;
-	mode: "text" | "html" | "outline";
+	mode: "markdown" | "html" | "readable_html" | "outline";
 	scope: "document" | "selector";
 	content: string;
 	chars: number;
@@ -49,7 +41,6 @@ export interface ReadDomResult {
 }
 
 export type ContentResultMap = {
-	query: QueryResult;
 	click: ClickResult;
 	type: TypeResult;
 	read_dom: ReadDomResult;
@@ -59,7 +50,7 @@ export type ContentResponse =
 	| { ok: true; method: ContentMethod; result: ContentResultMap[ContentMethod] }
 	| { ok: false; method: ContentMethod | "unknown"; error: string };
 
-export const CONTENT_ENVELOPE_MAGIC = "curio.content.rpc";
+export const CONTENT_ENVELOPE_MAGIC = "culiq.content.rpc";
 
 export interface ContentEnvelope {
 	magic: typeof CONTENT_ENVELOPE_MAGIC;

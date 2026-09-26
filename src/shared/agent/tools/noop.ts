@@ -1,9 +1,9 @@
+import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../types";
 
 export const noopTool: AgentTool = {
 	name: "noop",
-	description:
-		"Echoes the provided message back. Use this to test that tool calling works end to end. Returns the same text wrapped with an Echo: prefix.",
+	description: CAPABILITY_INFO.noop.description,
 	parameters: {
 		type: "object",
 		properties: {

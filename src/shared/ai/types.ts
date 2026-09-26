@@ -1,5 +1,4 @@
-import type { ProviderId } from "../config";
-
+export type ProviderId = string;
 export type StopReason = "end" | "toolUse" | "length" | "error" | "aborted";
 
 export interface TextContent {
@@ -29,7 +28,12 @@ export interface ToolCallContent {
 	arguments: Record<string, unknown>;
 }
 
-export type AssistantContent = TextContent | ThinkingContent | ToolCallContent;
+export interface ContextContent {
+	type: "context";
+	text: string;
+}
+
+export type AssistantContent = TextContent | ThinkingContent | ToolCallContent | ContextContent;
 
 export interface UserMessage {
 	role: "user";
@@ -72,11 +76,11 @@ export interface Context {
 }
 
 export interface StreamOptions {
-	apiKey: string;
-	baseUrl?: string;
 	signal?: AbortSignal;
 	maxTokens?: number;
 	temperature?: number;
+	headers?: Record<string, string>;
+	reasoning?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
 export type StreamEvent =
@@ -84,6 +88,7 @@ export type StreamEvent =
 	| { type: "text_start"; contentIndex: number; partial: AssistantMessage }
 	| { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
 	| { type: "text_end"; contentIndex: number; partial: AssistantMessage }
+	| { type: "reasoning_delta"; id: string; delta: string; signature?: string; partial: AssistantMessage }
 	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
 	| { type: "toolcall_delta"; contentIndex: number; argsDelta: string; partial: AssistantMessage }
 	| { type: "toolcall_end"; contentIndex: number; partial: AssistantMessage }

@@ -1,0 +1,120 @@
+import { CAPABILITY_INFO } from "@shared/config";
+import { isStandaloneMode, getPopupWindowId } from "@shared/standalone";
+import type { AgentTool, AgentToolResult } from "../../types";
+import { navigateTool } from "./navigate";
+import { readDomTool } from "./dom";
+
+/** Content types that count as textual (readable) for fetch_url. */
+const TEXTUAL_CONTENT_TYPES = [
+	"text/",
+	"application/json",
+	"application/xml",
+	"application/xhtml+xml",
+	"application/javascript",
+	"application/x-javascript",
+	"application/x-www-form-urlencoded",
+	"image/svg+xml",
+];
+
+function isTextualContentType(contentType: string): boolean {
+	const ct = contentType.split(";")[0].trim().toLowerCase();
+	return TEXTUAL_CONTENT_TYPES.some((t) => (t.endsWith("/") ? ct.startsWith(t) : ct === t));
+}
+
+/** HEAD-probe a URL for its content type; returns undefined if the probe fails (proceed anyway). */
+async function probeContentType(url: string, signal?: AbortSignal): Promise<string | undefined> {
+	try {
+		const res = await fetch(url, { method: "HEAD", redirect: "follow", signal });
+		return res.headers.get("content-type") ?? undefined;
+	} catch (err) {
+		if (signal?.aborted) throw err;
+		return undefined;
+	}
+}
+
+export const fetchUrlTool: AgentTool = {
+	name: "fetch_url",
+	description: CAPABILITY_INFO.fetch_url.description,
+	parameters: {
+		type: "object",
+		properties: {
+			url: { type: "string", description: "Absolute http(s) URL to fetch." },
+			mode: { type: "string", enum: ["markdown", "html", "readable_html", "outline"], description: "Output mode: `markdown` (clean Markdown via Defuddle, default), `html` (raw markup), `readable_html` (clean HTML via Defuddle), or `outline` (headings, links, forms with CSS selectors)." },
+			newTab: { type: "boolean", description: "Open in a new tab (default true). Set false to navigate the current tab." },
+			afterLoad: { type: "string", enum: ["close", "open"], description: "Close the tab after reading ('close', one-shot) or leave it open ('open') so follow-up tools can use it. Only applies when newTab is true." },
+			maxChars: { type: "number", description: "Truncate the result to this many chars. Default 200000." },
+			selector: { type: "string", description: "CSS selector: extract only that element's subtree instead of the whole page, e.g. '#main' or 'article'." },
+			probeMime: { type: "boolean", description: "HEAD-probe the URL first and refuse non-textual content types. Default true; set false to fetch anyway." },
+		},
+		required: ["url"],
+		additionalProperties: false,
+	},
+	executionMode: "sequential",
+	async execute(args, signal): Promise<AgentToolResult> {
+		const url = String(args.url);
+		const newTab = args.newTab !== false;
+		const afterLoad = newTab ? (args.afterLoad === "close" ? "close" : "open") : "open";
+		const mode = (args.mode as "markdown" | "html" | "readable_html" | "outline") ?? "markdown";
+		const maxChars = typeof args.maxChars === "number" ? Math.max(100, Math.floor(args.maxChars)) : 200_000;
+		const probeMime = args.probeMime !== false;
+
+		let parsed: URL;
+		try {
+			parsed = new URL(url);
+		} catch {
+			return { content: [{ type: "text", text: `Invalid URL: ${url}` }], isError: true };
+		}
+		if (!/^https?:$/i.test(parsed.protocol)) {
+			return { content: [{ type: "text", text: `Unsupported URL scheme: ${parsed.protocol} (only http and https are allowed)` }], isError: true };
+		}
+
+		if (probeMime) {
+			const contentType = await probeContentType(parsed.href, signal);
+			if (contentType && !isTextualContentType(contentType)) {
+				return {
+					content: [{ type: "text", text: `fetch_url: unsupported content type. HEAD reports "${contentType}" — this is a binary file, not a page. Set probeMime: false to load it anyway (it likely won't render as text).` }],
+					isError: true,
+				};
+			}
+		}
+
+		// Delegate navigation to navigate tool (handles chrome.tabs + timeout).
+		let navResult: AgentToolResult;
+		try {
+			navResult = await navigateTool.execute({ url, newTab, waitForLoad: true }, signal);
+		} catch (err) {
+			return { content: [{ type: "text", text: `Navigation failed: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+		}
+		if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+
+		// Extract tab ID from navigate result, or query by URL as fallback.
+		const targetTabId = navResult.toolCallId
+			? Number(navResult.toolCallId)
+			: (await chrome.tabs.query({ url })).at(-1)?.id;
+
+		// Delegate content extraction to read_dom tool.
+		const selector = typeof args.selector === "string" ? args.selector : undefined;
+		const contentResult = await readDomTool.execute({ mode, maxChars, selector, tabId: targetTabId }, signal);
+
+		// In standalone mode, switch back to the popup window after reading.
+		if (isStandaloneMode()) {
+			const popupId = getPopupWindowId();
+			if (popupId) await chrome.windows.update(popupId, { focused: true }).catch(() => {});
+		}
+
+		// Close the target tab (not the active tab, which may be the popup window).
+		if (afterLoad === "close" && targetTabId !== undefined) {
+			chrome.tabs.remove(targetTabId).catch(() => {});
+		}
+
+		// Return the content, stripping the readDomTool metadata header.
+		const textBlock = contentResult.content[0];
+		const raw = textBlock && "text" in textBlock ? textBlock.text : "";
+		const headerEnd = raw.indexOf("\n\n");
+		const text = headerEnd >= 0 ? raw.slice(headerEnd + 2) : raw;
+		if (afterLoad === "open") {
+			return { content: [{ type: "text", text: `fetched: ${url}\n\n${text}${targetTabId ? `\ntabId: ${targetTabId}` : ""}` }] };
+		}
+		return { content: [{ type: "text", text: `fetched: ${url}\n\n${text}` }] };
+	},
+};

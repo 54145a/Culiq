@@ -1,0 +1,13 @@
+{
+	"name": "@culiq/sandbox",
+	"version": "0.0.0",
+	"description": "Type definitions and authoring contract for Culiq custom tools.",
+	"type": "module",
+	"types": "sandbox.d.ts",
+	"exports": {
+		".": {
+			"types": "./sandbox.d.ts"
+		}
+	},
+	"license": "MIT"
+}

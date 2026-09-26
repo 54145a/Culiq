@@ -1,12 +1,12 @@
 import { getActiveTab } from "@shared/transport/tab-rpc";
+import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "../../types";
 
 const PNG_PREFIX = "data:image/png;base64,";
 
 export const screenshotTool: AgentTool = {
 	name: "screenshot",
-	description:
-		"Capture the active tab's currently visible viewport as a PNG for visual analysis. Use it for images, canvas, charts, layout, colors, or visual state that DOM tools cannot reliably describe. This does not capture the full page.",
+	description: CAPABILITY_INFO.screenshot.description,
 	parameters: {
 		type: "object",
 		properties: {},
