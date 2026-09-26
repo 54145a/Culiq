@@ -8,11 +8,11 @@ import type {
 	TextContent,
 	ThinkingContent,
 	ToolCallContent,
-	ToolResultContent,
 	ToolResultMessage,
 } from "@shared/ai/types";
 import type { BgToPanel, ChatContextMode, PanelToBg } from "@shared/transport/protocol";
 import { agentEventToChunk } from "@shared/ai/agent-event-to-chunk";
+import { toolOutputToContent } from "@shared/ai/tool-output";
 
 /**
  * Convert the UI message history (`useChat`'s UIMessage[]) into the agent's
@@ -96,11 +96,10 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 }
 
 function toolResult(toolCallId: string, output: unknown): ToolResultMessage {
-	const text = typeof output === "string" ? output : JSON.stringify(output);
 	return {
 		role: "toolResult",
 		toolCallId,
-		content: [{ type: "text", text } as ToolResultContent],
+		content: toolOutputToContent(output),
 	};
 }
 

@@ -167,3 +167,37 @@ if (errChunk.type !== "tool-output-error" || errChunk.errorText !== "capture fai
 	console.log(`!!! BAD error chunk: ${JSON.stringify(errChunk)}`);
 	process.exitCode = 1;
 }
+
+// 7: tool output consumers — the base64 must not leak into display text, and a
+//    follow-up turn must still receive the screenshot as an image block.
+const { toolOutputText, toolOutputToContent } = await import("../src/shared/ai/tool-output.ts");
+const shot = { text: "Captured the active tab's visible viewport.", images: [{ mediaType: "image/png", data: "aGVsbG8=" }] };
+const checks = [
+	["display text excludes base64", toolOutputText(shot), "Captured the active tab's visible viewport."],
+	["plain string output", toolOutputText("plain"), "plain"],
+	["object without images still serialises", toolOutputText({ a: 1 }), '{"a":1}'],
+	["output with only images", toolOutputText({ images: shot.images }), ""],
+];
+for (const [label, actual, want] of checks) {
+	if (actual !== want) {
+		console.log(`!!! BAD ${label}: ${JSON.stringify(actual)} (want ${JSON.stringify(want)})`);
+		process.exitCode = 1;
+	}
+}
+const converted = toolOutputToContent(shot);
+const imageBlock = converted.find((c) => c.type === "image");
+const okContent =
+	converted.length === 2 &&
+	converted[0].type === "text" &&
+	converted[0].text === shot.text &&
+	imageBlock?.mediaType === "image/png" &&
+	imageBlock?.data === "aGVsbG8=";
+if (!okContent) {
+	console.log(`!!! BAD image content blocks: ${JSON.stringify(converted)}`);
+	process.exitCode = 1;
+}
+if (toolOutputToContent("plain").length !== 1) {
+	console.log("!!! BAD string conversion");
+	process.exitCode = 1;
+}
+console.log(`\n=== tool output consumers ===\n${okContent ? "OK: text for display, image block for the next turn" : "FAILED"}`);
