@@ -246,7 +246,7 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 				out.push({
 					role: "toolResult",
 					toolCallId: tp.toolCallId,
-					content: toolResultContent(tp.output),
+content: toolResultContent(tp.output).filter((c) => c.type === "text"),
 				});
 			} else if (tp.errorText) {
 				out.push({
