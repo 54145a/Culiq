@@ -32,12 +32,6 @@ async function probeContentType(url: string, signal?: AbortSignal): Promise<stri
 	}
 }
 
-/** Get the active tab's ID, or undefined. */
-async function getActiveTabId(): Promise<number | undefined> {
-	const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-	return tab?.id;
-}
-
 export const fetchUrlTool: AgentTool = {
 	name: "fetch_url",
 	description: CAPABILITY_INFO.fetch_url.description,
@@ -49,6 +43,7 @@ export const fetchUrlTool: AgentTool = {
 			newTab: { type: "boolean", description: "Open in a new tab (default true). Set false to navigate the current tab." },
 			afterLoad: { type: "string", enum: ["close", "open"], description: "Close the tab after reading ('close', one-shot) or leave it open ('open') so follow-up tools can use it. Only applies when newTab is true." },
 			maxChars: { type: "number", description: "Truncate the result to this many chars. Default 200000." },
+			selector: { type: "string", description: "CSS selector: extract only that element's subtree instead of the whole page, e.g. '#main' or 'article'." },
 			probeMime: { type: "boolean", description: "HEAD-probe the URL first and refuse non-textual content types. Default true; set false to fetch anyway." },
 		},
 		required: ["url"],
@@ -118,8 +113,7 @@ export const fetchUrlTool: AgentTool = {
 		const headerEnd = raw.indexOf("\n\n");
 		const text = headerEnd >= 0 ? raw.slice(headerEnd + 2) : raw;
 		if (afterLoad === "open") {
-			const tabId = await getActiveTabId();
-			return { content: [{ type: "text", text: `fetched: ${url}\n\n${text}${tabId ? `\ntabId: ${tabId}` : ""}` }] };
+			return { content: [{ type: "text", text: `fetched: ${url}\n\n${text}${targetTabId ? `\ntabId: ${targetTabId}` : ""}` }] };
 		}
 		return { content: [{ type: "text", text: `fetched: ${url}\n\n${text}` }] };
 	},
