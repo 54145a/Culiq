@@ -3,6 +3,7 @@ import type { JSX } from "preact";
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
 import { deriveTitle, getCurrentId, getSession, newSession, type Session, setCurrent, upsertSession } from "@shared/sessions";
+import { sessionExportFilename, sessionExportJson } from "@shared/session-export";
 import { type ChatContextMode } from "@shared/transport/protocol";
 import { renderMarkdown } from "./markdown";
 import { ExtensionChatTransport } from "./extension-chat-transport";
@@ -507,6 +508,20 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 
 	const handleStop = useCallback(() => { void stop(); }, [stop]);
 
+	const exportSession = useCallback(() => {
+		const session: Session = { ...currentSession, messages: messages.flatMap(uiMessageToSessionMessage) };
+		try {
+			const url = URL.createObjectURL(new Blob([sessionExportJson(session)], { type: "application/json" }));
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = sessionExportFilename(session);
+			link.click();
+			setTimeout(() => URL.revokeObjectURL(url), 1000);
+		} catch (err) {
+			addNotice("msg err", `export failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}, [messages, addNotice]);
+
 	const startEdit = useCallback((id: string) => {
 		const msg = messages.find((m) => m.id === id);
 		if (!msg) return;
@@ -531,6 +546,15 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		<>
 			<div className="chat-actions">
 				<span id="chat-title">{title}</span>
+				<button
+					id="export-session"
+					type="button"
+					title="Export this conversation as raw JSON (includes tool results / page content)"
+					disabled={messages.length === 0}
+					onClick={exportSession}
+				>
+					Export
+				</button>
 				<button id="new-session" type="button" title="Start a fresh conversation" disabled={busy} onClick={() => void startFreshSession()}>
 					+ New
 				</button>

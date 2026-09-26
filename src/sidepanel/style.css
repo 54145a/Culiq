@@ -192,7 +192,8 @@ body[data-popup-active="true"] #view-popup-hint {
 	text-overflow: ellipsis;
 }
 
-#new-session {
+#new-session,
+#export-session {
 	padding: 4px 10px;
 	font-size: 0.78rem;
 	border-radius: 4px;
@@ -200,8 +201,14 @@ body[data-popup-active="true"] #view-popup-hint {
 	font-weight: 400;
 }
 
-#new-session:hover {
+#new-session:hover,
+#export-session:hover:not(:disabled) {
 	background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+#export-session:disabled {
+	opacity: 0.5;
+	cursor: default;
 }
 
 #log {
