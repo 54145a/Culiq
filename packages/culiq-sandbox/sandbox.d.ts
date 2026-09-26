@@ -134,9 +134,6 @@ export interface CuliqSandbox {
 	/** Navigate to a URL. */
 	navigate(options: { url: string; newTab?: boolean; waitForLoad?: boolean }): Promise<string>;
 
-	/** Query elements by CSS selector. */
-	query(options: { selector: string; all?: boolean; limit?: number }): Promise<string>;
-
 	/** Use a skill. */
 	useSkill(options: { name: string; file?: string; maxChars?: number }): Promise<string>;
 
@@ -155,8 +152,8 @@ export interface CuliqSandbox {
 	/** Switch to a tab. */
 	switchTab(options: { tabId: number }): Promise<string>;
 
-	/** Reload a tab. */
-	reloadTab(options: { tabId: number; bypassCache?: boolean }): Promise<string>;
+	/** Reload a tab (defaults to the active tab). */
+	reloadTab(options?: { tabId?: number; bypassCache?: boolean }): Promise<string>;
 
 	/** Run a subtask. */
 	subtask(options: { task: string }): Promise<string>;

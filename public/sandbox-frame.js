@@ -38,13 +38,15 @@ function serialize(v) {
   }
 }
 
-/** Create a proxy that forwards method calls to the SW via bridge. */
-function createResponseProxy(sess, responseId) {
-  return new Proxy({}, {
+/** Create a proxy that exposes the response metadata and forwards method calls to the SW. */
+function createResponseProxy(sess, response) {
+  const metadata = { status: response.status, ok: response.ok, headers: response.headers };
+  return new Proxy(metadata, {
     get(target, prop) {
+      if (Object.prototype.hasOwnProperty.call(target, prop)) return target[prop];
       if (prop === "then") return undefined;
-      if (prop === Symbol.toPrimitive) return () => `[Response ${responseId}]`;
-      return (...args) => bridgeCall(sess, `response.${String(prop)}`, [responseId, ...args]);
+      if (prop === Symbol.toPrimitive) return () => `[Response ${response.id}]`;
+      return (...args) => bridgeCall(sess, `response.${String(prop)}`, [response.id, ...args]);
     },
   });
 }
@@ -89,7 +91,7 @@ function createSandbox(sess) {
       return bridgeCall(sess, "fetch", [input, init]).then((value) => {
         // If the SW returned a response marker, wrap it in a proxy
         if (value && value.__type === "response") {
-          return createResponseProxy(sess, value.id);
+          return createResponseProxy(sess, value);
         }
         return value;
       });

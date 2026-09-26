@@ -21,6 +21,7 @@ const paths = [
 	"windows.update",
 	"evalInTab",
 	"evalInAllFrames",
+	"click",
 	"docs",
 ];
 
@@ -70,3 +71,71 @@ if (!result || !result.data.ok || !String(result.data.value).includes("42")) thr
 
 host({ data: { __culiq: "sandbox", sessionId: "s1", data: { kind: "close" } } });
 console.log("sandbox frame smoke OK: bridge", bridge.data.path, "=>", result.data.value.trim());
+
+// The fetch response proxy must expose status/ok/headers as values while still
+// forwarding body methods to the SW.
+const evalOnce = async (id, code, respond) => {
+	host({ data: { __culiq: "sandbox", sessionId: "s2", data: { kind: "init", paths } } });
+	host({ data: { __culiq: "sandbox", sessionId: "s2", data: { kind: "eval", id, code } } });
+	for (let i = 0; i < 20; i++) {
+		await wait();
+		const call = parentPosted.filter((m) => m.data.kind === "bridge" && !responded.has(m.data.id)).at(-1);
+		if (!call) continue;
+		responded.add(call.data.id);
+		const value = await respond(call.data.path, call.data.args);
+		host({ data: { __culiq: "sandbox", sessionId: "s2", data: { kind: "bridge-result", id: call.data.id, ok: true, value } } });
+	}
+	return parentPosted.filter((m) => m.data.kind === "eval-result" && m.data.id === id).at(-1);
+};
+
+const responded = new Set();
+const fetchResult = await evalOnce(
+	7,
+	`const res = await sandbox.fetch("https://example.com");
+	 const body = await res.text();
+	 return [res.status, res.ok, res.headers["content-type"], body].join("|");`,
+	async (path) => {
+		if (path === "fetch") {
+			return { __type: "response", id: "r1", status: 201, ok: true, headers: { "content-type": "text/plain" } };
+		}
+		if (path === "response.text") return "BODY";
+		return null;
+	},
+);
+
+if (!fetchResult || !fetchResult.data.ok) throw new Error("fetch eval-result missing or failed");
+if (!String(fetchResult.data.value).includes("201|true|text/plain|BODY")) {
+	throw new Error(`fetch response metadata not exposed: ${JSON.stringify(fetchResult.data.value)}`);
+}
+console.log("sandbox fetch proxy OK:", String(fetchResult.data.value).trim());
+
+// Top-level helpers take one options object and the frame forwards it intact.
+const clickResult = await evalOnce(8, `return await sandbox.click({ selector: "#go" });`, async () => "clicked: #go");
+if (!clickResult || !clickResult.data.ok) throw new Error("options-object helper call failed");
+const clickBridge = parentPosted.find((m) => m.data.kind === "bridge" && m.data.path === "click");
+if (!clickBridge || clickBridge.data.args.length !== 1 || clickBridge.data.args[0].selector !== "#go") {
+	throw new Error(`options object not forwarded intact: ${JSON.stringify(clickBridge?.data.args)}`);
+}
+console.log("sandbox options forwarding OK:", JSON.stringify(clickBridge.data.args));
+
+// The SW-side handlers validate that shape.
+const { optsOf, optionalOpts, requireString, requireNumber } = await import("../src/shared/agent/tools/sandbox/options.ts");
+const expectThrows = (label, fn) => {
+	try {
+		fn();
+	} catch {
+		return;
+	}
+	throw new Error(`${label}: expected a throw`);
+};
+if (optsOf([{ selector: "#a" }], "click").selector !== "#a") throw new Error("optsOf rejected an options object");
+expectThrows("optsOf positional", () => optsOf(["#a"], "click"));
+expectThrows("optsOf array", () => optsOf([["#a"]], "click"));
+if (Object.keys(optionalOpts([], "readDom")).length !== 0) throw new Error("optionalOpts did not default to {}");
+expectThrows("optionalOpts positional", () => optionalOpts(["#a"], "readDom"));
+if (requireString({ selector: "#b" }, "selector", "click") !== "#b") throw new Error("requireString failed");
+expectThrows("requireString missing", () => requireString({}, "selector", "click"));
+expectThrows("requireString empty", () => requireString({ selector: "" }, "selector", "click"));
+if (requireNumber({ tabId: "42" }, "tabId", "switchTab") !== 42) throw new Error("requireNumber coercion failed");
+expectThrows("requireNumber missing", () => requireNumber({}, "tabId", "switchTab"));
+console.log("sandbox options contract OK");
