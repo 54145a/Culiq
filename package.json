@@ -32,6 +32,8 @@
 		"@ai-sdk/mcp": "^2.0.32",
 		"@ai-sdk/openai-compatible": "^3.0.30",
 		"@ai-sdk/react": "^4.0.69",
+		"@humanfs/core": "0.20.0",
+		"@humanfs/web": "0.15.0",
 		"acorn": "^8.18.0",
 		"ai": "^7.0.66",
 		"defuddle": "^0.19.3",
