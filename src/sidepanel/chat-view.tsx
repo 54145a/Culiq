@@ -175,6 +175,23 @@ function convertSessionToUI(session: Session): UIMessage[] {
 		});
 }
 
+/**
+ * Tool output reaches the panel either as plain text or as `{ text, images }`
+ * (screenshots). Image blocks are dropped when a session is saved, so keeping
+ * them out of the persisted text avoids storing base64 in the session.
+ */
+function toolResultContent(output: unknown): Array<{ type: "text"; text: string } | ImageContent> {
+	if (typeof output === "string") return [{ type: "text", text: output }];
+	const shaped = output as { text?: unknown; images?: Array<{ mediaType: string; data: string }> } | null;
+	if (shaped && typeof shaped === "object" && Array.isArray(shaped.images)) {
+		return [
+			...(typeof shaped.text === "string" && shaped.text ? [{ type: "text" as const, text: shaped.text }] : []),
+			...shaped.images.map((img) => ({ type: "image" as const, mediaType: "image/png" as const, encoding: "base64" as const, data: img.data })),
+		];
+	}
+	return [{ type: "text", text: JSON.stringify(output) }];
+}
+
 function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 	if (m.role === "user") {
 		const text = m.parts
@@ -212,7 +229,7 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 				out.push({
 					role: "toolResult",
 					toolCallId: tp.toolCallId,
-					content: [{ type: "text", text: typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output) }],
+					content: toolResultContent(tp.output),
 				});
 			} else if (tp.errorText) {
 				out.push({
@@ -229,7 +246,7 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 				out.push({
 					role: "toolResult",
 					toolCallId: tp.toolCallId,
-					content: [{ type: "text", text: typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output) }],
+					content: toolResultContent(tp.output),
 				});
 			} else if (tp.errorText) {
 				out.push({

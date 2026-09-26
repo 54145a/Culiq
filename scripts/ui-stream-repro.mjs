@@ -129,3 +129,41 @@ await run("fixed mapping", [
 	{ type: "finish-step" },
 	{ type: "finish", finishReason: "stop" },
 ]);
+
+// 6: screenshot — the tool_execution_end event must reach the panel as
+//    { text, images }, the shape ToolCardView renders as an <img>.
+const { agentEventToChunk } = await import("../src/shared/ai/agent-event-to-chunk.ts");
+const shotChunk = agentEventToChunk({
+	type: "tool_execution_end",
+	toolCallId: "shot-1",
+	toolName: "screenshot",
+	isError: false,
+	result: {
+		content: [
+			{ type: "text", text: "Captured the active tab's visible viewport." },
+			{ type: "image", mediaType: "image/png", encoding: "base64", data: "aGVsbG8=" },
+		],
+	},
+});
+const shotOutput = shotChunk?.output;
+const shotOk =
+	shotOutput &&
+	typeof shotOutput === "object" &&
+	shotOutput.text.includes("Captured") &&
+	Array.isArray(shotOutput.images) &&
+	shotOutput.images.length === 1 &&
+	shotOutput.images[0].data === "aGVsbG8=";
+console.log(`\n=== screenshot chunk ===\n${shotOk ? "OK: image block preserved in tool output" : `!!! BAD: ${JSON.stringify(shotChunk)}`}`);
+if (!shotOk) process.exitCode = 1;
+
+const errChunk = agentEventToChunk({
+	type: "tool_execution_end",
+	toolCallId: "shot-2",
+	toolName: "screenshot",
+	isError: true,
+	result: { content: [{ type: "text", text: "capture failed" }] },
+});
+if (errChunk.type !== "tool-output-error" || errChunk.errorText !== "capture failed") {
+	console.log(`!!! BAD error chunk: ${JSON.stringify(errChunk)}`);
+	process.exitCode = 1;
+}

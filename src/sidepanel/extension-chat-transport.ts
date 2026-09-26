@@ -395,7 +395,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 			} else if (event.type === "tool_execution_end") {
 				const last = messages[messages.length - 1];
 				if (last?.role === "toolResult" && !last.content.includes(": ")) {
-					const resultText = event.result.content.map((c) => c.text).join("\n");
+					const resultText = event.result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
 					last.content = `[${event.toolName}] ${resultText}`;
 				}
 			} else if (event.type === "message_usage") {

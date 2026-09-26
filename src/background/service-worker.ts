@@ -45,7 +45,11 @@ self.addEventListener("error", (e: ErrorEvent) => {
 	console.error("[culiq sw] uncaught error:", e.message, e.error);
 });
 self.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
-	console.error("[culiq sw] unhandled rejection:", e.reason);
+	// `reason` is often a DOMException, which stringifies as "[object DOMException]",
+	// so log the parts that identify it.
+	const reason = e.reason as { name?: string; message?: string; stack?: string } | undefined;
+	console.error(`[culiq sw] unhandled rejection: ${reason?.name ?? typeof e.reason}: ${reason?.message ?? String(e.reason)}`, e.reason);
+	if (reason?.stack) console.error(reason.stack);
 });
 
 const activeTurns = new Map<string, { controller: AbortController; port: chrome.runtime.Port }>();

@@ -67,7 +67,7 @@ class IframeTransport implements SandboxTransport {
 	}
 
 	postMessage(data: unknown): void {
-		void chrome.runtime.sendMessage({ type: SANDBOX_MSG.send, sessionId: this.sessionId, data });
+		void chrome.runtime.sendMessage({ type: SANDBOX_MSG.send, sessionId: this.sessionId, data }).catch(() => {});
 	}
 
 	onMessage(cb: (data: unknown) => void): void {
@@ -76,7 +76,7 @@ class IframeTransport implements SandboxTransport {
 
 	close(): void {
 		chrome.runtime.onMessage.removeListener(this.listener);
-		void chrome.runtime.sendMessage({ type: SANDBOX_MSG.close, sessionId: this.sessionId });
+		void chrome.runtime.sendMessage({ type: SANDBOX_MSG.close, sessionId: this.sessionId }).catch(() => {});
 	}
 }
 
