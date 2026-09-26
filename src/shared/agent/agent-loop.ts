@@ -1,6 +1,6 @@
 import { estimateTokenCount, sliceByTokens } from "tokenx";
 import { streamSimple } from "../ai";
-import type { AssistantMessage, Message, ToolCallContent, ToolResultMessage } from "../ai/types";
+import type { AssistantMessage, Message, ToolCallContent, ToolResultMessage, UserMessage } from "../ai/types";
 import type { AgentContext, AgentEventSink, AgentLoopConfig, AgentTool, AgentToolResult } from "./types";
 import { toolToLlmSpec } from "./types";
 
@@ -399,10 +399,18 @@ async function maybeCompressContext(
 	const summary = await summarizeTurns(oldTurns, config, signal);
 	if (!summary) return null;
 
-	const summaryMessage: AssistantMessage = {
-		role: "assistant",
-		content: [{ type: "text", text: summary }],
-		stopReason: "end",
+	// A provider-valid history must open with a user turn (Anthropic rejects an
+	// assistant-first history, and every provider would read the summary as its
+	// own earlier answer). Phrase it as context the model was handed, not as a
+	// fresh instruction.
+	const summaryMessage: UserMessage = {
+		role: "user",
+		content: [
+			{
+				type: "text",
+				text: `[Summarized context from earlier in this conversation — background only, not a new request]\n\n${summary}`,
+			},
+		],
 	};
 
 	const kept = turns.slice(-keep).flat();
