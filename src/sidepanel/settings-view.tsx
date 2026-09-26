@@ -672,6 +672,7 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 				toolName: m.toolName,
 				description: m.description,
 				parameters: m.parameters,
+				toolIndex: m.toolIndex,
 				...(m.executionMode ? { executionMode: m.executionMode } : {}),
 			}));
 			await saveCustomToolPackage(pkgName, artifact, tools);
@@ -708,6 +709,7 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 				toolName: m.toolName,
 				description: m.description,
 				parameters: m.parameters,
+				toolIndex: m.toolIndex,
 				...(m.executionMode ? { executionMode: m.executionMode } : {}),
 			}));
 			await saveCustomToolPackage(pkgName, js, tools);

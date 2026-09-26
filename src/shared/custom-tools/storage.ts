@@ -17,6 +17,8 @@ interface StoredToolEntry {
 	description: string;
 	parameters: Record<string, unknown>;
 	executionMode?: "parallel" | "sequential";
+	/** Index in the package's `tools` array; absent in metas written before it was tracked. */
+	toolIndex?: number;
 }
 
 interface StoredPackageMeta {
@@ -57,7 +59,7 @@ export async function listUserCustomTools(): Promise<CustomToolMeta[]> {
 						description: t.description,
 						parameters: t.parameters,
 						source,
-						toolIndex: i,
+						toolIndex: typeof t.toolIndex === "number" ? t.toolIndex : i,
 						...(t.executionMode ? { executionMode: t.executionMode } : {}),
 					});
 				}
@@ -91,7 +93,7 @@ export async function getUserCustomToolArtifact(name: string): Promise<string | 
 export async function saveCustomToolPackage(
 	pkgName: string,
 	artifact: string,
-	tools: Array<{ toolName: string; description: string; parameters: Record<string, unknown>; executionMode?: "parallel" | "sequential" }>,
+	tools: Array<{ toolName: string; description: string; parameters: Record<string, unknown>; executionMode?: "parallel" | "sequential"; toolIndex?: number }>,
 ): Promise<void> {
 	await write(toolFile(pkgName, "culiq-tool.js"), artifact);
 	const meta: StoredPackageMeta = { name: pkgName, tools };

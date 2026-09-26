@@ -94,7 +94,7 @@ export function extractMetaFromArtifact(source: string): ToolMeta[] {
  */
 export function prepareModuleSource(source: string): string {
 	return source
-		.replace(/^export\s+default\s+/m, "const __culiq_default = ")
+		.replace(/^([ \t]*)export\s+default\s+/m, "$1const __culiq_default = ")
 		.replace(/;\s*$/, "");
 }
 

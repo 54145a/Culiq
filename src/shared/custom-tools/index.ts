@@ -40,6 +40,7 @@ export async function syncBuiltinTools(): Promise<string[]> {
 						toolName: m.toolName,
 						description: m.description,
 						parameters: m.parameters,
+						toolIndex: m.toolIndex,
 						...(m.executionMode ? { executionMode: m.executionMode } : {}),
 					}));
 					await write(
