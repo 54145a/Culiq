@@ -1,4 +1,4 @@
-import type { ToolResultContent } from "./types";
+import type { ImageContent, ToolResultContent } from "./types";
 
 /** The shape the panel uses for tool output that carries images (screenshots). */
 interface ToolOutputWithImages {
@@ -10,6 +10,10 @@ function imagesOf(output: unknown): Array<{ mediaType: string; data: string }> |
 	const shaped = output as ToolOutputWithImages | null;
 	if (!shaped || typeof shaped !== "object" || !Array.isArray(shaped.images)) return undefined;
 	return shaped.images;
+}
+
+function mediaTypeOf(value: string): ImageContent["mediaType"] {
+	return value === "image/webp" ? "image/webp" : "image/png";
 }
 
 /**
@@ -38,7 +42,7 @@ export function toolOutputToContent(output: unknown): ToolResultContent[] {
 		const content: ToolResultContent[] = [];
 		const text = (output as ToolOutputWithImages).text;
 		if (typeof text === "string" && text) content.push({ type: "text", text });
-		for (const img of images) content.push({ type: "image", mediaType: "image/png", encoding: "base64", data: img.data });
+		for (const img of images) content.push({ type: "image", mediaType: mediaTypeOf(img.mediaType), encoding: "base64", data: img.data });
 		if (content.length > 0) return content;
 	}
 	return [{ type: "text", text: JSON.stringify(output) }];

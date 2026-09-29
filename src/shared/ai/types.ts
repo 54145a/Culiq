@@ -8,7 +8,7 @@ export interface TextContent {
 
 export interface ImageContent {
 	type: "image";
-	mediaType: "image/png";
+	mediaType: "image/png" | "image/webp";
 	encoding: "base64";
 	data: string;
 }
