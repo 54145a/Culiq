@@ -201,3 +201,29 @@ if (toolOutputToContent("plain").length !== 1) {
 	process.exitCode = 1;
 }
 console.log(`\n=== tool output consumers ===\n${okContent ? "OK: text for display, image block for the next turn" : "FAILED"}`);
+
+// 8: history pruning — only the newest screenshot survives, older ones become a
+//    note (a real session spent 94% of its input tokens re-sending one image).
+const { pruneOldImages, OMITTED_IMAGE_NOTE } = await import("../src/shared/ai/history.ts");
+const img = (data) => ({ type: "image", mediaType: "image/png", encoding: "base64", data });
+const pruned = pruneOldImages([
+	{ role: "toolResult", toolCallId: "s1", content: [{ type: "text", text: "first" }, img("AAAA")] },
+	{ role: "assistant", content: [{ type: "text", text: "looked" }] },
+	{ role: "toolResult", toolCallId: "t1", content: [{ type: "text", text: "plain result" }] },
+	{ role: "toolResult", toolCallId: "s2", content: [{ type: "text", text: "second" }, img("BBBB")] },
+]);
+const images = pruned.flatMap((m) => (m.role === "toolResult" ? m.content.filter((c) => c.type === "image") : []));
+const firstResult = pruned[0];
+const plainResult = pruned[2];
+const pruneOk =
+	images.length === 1 &&
+	images[0].data === "BBBB" &&
+	firstResult.content.some((c) => c.type === "text" && c.text === "first") &&
+	firstResult.content.some((c) => c.type === "text" && c.text === OMITTED_IMAGE_NOTE) &&
+	plainResult.content.length === 1 &&
+	plainResult.content[0].text === "plain result";
+if (!pruneOk) {
+	console.log(`!!! BAD image pruning: ${JSON.stringify(pruned)}`);
+	process.exitCode = 1;
+}
+console.log(`\n=== history images ===\n${pruneOk ? "OK: newest image kept, older replaced by a note" : "FAILED"}`);

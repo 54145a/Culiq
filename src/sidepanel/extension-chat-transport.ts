@@ -12,6 +12,7 @@ import type {
 } from "@shared/ai/types";
 import type { BgToPanel, ChatContextMode, PanelToBg } from "@shared/transport/protocol";
 import { agentEventToChunk } from "@shared/ai/agent-event-to-chunk";
+import { pruneOldImages } from "@shared/ai/history";
 import { toolOutputToContent } from "@shared/ai/tool-output";
 
 /**
@@ -92,7 +93,7 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 		out.push(assistantMessage);
 		out.push(...results);
 	}
-	return out;
+	return pruneOldImages(out);
 }
 
 function toolResult(toolCallId: string, output: unknown): ToolResultMessage {

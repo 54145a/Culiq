@@ -94,14 +94,14 @@ export async function startFreshSession(): Promise<void> {
 function convertSessionToUI(session: Session): UIMessage[] {
 	// Collect tool results keyed by toolCallId so they can be merged into the
 	// matching tool-call part (the stored format keeps them as separate messages).
-	const resultText = new Map<string, { text: string; images: Array<{ mediaType: string; data: string }> }>();
+	const resultText = new Map<string, { text: string; images: Array<{ mediaType: string; data: string }>; isError: boolean }>();
 	for (const m of session.messages) {
 		if (m.role === "toolResult") {
 			const text = m.content.filter((c) => c.type === "text").map((c) => c.text).join("");
 			const images = m.content
 				.filter((c): c is ImageContent => c.type === "image")
 				.map((c) => ({ mediaType: c.mediaType, data: c.data }));
-			resultText.set(m.toolCallId, { text, images });
+			resultText.set(m.toolCallId, { text, images, isError: m.isError === true });
 		}
 	}
 	return session.messages
@@ -132,13 +132,23 @@ function convertSessionToUI(session: Session): UIMessage[] {
 				const output = resultText.get(b.id as string);
 				const toolName = b.name as string;
 				if (output) {
-					parts.push({
-						type: `tool-${toolName}` as const,
-						toolCallId: b.id as string,
-						input: b.arguments,
-						state: "output-available" as const,
-						output,
-					} as never);
+					parts.push(
+						(output.isError
+							? {
+									type: `tool-${toolName}` as const,
+									toolCallId: b.id as string,
+									input: b.arguments,
+									state: "output-error" as const,
+									errorText: output.text,
+								}
+							: {
+									type: `tool-${toolName}` as const,
+									toolCallId: b.id as string,
+									input: b.arguments,
+									state: "output-available" as const,
+									output: { text: output.text, images: output.images },
+								}) as never,
+					);
 				} else {
 					parts.push({
 						type: `tool-${toolName}` as const,
@@ -229,6 +239,7 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 					role: "toolResult",
 					toolCallId: tp.toolCallId,
 					content: [{ type: "text", text: tp.errorText }],
+					isError: true,
 				});
 			}
 		} else if (pt.type.startsWith("tool-")) {
@@ -246,6 +257,7 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 					role: "toolResult",
 					toolCallId: tp.toolCallId,
 					content: [{ type: "text", text: tp.errorText }],
+					isError: true,
 				});
 			}
 		} else if (pt.type === "data-context") {

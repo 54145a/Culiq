@@ -1,5 +1,6 @@
 import { estimateTokenCount, sliceByTokens } from "tokenx";
 import { streamSimple } from "../ai";
+import { pruneOldImages } from "../ai/history";
 import type { AssistantMessage, Message, ToolCallContent, ToolResultMessage, UserMessage } from "../ai/types";
 import type { AgentContext, AgentEventSink, AgentLoopConfig, AgentTool, AgentToolResult } from "./types";
 import { toolToLlmSpec } from "./types";
@@ -105,7 +106,7 @@ async function streamAssistantResponse(
 		config.model,
 		{
 			...(context.systemPrompt ? { systemPrompt: context.systemPrompt } : {}),
-			messages: context.messages,
+			messages: pruneOldImages(context.messages),
 			...(tools ? { tools } : {}),
 		},
 		{
