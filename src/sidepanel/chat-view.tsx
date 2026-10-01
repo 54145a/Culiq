@@ -108,7 +108,7 @@ function convertSessionToUI(session: Session): UIMessage[] {
 		.filter((m) => m.role !== "toolResult")
 		.map((m) => {
 			if (m.role === "user") {
-				const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("");
+				const text = typeof m.content === "string" ? m.content : m.content.filter((c) => c.type === "text").map((c) => c.text).join("");
 				return { id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text" as const, text }] };
 			}
 			// assistant
@@ -605,6 +605,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 						<option value="none">None</option>
 						<option value="tabs">All tabs</option>
 						<option value="current">Current tab</option>
+						<option value="page+screenshot">Current page + screenshot</option>
 					</select>
 				</label>
 				{customTools.length > 0 && (

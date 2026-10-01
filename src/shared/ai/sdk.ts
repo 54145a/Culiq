@@ -3,19 +3,8 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createProviderRegistry, jsonSchema, streamText, tool as defineTool } from "ai";
 import type { LanguageModel, ModelMessage, ProviderRegistryProvider, ToolSet } from "ai";
 import { EventStream } from "./stream";
-import type { AssistantMessage, Context, Model, StopReason, StreamOptions, ToolCallContent, ToolResultContent } from "./types";
-
-function toSdkContent(blocks: ToolResultContent[]): Array<Record<string, unknown>> {
-	const out: Array<Record<string, unknown>> = [];
-	for (const b of blocks) {
-		if (b.type === "text") {
-			out.push({ type: "text", text: b.text });
-		} else {
-			out.push({ type: "file", mediaType: b.mediaType, data: { type: "data", data: b.data } });
-		}
-	}
-	return out;
-}
+import { toSdkContent, userContentToSdkParts } from "./sdk-content";
+import type { AssistantMessage, Context, Model, StopReason, StreamOptions, ToolCallContent } from "./types";
 
 function toAISdkMessages(messages: Context["messages"]): ModelMessage[] {
 	const out: ModelMessage[] = [];
@@ -31,8 +20,7 @@ function toAISdkMessages(messages: Context["messages"]): ModelMessage[] {
 
 	for (const m of messages) {
 		if (m.role === "user") {
-			const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("");
-			out.push({ role: "user", content: text ? [{ type: "text", text }] : [] } as unknown as ModelMessage);
+			out.push({ role: "user", content: userContentToSdkParts(m.content) } as unknown as ModelMessage);
 		} else if (m.role === "assistant") {
 			const content: Array<Record<string, unknown>> = [];
 			if (m.reasoningContent) {

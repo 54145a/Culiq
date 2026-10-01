@@ -37,7 +37,7 @@ export type AssistantContent = TextContent | ThinkingContent | ToolCallContent |
 
 export interface UserMessage {
 	role: "user";
-	content: string | TextContent[];
+	content: string | Array<TextContent | ImageContent>;
 }
 
 export interface AssistantMessage {
