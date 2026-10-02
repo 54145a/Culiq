@@ -172,6 +172,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 	private windowId?: number;
 	private enabledCustomTools?: string[];
 	private reasoning?: string;
+	private enabledSkills?: string[];
 	private handlers = new Map<string, (event: AgentEvent) => void>();
 
 	constructor(sendFn: SendFn, onMessageFn: OnMessageFn) {
@@ -200,6 +201,10 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 		this.reasoning = level;
 	}
 
+	setEnabledSkills(names: string[] | undefined): void {
+		this.enabledSkills = names;
+	}
+
 	async sendMessages(options: {
 		trigger: "submit-message" | "regenerate-message";
 		chatId: string;
@@ -220,6 +225,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 			...(options.chatId ? { sessionId: options.chatId } : {}),
 			...(this.enabledCustomTools ? { enabledCustomTools: this.enabledCustomTools } : {}),
 			...(this.reasoning ? { reasoning: this.reasoning } : {}),
+			...(this.enabledSkills?.length ? { enabledSkills: this.enabledSkills } : {}),
 		};
 
 		return new ReadableStream<UIMessageChunk>({

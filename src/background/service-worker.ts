@@ -1,7 +1,7 @@
 import { setupProviderRegistry } from "@shared/ai/sdk";
 import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
-import { listEnabledSkills } from "@shared/skills";
+import { getSkill, listEnabledSkills } from "@shared/skills";
 import { closeSandbox, setSandboxContext } from "@shared/agent/tools/sandbox";
 import { ensureCustomToolsLoaded, refreshCustomTools, syncBuiltinTools } from "@shared/custom-tools";
 import { runSubagent } from "@shared/agent/subagent";
@@ -186,7 +186,6 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			const systemPrompt = getSystemPrompt({
 				skills,
 				sandboxEnabled: enabled.has("sandbox_exec"),
-				context,
 				tools: allTools,
 			});
 
@@ -198,8 +197,19 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			if (last && last.role === "user") {
 				const extra: Array<TextContent | ImageContent> = [
 					...(pageShare?.blocks ?? []),
-					{ type: "text", text: `[current time: ${new Date().toLocaleString()}]` },
 				];
+
+				// Inject selected skills' SKILL.md content into this message.
+				if (msg.enabledSkills?.length) {
+					for (const name of msg.enabledSkills) {
+						const skill = await getSkill(name);
+						if (skill) {
+							extra.push({ type: "text", text: `[skill: ${skill.name}]\n${skill.content}` });
+						}
+					}
+				}
+
+				extra.push({ type: "text", text: `[current time: ${new Date().toLocaleString()}]` });
 				const existing: Array<TextContent | ImageContent> =
 					typeof last.content === "string"
 						? last.content

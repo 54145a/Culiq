@@ -35,7 +35,6 @@ Tools whose names are prefixed with an MCP server (e.g. \`github-search_repos\`)
 export interface SystemPromptOptions {
 	skills?: Skill[];
 	sandboxEnabled?: boolean;
-	context?: string;
 	tools?: AgentTool[];
 }
 
@@ -59,8 +58,6 @@ export function getSystemPrompt(options: SystemPromptOptions = {}): string {
 	if (skillsBlock) parts.push(skillsBlock);
 
 	if (options.sandboxEnabled) parts.push(generateSandboxDts());
-
-	if (options.context) parts.push(options.context);
 
 	return parts.join("\n\n");
 }

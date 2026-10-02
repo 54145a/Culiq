@@ -3,6 +3,7 @@ import type { JSX } from "preact";
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
 import { deriveTitle, getCurrentId, getSession, newSession, type Session, setCurrent, upsertSession } from "@shared/sessions";
+import { listEnabledSkills, type Skill } from "@shared/skills";
 import { sessionExportFilename, sessionExportJson } from "@shared/session-export";
 import { type ChatContextMode } from "@shared/transport/protocol";
 import { renderMarkdown } from "./markdown";
@@ -449,6 +450,8 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	const [customTools, setCustomTools] = useState<CustomToolMeta[]>([]);
 	const [enabledTools, setEnabledTools] = useState<Set<string>>(new Set());
 	const [reasoning, setReasoning] = useState<string>("");
+	const [skills, setSkills] = useState<Skill[]>([]);
+	const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const logRef = useRef<HTMLUListElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -489,6 +492,10 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	}, []);
 
 	useEffect(() => {
+		void listEnabledSkills().then(setSkills);
+	}, []);
+
+	useEffect(() => {
 		if (status !== "ready" || messages.length === 0) return;
 		const last = messages[messages.length - 1];
 		if (last?.role !== "assistant") return;
@@ -517,6 +524,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		const isAllEnabled = enabledTools.size === allToolNames.length;
 		chatTransport.setCustomTools(isAllEnabled ? undefined : [...enabledTools]);
 		chatTransport.setReasoning(reasoning || undefined);
+		chatTransport.setEnabledSkills(enabledSkills.length ? enabledSkills : undefined);
 		if (editingId) {
 			setMessages((prev) => {
 				const idx = prev.findIndex((m) => m.id === editingId);
@@ -526,7 +534,8 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		}
 		void sendMessage({ text });
 		setContextMode("none");
-	}, [sendMessage, contextMode, chatTransport, customTools, enabledTools, reasoning, editingId, setMessages]);
+		setEnabledSkills([]);
+	}, [sendMessage, contextMode, chatTransport, customTools, enabledTools, reasoning, editingId, setMessages, enabledSkills]);
 
 	const handleStop = useCallback(() => { void stop(); }, [stop]);
 
@@ -623,6 +632,25 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 						>
 							{customTools.map((t) => (
 								<option key={t.toolName} value={t.toolName} selected={enabledTools.has(t.toolName)}>{t.toolName}</option>
+							))}
+						</select>
+					</label>
+				)}
+				{skills.length > 0 && (
+					<label className="context-field context-field-multi">
+						<span>Skills</span>
+						<select
+							multiple
+							size={Math.min(skills.length, 3)}
+							onChange={(e) => {
+								const selected = new Set<string>(
+									Array.from((e.target as HTMLSelectElement).selectedOptions, (o) => o.value)
+								);
+								setEnabledSkills([...selected]);
+							}}
+						>
+							{skills.map((s) => (
+								<option key={s.name} value={s.name} selected={enabledSkills.includes(s.name)}>{s.name}</option>
 							))}
 						</select>
 					</label>
