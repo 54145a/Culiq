@@ -1,6 +1,7 @@
 import { estimateTokenCount, sliceByTokens } from "tokenx";
 import { streamSimple } from "../ai";
 import { pruneOldImages } from "../ai/history";
+import { estimateImageTokens } from "../ai/image-tokens";
 import type { AssistantMessage, Message, ToolCallContent, ToolResultMessage, UserMessage } from "../ai/types";
 import type { AgentContext, AgentEventSink, AgentLoopConfig, AgentTool, AgentToolResult } from "./types";
 import { toolToLlmSpec } from "./types";
@@ -247,7 +248,6 @@ async function runToolCall(
 // Context compression (hybrid: LLM summary of old turns + recent-turn window)
 // ---------------------------------------------------------------------------
 
-const IMAGE_TOKENS = 1000;
 const SUMMARY_MAX_TOKENS = 2048;
 const SUMMARY_INPUT_TOKEN_CAP = 32000;
 const DEFAULT_CONTEXT_WINDOW = 64000;
@@ -276,7 +276,7 @@ function estimateMessagesTokens(messages: Message[]): number {
 			sum +=
 				typeof m.content === "string"
 					? estimateTokenCount(m.content)
-					: m.content.reduce((s, c) => s + (c.type === "text" ? estimateTokenCount(c.text) : IMAGE_TOKENS), 0);
+					: m.content.reduce((s, c) => s + (c.type === "text" ? estimateTokenCount(c.text) : estimateImageTokens(c)), 0);
 		} else if (m.role === "assistant") {
 			for (const c of m.content) {
 				if (c.type === "text") sum += estimateTokenCount(c.text);
@@ -285,7 +285,7 @@ function estimateMessagesTokens(messages: Message[]): number {
 			}
 		} else if (m.role === "toolResult") {
 			for (const c of m.content) {
-				sum += c.type === "text" ? estimateTokenCount(c.text) : IMAGE_TOKENS;
+				sum += c.type === "text" ? estimateTokenCount(c.text) : estimateImageTokens(c);
 			}
 		}
 	}
