@@ -250,7 +250,12 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					this.handlers.delete(turnId);
 					if (!closed) {
 						closed = true;
-						controller.close();
+						try {
+							controller.close();
+						} catch {
+							// The stream may already be errored or closed
+							// (e.g. the AI SDK errored it on an error chunk).
+						}
 					}
 				};
 

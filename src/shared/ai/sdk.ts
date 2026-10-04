@@ -144,6 +144,7 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 				...(options.signal ? { abortSignal: options.signal } : {}),
 				...(options.headers ? { headers: options.headers } : {}),
 				...(options.reasoning ? { reasoning: options.reasoning } : {}),
+				onError: () => {},
 			});
 
 			const indexByPartId = new Map<string, number>();
@@ -152,8 +153,10 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 			const reasoningIndexByPartId = new Map<string, number>();
 			const signatureByPartId = new Map<string, string>();
 			let reasoningCount = 0;
+			let failed = false;
 
 			for await (const part of result.fullStream) {
+				if (failed) continue;
 				switch (part.type) {
 					case "text-start": {
 						partial.content.push({ type: "text", text: "" });
@@ -250,7 +253,8 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 					}
 					case "error": {
 						fail(part.error instanceof Error ? part.error.message : String(part.error));
-						return;
+						failed = true;
+						break;
 					}
 				}
 			}
