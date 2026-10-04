@@ -2,7 +2,6 @@ name: publish create-culiq
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
 
 permissions:
@@ -14,13 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: pnpm/action-setup@v5
+
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
-          cache: pnpm
           registry-url: https://registry.npmjs.org
-
-      - run: pnpm install --frozen-lockfile
 
       - name: Resolve version from tag
         id: meta
@@ -30,9 +28,10 @@ jobs:
 
       - name: Bump version
         working-directory: packages/create-culiq
-        run: npm version "${{ steps.meta.outputs.version }}" --no-git-tag-version
+        run: pnpm version "${{ steps.meta.outputs.version }}" --no-git-tag-version --allow-same-version
 
-      - uses: JS-DevTools/npm-publish@v3
-        with:
-          token: ${{ secrets.NPM_TOKEN }}
-          working-directory: packages/create-culiq
+      - name: Publish to npm
+        working-directory: packages/create-culiq
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm publish --ignore-scripts --no-git-checks

@@ -6,5 +6,9 @@
 	"bin": {
 		"create-culiq": "index.js"
 	},
+	"files": [
+		"index.js",
+		"template"
+	],
 	"license": "MIT"
 }
