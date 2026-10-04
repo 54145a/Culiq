@@ -776,7 +776,25 @@ button.danger:hover {
 }
 
 #view-settings label {
-	display: block;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 0.78rem;
+	color: color-mix(in srgb, currentColor 60%, transparent);
+}
+
+#view-settings label input,
+#view-settings label select {
+	font-size: 0.92rem;
+	color: inherit;
+}
+
+#view-settings label.capability {
+	flex-direction: row;
+	align-items: flex-start;
+	gap: 8px;
+	font-size: 0.85rem;
+	color: inherit;
 }
 
 .settings-group {
@@ -988,7 +1006,7 @@ button.danger:hover {
 
 .settings-default-model {
 	display: flex;
-	align-items: center;
+	align-items: stretch;
 	gap: 8px;
 	padding: 8px 0;
 	font-size: 0.85rem;
