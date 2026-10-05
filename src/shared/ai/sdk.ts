@@ -111,6 +111,27 @@ function mapFinishReason(reason: string | undefined, signal?: AbortSignal): Stop
 	}
 }
 
+/**
+ * The AI SDK nests its errors: `AI_RetryError` wraps the final attempt's
+ * `AI_APICallError`, whose own `message` is the provider's text. Unwrap to the
+ * underlying cause and append the HTTP status, so nothing surfaced to the user
+ * reads "Failed after 3 attempts. Last error: AI_APICallError: ...".
+ */
+function formatStreamError(error: unknown): string {
+	if (!(error instanceof Error)) return String(error);
+
+	const last = (error as { lastError?: unknown }).lastError;
+	if (last instanceof Error && last !== error) return formatStreamError(last);
+
+	const status = (error as { statusCode?: unknown }).statusCode;
+	const body = (error as { responseBody?: unknown }).responseBody;
+	const detail =
+		error.message?.trim() ||
+		(typeof body === "string" ? body.trim().slice(0, 300) : "") ||
+		(typeof status === "number" ? "Request failed" : error.name);
+	return typeof status === "number" ? `${detail} (HTTP ${status})` : detail;
+}
+
 export function streamSimple(model: Model, context: Context, options: StreamOptions): EventStream {
 	const stream = new EventStream();
 	const partial: AssistantMessage = { role: "assistant", content: [], stopReason: "end" };
@@ -252,7 +273,7 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 						break;
 					}
 					case "error": {
-						fail(part.error instanceof Error ? part.error.message : String(part.error));
+						fail(formatStreamError(part.error));
 						failed = true;
 						break;
 					}
@@ -262,7 +283,7 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 			stream.push({ type: "done", message: partial });
 			stream.end();
 		} catch (err) {
-			fail(err instanceof Error ? err.message : String(err));
+			fail(formatStreamError(err));
 		}
 	};
 
