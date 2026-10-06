@@ -5,7 +5,7 @@ import { navigateTool } from "../browser/navigate";
 import { fetchUrlTool } from "../browser/fetch-url";
 import { useSkillTool } from "../skills/use-skill";
 import { listTabsTool, switchTabTool, reloadTabTool } from "../browser/tabs";
-import { readText, listDirEntries, write, remove, createDir } from "@shared/opfs";
+import { readText, listDirEntries, write, remove, createDir, stat, readBytes, writeBytes } from "@shared/opfs";
 import { optionalOpts, optsOf, requireNumber, requireString } from "./options";
 
 /**
@@ -170,6 +170,17 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 			async ([path]) => { await remove(String(path)); }),
 		mkdir: bridge("Create a directory in OPFS.",
 			async ([path]) => { await createDir(String(path)); }),
+		stat: bridge("Get file or directory metadata from OPFS: size (bytes), lastModified (ISO string), isFile, isDirectory.",
+			async ([path]) => stat(String(path))),
+		readBytes: bridge("Read a file from OPFS as base64. Use for binary files (images, 3D models, archives). Returns null if the file does not exist.",
+			async ([path]) => {
+				const bytes = await readBytes(String(path));
+				return bytes ? bytesToBase64(bytes) : null;
+			}),
+		writeBytes: bridge("Write base64-encoded bytes to a file in OPFS. Use for binary files.",
+			async ([path, base64]) => {
+				await writeBytes(String(path), base64ToBytes(String(base64)));
+			}),
 	}),
 	tree: bridge("Recursively list all files and directories under a path, returning a formatted tree string.",
 		async ([path]) => {
@@ -195,7 +206,7 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 			return lines.join("\n") || "(empty)";
 		}),
 	// ── Fetch (bridge to extension context, CORS-free) ──────────────────────
-	fetch: bridge("Fetch a URL with CORS-free access (uses extension context). Returns a Response-like object. Call .text(), .json(), or .arrayBuffer() to read the body.",
+	fetch: bridge("Fetch a URL with CORS-free access (uses extension context). Returns a Response-like object with .ok and .status — always check .ok before reading the body. .text() reads text, .json() reads JSON (throws on non-JSON bodies), .arrayBuffer() reads binary (64MiB bridge limit; avoid for large files).",
 		async ([input, init]) => {
 			const res = await fetch(String(input), init as RequestInit);
 			const headers: Record<string, string> = {};
@@ -228,6 +239,26 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 
 /** Store for response objects created by the fetch bridge. */
 const responseStore = new Map<number, Response>();
+
+/** Encode bytes as base64 so they survive the JSON-serialized bridge. */
+function bytesToBase64(bytes: Uint8Array): string {
+	let binary = "";
+	const chunk = 0x8000;
+	for (let i = 0; i < bytes.length; i += chunk) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+	}
+	return btoa(binary);
+}
+
+/** Decode base64 back to bytes. */
+function base64ToBytes(base64: string): Uint8Array {
+	const binary = atob(base64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return bytes;
+}
 
 /** Namespace → method names, derived from the spec. */
 function namespaceMap(): Map<string, string[]> {

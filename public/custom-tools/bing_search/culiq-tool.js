@@ -3,7 +3,7 @@
 export default {
 	name: "bing_search",
 	description:
-		"Search the web using Bing and return the extracted result text. ALWAYS use this tool first when you need to find documentation, guides, or external resources — do NOT guess URLs. Opens the results page, reads the result list (the #b_results items), and returns the readable content so the agent can follow up with read_dom, query, or click.",
+		"Search the web using Bing and return the extracted result text. ALWAYS use this tool first when you need to find documentation, guides, external resources, or the URL of any specific file, page, or asset. NEVER construct or guess a URL from memory — guessed URLs frequently return 404 because paths and hosts change. Instead, search for the exact resource name, take the live URL from the results, then fetch that URL. Opens the results page, reads the result list (the #b_results items), and returns the readable content so the agent can follow up with read_dom, query, or click.",
 	parameters: {
 		type: "object",
 		properties: {

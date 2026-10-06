@@ -5,7 +5,14 @@ import type { Hfs } from "@humanfs/core";
  * below is testable without a browser (`scripts/opfs-smoke.mjs` injects a fake
  * backend; `opfs.ts` injects the real `WebHfs`).
  */
-export type OpfsBackend = Pick<Hfs, "text" | "write" | "deleteAll" | "list" | "createDirectory">;
+export type OpfsBackend = Pick<Hfs, "text" | "write" | "deleteAll" | "list" | "createDirectory" | "size" | "lastModified" | "isFile" | "isDirectory" | "bytes">;
+
+export interface OpfsStat {
+	size: number;
+	lastModified: string | null;
+	isFile: boolean;
+	isDirectory: boolean;
+}
 
 export interface OpfsApi {
 	write: (path: string, content: string) => Promise<void>;
@@ -14,6 +21,9 @@ export interface OpfsApi {
 	listDir: (path: string) => Promise<string[]>;
 	listDirEntries: (path: string) => Promise<Array<{ name: string; kind: string }>>;
 	createDir: (path: string) => Promise<void>;
+	stat: (path: string) => Promise<OpfsStat>;
+	readBytes: (path: string) => Promise<Uint8Array | null>;
+	writeBytes: (path: string, bytes: Uint8Array) => Promise<void>;
 }
 
 function assertSafePath(path: string): string {
@@ -72,6 +82,29 @@ export function createFsApi(getBackend: () => Promise<OpfsBackend>): OpfsApi {
 
 		createDir: async (path) => {
 			await (await getBackend()).createDirectory(resolvePath(path));
+		},
+
+		stat: async (path) => {
+			const backend = await getBackend();
+			const p = resolvePath(path);
+			const [size, lastModified, isFile, isDirectory] = await Promise.all([
+				backend.size(p),
+				backend.lastModified(p),
+				backend.isFile(p),
+				backend.isDirectory(p),
+			]);
+			return {
+				size: size ?? 0,
+				lastModified: lastModified ? lastModified.toISOString() : null,
+				isFile,
+				isDirectory,
+			};
+		},
+
+		readBytes: async (path) => (await (await getBackend()).bytes(resolvePath(path))) ?? null,
+
+		writeBytes: async (path, bytes) => {
+			await (await getBackend()).write(resolvePath(path), bytes);
 		},
 	};
 }
