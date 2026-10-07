@@ -212,7 +212,7 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 			return lines.join("\n") || "(empty)";
 		}),
 	// ── Fetch (bridge to extension context, CORS-free) ──────────────────────
-	fetch: bridge("Fetch a URL with CORS-free access (uses extension context). Returns a Response-like object with .ok and .status — always check .ok before reading the body. .text() reads text, .json() reads JSON (throws on non-JSON bodies), .arrayBuffer() reads binary (64MiB bridge limit; avoid for large files).",
+	fetch: bridge("Fetch a URL with CORS-free access (uses extension context). Returns a Response-like object with .ok and .status — always check .ok before reading the body. .text() reads text, .json() reads JSON (throws on non-JSON bodies), .arrayBuffer() reads binary (64MiB bridge limit; avoid for large files), .save(path) writes the body to OPFS (no size limit — use for large binary, then set_file_input to upload).",
 		async ([input, init]) => {
 			const res = await fetch(String(input), init as RequestInit);
 			const headers: Record<string, string> = {};
@@ -234,12 +234,21 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 		responseStore.delete(Number(id));
 		return await res.json();
 	}),
-	"response.arrayBuffer": internalBridge("Read the response body as an ArrayBuffer.", async ([id]) => {
+	"response.arrayBuffer": internalBridge("Read the response body as an ArrayBuffer. For large binary, use .save(path) instead (no size limit).", async ([id]) => {
 		const res = responseStore.get(Number(id));
 		if (!res) throw new Error("Response not found (may have been consumed).");
 		responseStore.delete(Number(id));
 		const buf = await res.arrayBuffer();
 		return Array.from(new Uint8Array(buf));
+	}),
+	"response.save": internalBridge("Save the response body to a file in OPFS. Use for binary content (images, 3D models, archives) — no size limit, the body never crosses the bridge. Returns { path, size }.", async ([id, path]) => {
+		const res = responseStore.get(Number(id));
+		if (!res) throw new Error("Response not found (may have been consumed).");
+		responseStore.delete(Number(id));
+		const buf = await res.arrayBuffer();
+		const p = String(path);
+		await writeBytes(p, new Uint8Array(buf));
+		return { path: p, size: buf.byteLength };
 	}),
 };
 
@@ -345,7 +354,7 @@ const TOP_LEVEL_SIGNATURES: Record<string, string> = {
 /** Compact .d.ts appended to the system prompt when the sandbox is enabled. */
 export function generateSandboxDts(): string {
 	const out: string[] = [
-		"interface SandboxResponse { status: number; ok: boolean; headers: Record<string, string>; text(): Promise<string>; json(): Promise<unknown>; arrayBuffer(): Promise<ArrayBuffer>; }",
+		"interface SandboxResponse { status: number; ok: boolean; headers: Record<string, string>; text(): Promise<string>; json(): Promise<unknown>; arrayBuffer(): Promise<ArrayBuffer>; save(path: string): Promise<{ path: string; size: number }>; }",
 		'type ReadDomMode = "markdown" | "html" | "readable_html" | "outline";',
 		"declare const sandbox: {",
 		"  file(path: string): { text(): Promise<string>; remove(): Promise<void> };",
