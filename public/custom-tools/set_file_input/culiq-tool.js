@@ -32,8 +32,17 @@ export default {
 		if (!tab || typeof tab.id !== "number") throw new Error("set_file_input: no active tab");
 
 		const code = [
-			`const resp = await fetch(${JSON.stringify(dataUrl)});`,
-			`const blob = await resp.blob();`,
+			`const url = ${JSON.stringify(dataUrl)};`,
+			`let blob;`,
+			`try {`,
+			`  blob = await (await fetch(url)).blob();`,
+			`} catch {`,
+			`  const b64 = url.split(";base64,")[1] ?? "";`,
+			`  const bin = atob(b64);`,
+			`  const bytes = new Uint8Array(bin.length);`,
+			`  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);`,
+			`  blob = new Blob([bytes], { type: ${JSON.stringify(type)} });`,
+			`}`,
 			`const file = new File([blob], ${JSON.stringify(name)}, { type: ${JSON.stringify(type)} });`,
 			`const el = document.querySelector(${JSON.stringify(selector)});`,
 			`if (!el) throw new Error("set_file_input: no element for selector " + ${JSON.stringify(selector)});`,
