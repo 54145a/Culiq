@@ -182,6 +182,12 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 				await writeBytes(String(path), base64ToBytes(String(base64)));
 			}),
 	}),
+	dataUrl: bridge("Read a file from OPFS and return it as a data URL (data:<mime>;base64,...). The agent can fetch() this URL directly in the isolated world. Use for binary files. Do NOT print the URL directly — it can be very long.",
+		async ([path, mime]) => {
+			const bytes = await readBytes(String(path));
+			if (!bytes) return null;
+			return `data:${String(mime)};base64,${bytesToBase64(bytes)}`;
+		}),
 	tree: bridge("Recursively list all files and directories under a path, returning a formatted tree string.",
 		async ([path]) => {
 			const p = String(path || "");
@@ -319,6 +325,7 @@ export function generateSandboxShims(): string {
  */
 const TOP_LEVEL_SIGNATURES: Record<string, string> = {
 	tree: "tree(path?: string): Promise<string>",
+	dataUrl: "dataUrl(path: string, mime: string): Promise<string | null>",
 	fetch: "fetch(input: string, init?: unknown): Promise<SandboxResponse>",
 	evalInTab: 'evalInTab(options: { tabId: number; world?: "isolated" | "main"; code: string }): Promise<string>',
 	evalInAllFrames: 'evalInAllFrames(options: { tabId: number; world?: "isolated" | "main"; code: string }): Promise<string>',
