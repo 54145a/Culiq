@@ -9,6 +9,7 @@ import {
 	type ProviderConfig,
 	saveSettings,
 } from "@shared/config";
+import { listModels } from "@shared/ai/list-models";
 import { buildUserSkill, deleteUserSkill, listSkills, saveUserSkill, setSkillEnabled, type Skill } from "@shared/skills";
 import {
 	loadMcpServers,
@@ -83,14 +84,38 @@ function CheckRow({
 
 function ProviderCard({
 	provider,
+	settings,
 	remove,
 	dirty,
 }: {
 	provider: ProviderConfig;
+	settings: CuliqSettings;
 	remove: () => void;
 	dirty: () => void;
 }) {
 	const def = PROVIDER_DEFAULTS.find((d) => d.id === provider.id);
+	const [fetching, setFetching] = useState(false);
+	const [fetchError, setFetchError] = useState("");
+
+	const fetchModels = async () => {
+		setFetching(true);
+		setFetchError("");
+		try {
+			const names = await listModels(provider);
+			for (const name of names) {
+				const id = `${provider.id}:${name}`;
+				if (!settings.models.some((m) => m.id === id)) {
+					settings.models.push({ id, providerId: provider.id, name });
+				}
+			}
+			if (!settings.defaultModelId && settings.models.length > 0) settings.defaultModelId = settings.models[0].id;
+			dirty();
+		} catch (err) {
+			setFetchError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setFetching(false);
+		}
+	};
 
 	return (
 		<div className="provider-card">
@@ -111,7 +136,11 @@ function ProviderCard({
 			</label>
 			<Field label="API key" type="password" value={provider.apiKey} placeholder="sk-..." onInput={(v) => { provider.apiKey = v; dirty(); }} />
 			<Field label="Base URL" type="text" value={provider.baseUrl} placeholder={def?.baseUrl ?? ""} onInput={(v) => { provider.baseUrl = v; dirty(); }} />
-			<button type="button" className="provider-delete" onClick={(e) => { e.stopPropagation(); remove(); }}>Delete</button>
+			<div className="settings-actions">
+				<button type="button" disabled={fetching || !provider.apiKey} onClick={() => { void fetchModels(); }}>{fetching ? "Fetching models…" : "Fetch models"}</button>
+				<button type="button" className="provider-delete" onClick={(e) => { e.stopPropagation(); remove(); }}>Delete</button>
+			</div>
+			{fetchError && <p className="settings-hint">Fetch failed: {fetchError}</p>}
 		</div>
 	);
 }
@@ -139,7 +168,7 @@ function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: (
 			</p>
 			<div className="capability-list">
 				{settings.providers.map((p) => (
-					<ProviderCard key={p.id} provider={p} remove={() => removeProvider(p.id)} dirty={dirty} />
+					<ProviderCard key={p.id} provider={p} settings={settings} remove={() => removeProvider(p.id)} dirty={dirty} />
 				))}
 			</div>
 			<div className="settings-actions">
