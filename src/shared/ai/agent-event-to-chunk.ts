@@ -117,7 +117,7 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 						: "stop";
 			if (event.stopReason === "error" && event.errorMessage) {
 				return [
-					{ type: "error", errorText: event.errorMessage },
+					{ type: "data-error", id: "error", data: event.errorMessage },
 					{ type: "finish", finishReason },
 				];
 			}

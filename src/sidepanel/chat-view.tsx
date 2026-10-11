@@ -339,6 +339,19 @@ function ContextCard({ text, label = "sent" }: { text: string; label?: string })
 	);
 }
 
+function ErrorCard({ text }: { text: string }) {
+	return (
+		<li className="tool-card" data-status="error" data-expanded="true">
+			<div className="tool-head">
+				<span className="tool-chevron" aria-hidden="true">▸</span>
+				<code>error</code>
+				<span className="tool-status">error</span>
+			</div>
+			<pre className="tool-body">{text}</pre>
+		</li>
+	);
+}
+
 function ToolCardView({ toolName, part }: { toolName: string; part: { toolCallId: string; input: unknown; state: string; output?: unknown; errorText?: string } }) {
 	const [expanded, setExpanded] = useState(false);
 	const status = part.state.includes("error") ? "error" : part.state.includes("available") && part.output !== undefined ? "ok" : "running";
@@ -457,7 +470,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
 	const addNotice = useCallback((className: string, text: string) => {
-		setNotices((prev) => [...prev, { id: noticeId++, className, text }]);
+		setNotices((prev) => [...prev, { id: noticeId++, className, text }].slice(-5));
 	}, []);
 
 	const { messages, status, sendMessage, stop, setMessages } = useChat({
@@ -786,6 +799,12 @@ function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
 					textContent = "";
 				}
 				elements.push(<SubtaskCard key={`st-${i}`} messages={part.data as SubtaskMessage[]} />);
+			} else if (part.type === "data-error" && typeof part.data === "string") {
+				if (textContent) {
+					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+					textContent = "";
+				}
+				elements.push(<ErrorCard key={`err-${i}`} text={part.data} />);
 			} else if (part.type === "tool-invocation") {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
