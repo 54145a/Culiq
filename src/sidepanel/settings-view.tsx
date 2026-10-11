@@ -38,13 +38,13 @@ function Field({
 	return (
 		<label>
 			<span>{label}</span>
-			<input
-				type={type}
-				value={value}
-				placeholder={placeholder}
-				onInput={(e) => onInput((e.target as HTMLInputElement).value)}
-				onClick={(e) => e.stopPropagation()}
-			/>
+			{type === "password" ? (
+				<input type="password" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
+			) : type === "number" ? (
+				<input type="number" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
+			) : (
+				<input type="text" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
+			)}
 		</label>
 	);
 }
