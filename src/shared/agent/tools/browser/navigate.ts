@@ -67,7 +67,7 @@ export const navigateTool: AgentTool = {
 
 		if (waitForLoad) {
 			try {
-				await waitForTabComplete(tabId, signal, url);
+				await waitForTabComplete(tabId, signal);
 			} catch {
 				// A load timeout still leaves a usable page; an aborted turn must stop here.
 				if (signal?.aborted) throw new DOMException("aborted", "AbortError");
