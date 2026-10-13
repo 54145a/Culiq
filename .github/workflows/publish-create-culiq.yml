@@ -26,12 +26,17 @@ jobs:
           tag="${GITHUB_REF_NAME#v}"
           echo "version=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Bump version
+      - name: Verify version matches tag
         working-directory: packages/create-culiq
-        run: pnpm version "${{ steps.meta.outputs.version }}" --no-git-tag-version --allow-same-version
+        run: |
+          pkg_version=$(node -p "require('./package.json').version")
+          if [[ "$pkg_version" != "${{ steps.meta.outputs.version }}" ]]; then
+            echo "::error::package.json version ($pkg_version) does not match tag (${{ steps.meta.outputs.version }}) — bump the version in a commit before tagging"
+            exit 1
+          fi
 
       - name: Publish to npm
         working-directory: packages/create-culiq
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm publish --ignore-scripts --no-git-checks
+        run: pnpm publish --ignore-scripts
