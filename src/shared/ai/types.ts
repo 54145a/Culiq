@@ -28,12 +28,38 @@ export interface ToolCallContent {
 	arguments: Record<string, unknown>;
 }
 
+/**
+ * A sandbox bridge invocation (sandbox.fetchUrl, sandbox.tabs.query,
+ * ...) surfaced as a card for visibility. It is not an LLM tool call:
+ * it never maps to a provider message, so it must not be stored as a
+ * ToolCallContent.
+ */
+export interface BridgeCallContent {
+	type: "bridgeCall";
+	id: string;
+	name: string;
+	arguments: unknown;
+	result?: string;
+	isError?: boolean;
+}
+
 export interface ContextContent {
 	type: "context";
 	text: string;
 }
 
-export type AssistantContent = TextContent | ThinkingContent | ToolCallContent | ContextContent;
+export interface ErrorContent {
+	type: "error";
+	text: string;
+}
+
+export type AssistantContent =
+	| TextContent
+	| ThinkingContent
+	| ToolCallContent
+	| BridgeCallContent
+	| ContextContent
+	| ErrorContent;
 
 export interface UserMessage {
 	role: "user";

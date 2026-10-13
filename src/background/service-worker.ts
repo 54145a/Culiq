@@ -189,13 +189,16 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				tools: allTools,
 			});
 
-			// Append current time — and, for the "page + screenshot" context mode,
-			// the shared page text and screenshot — to the user's own message. A
-			// second user turn would break the providers' user/assistant alternation.
+			// Append the send-time context (current page / open tabs), the
+			// "page + screenshot" share and the current time to the user's
+			// own message — context belongs in the message flow, not the
+			// system prompt. A second user turn would break the providers'
+			// user/assistant alternation.
 			const messages = [...msg.messages];
 			const last = messages[messages.length - 1];
 			if (last && last.role === "user") {
 				const extra: Array<TextContent | ImageContent> = [
+					...(context ? [{ type: "text" as const, text: context }] : []),
 					...(pageShare?.blocks ?? []),
 				];
 

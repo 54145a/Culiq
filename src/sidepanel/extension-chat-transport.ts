@@ -37,18 +37,22 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 		const content: AssistantContent[] = [];
 		const results: ToolResultMessage[] = [];
 		let reasoningContent = "";
+	let hasProviderContent = false;
 		for (const part of m.parts) {
 			const type = (part as { type?: string }).type;
 			if (type === "text" && (part as { text?: string }).text) {
 				content.push({ type: "text", text: (part as { text: string }).text } as TextContent);
+				hasProviderContent = true;
 			} else if (type === "reasoning") {
 				const rp = part as { text?: string; signature?: string; providerMetadata?: { anthropic?: { signature?: string } } };
 				const text = rp.text ?? "";
 				const signature = rp.signature ?? rp.providerMetadata?.anthropic?.signature;
 				if (signature) {
 					content.push({ type: "thinking", thinking: text, signature } as ThinkingContent);
+					hasProviderContent = true;
 				} else if (text) {
 					reasoningContent = reasoningContent ? `${reasoningContent}\n${text}` : text;
+					hasProviderContent = true;
 				}
 			} else if (type === "data-context") {
 				const data = (part as { data?: unknown }).data;
@@ -64,6 +68,7 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 					name: tp.toolName,
 					arguments: (tp.input ?? {}) as Record<string, unknown>,
 				} as ToolCallContent);
+				hasProviderContent = true;
 				if (tp.output != null) {
 					results.push(toolResult(tp.toolCallId, tp.output));
 				} else if (tp.errorText) {
@@ -79,6 +84,7 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 					name: type.slice(5),
 					arguments: (tp.input ?? {}) as Record<string, unknown>,
 				} as ToolCallContent);
+				hasProviderContent = true;
 				if (tp.output != null) {
 					results.push(toolResult(tp.toolCallId, tp.output));
 				} else if (tp.errorText) {
@@ -90,7 +96,12 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 		}
 		const assistantMessage: AssistantMessage = { role: "assistant", content, stopReason: "end" };
 		if (reasoningContent) assistantMessage.reasoningContent = reasoningContent;
-		out.push(assistantMessage);
+		// A failed turn can leave an assistant message with only
+		// display-only parts (context card, usage). Providers reject
+		// an assistant message with no content and no tool calls
+		// (HTTP 400), so it must never reach the model. Tool calls
+		// always set hasProviderContent, so tool results stay paired.
+		if (hasProviderContent) out.push(assistantMessage);
 		out.push(...results);
 	}
 	return pruneOldImages(out);
@@ -401,9 +412,9 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 				} else {
 					messages.push({ role: "assistant", content: event.delta.text });
 				}
-			} else if (event.type === "tool_execution_start") {
+			} else if (event.type === "tool_execution_start" || event.type === "bridge_execution_start") {
 				messages.push({ role: "toolResult", content: `[${event.toolName}]`, toolName: event.toolName });
-			} else if (event.type === "tool_execution_end") {
+			} else if (event.type === "tool_execution_end" || event.type === "bridge_execution_end") {
 				const last = messages[messages.length - 1];
 				if (last?.role === "toolResult" && !last.content.includes(": ")) {
 					const resultText = event.result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");

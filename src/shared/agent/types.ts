@@ -64,6 +64,14 @@ export type AgentEvent =
 			result: AgentToolDisplayResult;
 			isError: boolean;
 	  }>
+	| WithSubtaskId<{ type: "bridge_execution_start"; toolCallId: string; toolName: string; args: unknown[] }>
+	| WithSubtaskId<{
+			type: "bridge_execution_end";
+			toolCallId: string;
+			toolName: string;
+			result: AgentToolDisplayResult;
+			isError: boolean;
+	  }>
 	| WithSubtaskId<{ type: "turn_end"; assistantMessage: AssistantMessage; toolResults: ToolResultMessage[] }>
 	| WithSubtaskId<{ type: "message_usage"; usage: { inputTokens: number; outputTokens: number }; cumulative: { inputTokens: number; outputTokens: number } }>
 	| WithSubtaskId<{ type: "context_compressed"; summary: string }>

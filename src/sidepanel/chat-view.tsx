@@ -110,7 +110,7 @@ function convertSessionToUI(session: Session): UIMessage[] {
 		.map((m) => {
 			if (m.role === "user") {
 				const text = typeof m.content === "string" ? m.content : m.content.filter((c) => c.type === "text").map((c) => c.text).join("");
-				return { id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text" as const, text }] };
+				return { id: crypto.randomUUID(), role: "user" as const, parts: text ? [{ type: "text" as const, text }] : [] };
 			}
 			// assistant
 			const blocks = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
@@ -129,7 +129,21 @@ function convertSessionToUI(session: Session): UIMessage[] {
 						state: "done" as const,
 						...(signature ? { providerMetadata: { anthropic: { signature } } } : {}),
 					} as never);
-				} else if (b.type === "toolCall") {
+				} else if (b.type === "toolCall" && (b.name as string).startsWith("sandbox.")) {
+				// Legacy sessions persisted bridge calls as toolCall
+				// blocks. Restore them as display-only data-bridge
+				// parts so they never re-enter the provider history.
+				const output = resultText.get(b.id as string);
+				parts.push({
+					type: "data-bridge" as const,
+					id: b.id as string,
+					data: {
+						name: b.name as string,
+						arguments: b.arguments,
+						...(output ? { result: output.text, isError: output.isError } : {}),
+					},
+				} as never);
+			} else if (b.type === "toolCall") {
 				const output = resultText.get(b.id as string);
 				const toolName = b.name as string;
 				if (output) {
@@ -159,8 +173,20 @@ function convertSessionToUI(session: Session): UIMessage[] {
 						errorText: "Tool call was interrupted before a result was received.",
 					} as never);
 				}
-				} else if (b.type === "context" && b.text) {
+				} else if (b.type === "bridgeCall") {
+				parts.push({
+					type: "data-bridge" as const,
+					id: b.id as string,
+					data: {
+						name: b.name as string,
+						arguments: b.arguments,
+						...(b.result !== undefined ? { result: b.result, isError: b.isError === true } : {}),
+					},
+				} as never);
+			} else if (b.type === "context" && b.text) {
 					parts.push({ type: "data-context" as const, id: "context", data: b.text as string } as never);
+				} else if (b.type === "error" && b.text) {
+					parts.push({ type: "data-error" as const, id: `error-${parts.length}`, data: b.text as string } as never);
 				} else if (b.type === "compress" && b.summary) {
 					parts.push({ type: "data-compress" as const, id: "compress", data: b.summary as string } as never);
 				} else if (b.type === "subtask" && b.messages) {
@@ -184,7 +210,8 @@ function convertSessionToUI(session: Session): UIMessage[] {
 				parts.push({ type: "data-usage" as const, id: "usage-r0", data: { input: usage.inputTokens, output: usage.outputTokens } } as never);
 			}
 			return { id: (m as { id?: string }).id ?? crypto.randomUUID(), role: "assistant" as const, parts };
-		});
+		})
+		.filter((m) => m.parts.length > 0);
 }
 
 /**
@@ -207,7 +234,9 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 	const blocks: Array<
 		| { type: "text"; text: string }
 		| { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> }
+		| { type: "bridgeCall"; id: string; name: string; arguments: unknown; result?: string; isError?: boolean }
 		| { type: "context"; text: string }
+		| { type: "error"; text: string }
 		| { type: "thinking"; thinking: string; signature?: string }
 		| { type: "compress"; summary: string }
 		| { type: "subtask"; id: string; messages: unknown }
@@ -264,6 +293,22 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 		} else if (pt.type === "data-context") {
 			const data = (part as { data: unknown }).data;
 			if (typeof data === "string" && data) blocks.push({ type: "context", text: data });
+		} else if (pt.type === "data-error") {
+			const data = (part as { data?: unknown }).data;
+			if (typeof data === "string" && data) blocks.push({ type: "error", text: data });
+		} else if (pt.type === "data-bridge") {
+			const data = (part as { data?: unknown }).data as
+				| { name?: string; arguments?: unknown; result?: string; isError?: boolean }
+				| undefined;
+			if (data && typeof data.name === "string") {
+				blocks.push({
+					type: "bridgeCall",
+					id: (part as { id?: string }).id ?? crypto.randomUUID(),
+					name: data.name,
+					arguments: data.arguments ?? null,
+					...(data.result !== undefined ? { result: data.result, isError: data.isError === true } : {}),
+				} as never);
+			}
 		} else if (pt.type === "data-compress") {
 			const data = (part as { data: unknown }).data;
 			if (typeof data === "string" && data) blocks.push({ type: "compress", summary: data } as never);
@@ -289,7 +334,10 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 	}
 	const assistantMsg: Session["messages"][number] = { role: "assistant", content: blocks as never, stopReason: "end" };
 	if (usage) assistantMsg.usage = usage;
-	out.unshift(assistantMsg);
+	// Never persist an assistant message with no content: a failed turn
+	// would otherwise be stored as an empty shell that providers reject
+	// (HTTP 400) on every subsequent send.
+	if (blocks.length > 0) out.unshift(assistantMsg);
 	return out;
 }
 
@@ -805,6 +853,20 @@ function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
 					textContent = "";
 				}
 				elements.push(<ErrorCard key={`err-${i}`} text={part.data} />);
+			} else if (part.type === "data-bridge" && typeof part.data === "object") {
+				if (textContent) {
+					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
+					textContent = "";
+				}
+				const d = part.data as { name: string; arguments: unknown; result?: string; isError?: boolean };
+				const bridgePart = {
+					toolCallId: part.id as string,
+					input: d.arguments,
+					state: d.result !== undefined ? (d.isError ? "output-error" : "output-available") : "input-available",
+					output: d.result,
+					errorText: d.isError ? d.result : undefined,
+				};
+				elements.push(<ToolCardView key={`br-${part.id as string}`} toolName={d.name} part={bridgePart} />);
 			} else if (part.type === "tool-invocation") {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);

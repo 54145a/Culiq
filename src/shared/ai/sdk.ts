@@ -37,6 +37,11 @@ function toAISdkMessages(messages: Context["messages"]): ModelMessage[] {
 					content.push({ type: "tool-call", toolCallId: block.id, toolName: block.name, input: block.arguments });
 				}
 			}
+			// A failed turn can persist an assistant message whose only blocks
+			// are display-only (context card, usage, error). Providers reject
+			// an assistant message with no content and no tool calls with
+			// HTTP 400, which would poison every subsequent request — drop it.
+			if (content.length === 0) continue;
 			out.push({ role: "assistant", content } as unknown as ModelMessage);
 		} else if (m.role === "toolResult") {
 			const hasImage = m.content.some((c) => c.type === "image");
