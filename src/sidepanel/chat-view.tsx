@@ -889,7 +889,7 @@ function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
 		}
 		if (elements.length === 0) return null;
 		const isCard = (el: JSX.Element) =>
-			el.type === ToolCardView || el.type === ContextCard || el.type === UsageBadge || el.type === SubtaskCard;
+			el.type === ToolCardView || el.type === ContextCard || el.type === UsageBadge || el.type === SubtaskCard || el.type === ErrorCard;
 		if (elements.every((el) => !isCard(el))) {
 			return <li className="msg assistant">{elements}</li>;
 		}
