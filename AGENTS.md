@@ -6,6 +6,14 @@ Do NOT run `git push` or create PRs unless the user explicitly asks. Even if the
 
 Accidental pushes can leak secrets, internal APIs, or unfinished code to public repositories. This is irreversible.
 
+## Critical: commit after every change, in small granular commits
+
+Commit locally at the end of every round of changes — do not leave a batch of unrelated work uncommitted. If something breaks, a granular history is what makes rollback possible.
+
+- One commit per logical change (one feature, one fix, one docs update) — never mix unrelated work.
+- Each commit must compile and pass `pnpm check` on its own.
+- Commit message: conventional prefix (`feat:`, `fix:`, `chore:`, `docs:`) plus a body explaining the why.
+
 ## Tooling
 
 - **Package manager:** pnpm (never npm)
