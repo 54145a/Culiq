@@ -101,14 +101,18 @@ function ProviderCard({
 		setFetching(true);
 		setFetchError("");
 		try {
-			const names = await listModels(provider);
-			for (const name of names) {
-				const id = `${provider.id}:${name}`;
-				if (!settings.models.some((m) => m.id === id)) {
-					settings.models.push({ id, providerId: provider.id, name });
-				}
+			const remote = await listModels(provider);
+			for (const info of remote) {
+				const id = `${provider.id}:${info.id}`;
+				if (settings.models.some((m) => m.id === id)) continue;
+				settings.models.push({
+					id,
+					providerId: provider.id,
+					name: info.id,
+					enabled: false,
+					...(info.contextLength ? { contextWindow: info.contextLength } : {}),
+				});
 			}
-			if (!settings.defaultModelId && settings.models.length > 0) settings.defaultModelId = settings.models[0].id;
 			dirty();
 		} catch (err) {
 			setFetchError(err instanceof Error ? err.message : String(err));
@@ -149,9 +153,6 @@ function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: (
 	const removeProvider = (id: string) => {
 		settings.providers = settings.providers.filter((p) => p.id !== id);
 		settings.models = settings.models.filter((m) => m.providerId !== id);
-		if (settings.models.length > 0 && !settings.models.find((m) => m.id === settings.defaultModelId)) {
-			settings.defaultModelId = settings.models[0].id;
-		}
 		dirty();
 	};
 	const addProvider = () => {
@@ -187,17 +188,14 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 		if (!name || !newModelProvider) return;
 		const id = `${newModelProvider}:${name}`;
 		if (settings.models.some((m) => m.id === id)) return;
-		settings.models.push({ id, providerId: newModelProvider, name });
-		if (!settings.defaultModelId) settings.defaultModelId = id;
+		settings.models.push({ id, providerId: newModelProvider, name, enabled: true });
 		setNewModelName("");
 		dirty();
 	};
 
 	const onDelete = (id: string) => {
 		settings.models = settings.models.filter((m) => m.id !== id);
-		if (settings.defaultModelId === id && settings.models.length > 0) {
-			settings.defaultModelId = settings.models[0].id;
-		}
+		if (settings.subAgentModel === id) settings.subAgentModel = "";
 		dirty();
 	};
 
@@ -205,43 +203,38 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 		<details className="settings-group">
 			<summary className="settings-header">Models</summary>
 			<p className="settings-hint">
-				All available models across providers. Toggle screenshot capability per model
-				(useful for text-only models). Set the context window size for context compression.
+				Enabled models appear in the model picker above the chat input. Bulk-fetched
+				models start disabled. Screenshot is off by default — opt in per vision model.
+				Set the context window size for context compression.
 			</p>
-			<label className="settings-default-model">
-				<span>Default model</span>
-				<select
-					value={settings.defaultModelId}
-					onClick={(e) => e.stopPropagation()}
-					onChange={(e) => { settings.defaultModelId = (e.target as HTMLSelectElement).value; dirty(); }}
-				>
-					{settings.models.map((m) => (
-						<option key={m.id} value={m.id}>{m.name} ({settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId})</option>
-					))}
-				</select>
-			</label>
 			<div className="capability-list">
 				{settings.models.map((m) => {
 					const capKey = m.id;
-					const disabled = settings.modelCapabilities[capKey]?.disabledCapabilities ?? [];
-					const screenshotOn = !disabled.includes("screenshot");
+					const screenshotOn = settings.modelCapabilities[capKey]?.enabledCapabilities.includes("screenshot") ?? false;
 					const setScreenshot = (on: boolean) => {
-						const entry = settings.modelCapabilities[capKey] ?? { disabledCapabilities: [] };
-						entry.disabledCapabilities = on
-							? entry.disabledCapabilities.filter((c) => c !== "screenshot")
-							: entry.disabledCapabilities.includes("screenshot")
-								? entry.disabledCapabilities
-								: [...entry.disabledCapabilities, "screenshot"];
-						if (entry.disabledCapabilities.length === 0) delete settings.modelCapabilities[capKey];
+						const entry = settings.modelCapabilities[capKey] ?? { enabledCapabilities: [] };
+						entry.enabledCapabilities = on
+							? entry.enabledCapabilities.includes("screenshot")
+								? entry.enabledCapabilities
+								: [...entry.enabledCapabilities, "screenshot"]
+							: entry.enabledCapabilities.filter((c) => c !== "screenshot");
+						if (entry.enabledCapabilities.length === 0) delete settings.modelCapabilities[capKey];
 						else settings.modelCapabilities[capKey] = entry;
 						dirty();
 					};
 					return (
-						<div className="model-row" key={m.id}>
+						<div className={`model-row${m.enabled ? "" : " model-row-disabled"}`} key={m.id}>
 							<div className="model-row-header">
+								<label className="model-enable" title={m.enabled ? "Disable model" : "Enable model"}>
+									<input
+										type="checkbox"
+										checked={m.enabled}
+										onClick={(e) => e.stopPropagation()}
+										onChange={(e) => { m.enabled = (e.target as HTMLInputElement).checked; dirty(); }}
+									/>
+								</label>
 								<code>{m.name}</code>
 								<span className="capability-desc">{settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId}</span>
-								{settings.defaultModelId === m.id && <span className="active-badge">default</span>}
 								<button
 									type="button"
 									className="skill-delete"
@@ -840,7 +833,7 @@ function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; 
 					onChange={(e) => { settings.subAgentModel = (e.target as HTMLSelectElement).value; dirty(); }}
 				>
 					<option value="">Use main model</option>
-					{settings.models.map((m) => (
+					{settings.models.filter((m) => m.enabled).map((m) => (
 						<option key={m.id} value={m.id}>
 							{settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId}: {m.name}
 						</option>

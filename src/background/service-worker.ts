@@ -5,7 +5,7 @@ import { getSkill, listEnabledSkills } from "@shared/skills";
 import { closeSandbox, setSandboxContext } from "@shared/agent/tools/sandbox";
 import { ensureCustomToolsLoaded, refreshCustomTools, syncBuiltinTools } from "@shared/custom-tools";
 import { runSubagent } from "@shared/agent/subagent";
-import { CAPABILITY_INFO, loadSettings, resolveDefaultModel, type Capability } from "@shared/config";
+import { CAPABILITY_INFO, loadSettings, resolveModelId, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
 import { callContent, findTargetTab, isProtectedUrl, setPanelWindow, setTargetTab } from "@shared/transport/tab-rpc";
 import { captureScreenshotContent } from "@shared/agent/tools/browser/screenshot";
@@ -13,6 +13,7 @@ import { type ImageContent, type TextContent } from "@shared/ai/types";
 import { type ChatContextMode } from "@shared/transport/protocol";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
+import { setSubtaskTurnModel } from "./subtask";
 
 chrome.runtime.onInstalled.addListener(() => {
 	if (chrome.sidePanel?.setPanelBehavior) {
@@ -139,10 +140,10 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 	try {
 		const settings = await loadSettings();
 		setupProviderRegistry(settings.providers);
-		const resolved = resolveDefaultModel(settings);
+		const resolved = msg.modelId ? resolveModelId(msg.modelId, settings) : null;
 
 		if (!resolved) {
-			sendErrorEnd("No default model configured. Open Settings → Models.");
+			sendErrorEnd("No model selected (or it was disabled). Pick one above the input.");
 			return;
 		}
 
@@ -154,14 +155,15 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		const { provider, model } = resolved;
 		const controller = new AbortController();
 		activeTurns.set(turnId, { controller, port });
+		setSubtaskTurnModel(controller.signal, model.id);
 		setTargetTab(undefined);
 
 		// Per-model capability overrides. All capabilities are enabled by default
-		// (including every sandbox-exposed tool); only the model's own disabled list
-		// (currently only `screenshot` is user-toggleable) is subtracted.
-		const disabled = settings.modelCapabilities[model.id]?.disabledCapabilities ?? [];
+		// (including every sandbox-exposed tool) except `screenshot`, which is
+		// opt-in per vision model via the model's enabled list.
+		const modelCaps = settings.modelCapabilities[model.id]?.enabledCapabilities ?? [];
 		const enabled = new Set<Capability>(Object.keys(CAPABILITY_INFO) as Capability[]);
-		for (const d of disabled) enabled.delete(d);
+		if (!modelCaps.includes("screenshot")) enabled.delete("screenshot");
 
 		try {
 			setPanelWindow(msg.windowId);
@@ -229,7 +231,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				enabled,
 				subagent: (task) => {
 					const subtaskId = `subtask-${crypto.randomUUID().slice(0, 8)}`;
-					return runSubagent(task, sandboxToolsForSubagent, systemPrompt, controller.signal, 5, subtaskId, (event) => send({ type: "agent_event", turnId, event }));
+					return runSubagent(task, sandboxToolsForSubagent, systemPrompt, controller.signal, 5, subtaskId, (event) => send({ type: "agent_event", turnId, event }), model.id);
 				},
 				eventSink: (event) => send({ type: "agent_event", turnId, event }),
 			});

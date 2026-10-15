@@ -184,6 +184,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 	private enabledCustomTools?: string[];
 	private reasoning?: string;
 	private enabledSkills?: string[];
+	private modelId?: string;
 	private handlers = new Map<string, (event: AgentEvent) => void>();
 
 	constructor(sendFn: SendFn, onMessageFn: OnMessageFn) {
@@ -216,6 +217,10 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 		this.enabledSkills = names;
 	}
 
+	setModel(id: string | undefined): void {
+		this.modelId = id;
+	}
+
 	async sendMessages(options: {
 		trigger: "submit-message" | "regenerate-message";
 		chatId: string;
@@ -231,6 +236,7 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 			type: "chat_send",
 			turnId,
 			messages: panelMessages as never,
+			...(this.modelId ? { modelId: this.modelId } : {}),
 			...(this.contextMode ? { contextMode: this.contextMode } : {}),
 			...(this.windowId !== undefined ? { windowId: this.windowId } : {}),
 			...(options.chatId ? { sessionId: options.chatId } : {}),

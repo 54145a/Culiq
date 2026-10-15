@@ -14,6 +14,7 @@ import type { ImageContent } from "@shared/ai/types";
 import { toolOutputText, toolOutputToContent } from "@shared/ai/tool-output";
 import { listUserCustomTools } from "@shared/custom-tools/storage";
 import type { CustomToolMeta } from "@shared/custom-tools/types";
+import { SETTINGS_STORAGE_KEY, loadSettings, type CuliqSettings, type ModelConfig } from "@shared/config";
 
 export interface ChatTransport {
 	send(msg: PanelToBg): void;
@@ -514,6 +515,9 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	const [skills, setSkills] = useState<Skill[]>([]);
 	const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
 	const [editingId, setEditingId] = useState<string | null>(null);
+	const [enabledModels, setEnabledModels] = useState<ModelConfig[]>([]);
+	const [modelProviders, setModelProviders] = useState<CuliqSettings["providers"]>([]);
+	const [modelId, setModelId] = useState("");
 	const logRef = useRef<HTMLUListElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -557,6 +561,27 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	}, []);
 
 	useEffect(() => {
+		const apply = (s: CuliqSettings) => {
+			const enabled = s.models.filter((m) => m.enabled);
+			setEnabledModels(enabled);
+			setModelProviders(s.providers);
+			setModelId((prev) => {
+				if (prev && enabled.some((m) => m.id === prev)) return prev;
+				const saved = currentSession.modelId;
+				if (saved && enabled.some((m) => m.id === saved)) return saved;
+				return enabled[0]?.id ?? "";
+			});
+		};
+		void loadSettings().then(apply);
+		const onChanged = (changes: Record<string, { newValue?: unknown }>, area: string) => {
+			if (area !== "local" || !(SETTINGS_STORAGE_KEY in changes)) return;
+			void loadSettings().then(apply);
+		};
+		chrome.storage.onChanged.addListener(onChanged);
+		return () => chrome.storage.onChanged.removeListener(onChanged);
+	}, []);
+
+	useEffect(() => {
 		if (status !== "ready" || messages.length === 0) return;
 		const last = messages[messages.length - 1];
 		if (last?.role !== "assistant") return;
@@ -578,6 +603,12 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	const busy = status === "streaming" || status === "submitted";
 
 	const handleSubmit = useCallback((text: string) => {
+		if (!modelId) {
+			addNotice("msg err", "No model enabled. Enable one in Settings → Models.");
+			return;
+		}
+		chatTransport.setModel(modelId);
+		currentSession.modelId = modelId;
 		const mode = contextMode === "none" ? undefined : contextMode;
 		chatTransport.setContextMode(mode);
 		chatTransport.setWindowId(getPanelWindowId());
@@ -596,7 +627,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		void sendMessage({ text });
 		setContextMode("none");
 		setEnabledSkills([]);
-	}, [sendMessage, contextMode, chatTransport, customTools, enabledTools, reasoning, editingId, setMessages, enabledSkills]);
+	}, [sendMessage, contextMode, chatTransport, customTools, enabledTools, reasoning, editingId, setMessages, enabledSkills, modelId, addNotice]);
 
 	const handleStop = useCallback(() => { void stop(); }, [stop]);
 
@@ -666,6 +697,25 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 				))}
 			</ul>
 			<div className="context-row">
+				<label className="context-field">
+					<span>Model</span>
+					<select
+						value={modelId}
+						onChange={(e) => {
+							const id = (e.target as HTMLSelectElement).value;
+							setModelId(id);
+							currentSession.modelId = id;
+							if (currentSession.messages.length > 0) void persistCurrent();
+						}}
+					>
+						{enabledModels.length === 0 && <option value="">No enabled models</option>}
+						{enabledModels.map((m) => (
+							<option key={m.id} value={m.id}>
+								{m.name} ({modelProviders.find((p) => p.id === m.providerId)?.name ?? m.providerId})
+							</option>
+						))}
+					</select>
+				</label>
 				<label className="context-field">
 					<span>Context</span>
 					<select

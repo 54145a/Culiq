@@ -975,12 +975,17 @@ button.danger:hover {
 	font-weight: 600;
 }
 
-.model-row-header .active-badge {
-	font-size: 0.72rem;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-	color: #4a90e2;
-	font-weight: 600;
+.model-enable {
+	display: flex;
+	align-items: center;
+}
+
+.model-row-disabled {
+	opacity: 0.55;
+}
+
+.model-row-disabled .model-row-controls {
+	pointer-events: none;
 }
 
 .model-row-controls {

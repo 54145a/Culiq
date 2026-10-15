@@ -10,6 +10,8 @@ export interface Session {
 	createdAt: number;
 	updatedAt: number;
 	messages: Message[];
+	/** Model selected for this session (`providerId:modelName`). */
+	modelId?: string;
 }
 
 interface SessionsStore {
