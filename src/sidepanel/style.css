@@ -1006,19 +1006,8 @@ button.danger:hover {
 .model-row-controls input[type="number"] {
 	font-size: 0.85rem;
 	color: inherit;
-	width: 100px;
-}
-
-.settings-default-model {
-	display: flex;
-	align-items: stretch;
-	gap: 8px;
-	padding: 8px 0;
-	font-size: 0.85rem;
-}
-
-.settings-default-model select {
-	font-size: 0.85rem;
+	width: 100%;
+	box-sizing: border-box;
 }
 
 /* sessions view */
