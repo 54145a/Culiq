@@ -14,6 +14,10 @@ import { type ChatContextMode } from "@shared/transport/protocol";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
 import { setSubtaskTurnModel } from "./subtask";
+import { flushConsoleBuffer, recordConsoleMessage } from "./console-buffer";
+import type { ConsoleRuntimeMessage } from "@shared/transport/console-rpc";
+
+chrome.runtime.onSuspend.addListener(flushConsoleBuffer);
 
 chrome.runtime.onInstalled.addListener(() => {
 	if (chrome.sidePanel?.setPanelBehavior) {
@@ -31,8 +35,11 @@ void syncBuiltinTools()
 	.catch((err) => console.error("[culiq] syncBuiltinTools failed:", err));
 
 // The settings UI asks the SW to re-scan OPFS after a tool is installed/removed.
-chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
+chrome.runtime.onMessage.addListener((msg: { type?: string }, sender) => {
 	if (msg?.type === "reload_custom_tools") void refreshCustomTools();
+	if (msg?.type === "console_entry" && sender.tab?.id !== undefined) {
+		void recordConsoleMessage(msg as unknown as ConsoleRuntimeMessage, sender.tab.id);
+	}
 });
 
 // Firefox: clicking the toolbar action toggles the sidebar.
