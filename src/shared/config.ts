@@ -12,6 +12,7 @@ export type Capability =
 	| "switch_tab"
 	| "reload_tab"
 	| "fetch_url"
+	| "read_console"
 	| "use_skill"
 	| "sandbox_exec"
 	| "subtask"
@@ -60,6 +61,10 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	use_skill: {
 		description:
 			"Access a skill's files (see <available_skills>): omit `file` for the skill index (truncated instructions + file listing), or pass `file` to read a specific file. Skills encode reusable workflows — browse and read files as needed.",
+	},
+	read_console: {
+		description:
+			"Read the page's console output (log/warn/error/uncaught exceptions) captured since the console hook was installed on that tab. Use it after `navigate`, `click` or `eval_js` to check what a page logged — errors and stack traces land here. `level` filters by severity, `clear` empties the buffer after reading. Entries from before the hook was installed (or from a tab opened before the extension loaded) are not captured.",
 	},
 	sandbox_exec: {
 		description:
