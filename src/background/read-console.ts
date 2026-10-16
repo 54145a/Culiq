@@ -2,6 +2,7 @@ import { findTargetTab } from "@shared/transport/tab-rpc";
 import { CAPABILITY_INFO } from "@shared/config";
 import type { AgentTool } from "@shared/agent/types";
 import { clearConsoleBuffer, readConsoleBuffer } from "./console-buffer";
+import { ensureConsoleShim } from "./console-inject";
 
 const LEVEL_ORDER = { debug: 0, log: 1, info: 2, warn: 3, error: 4, trace: 5 } as const;
 
@@ -37,6 +38,10 @@ export const readConsoleTool: AgentTool = {
 		if (!tab || tab.id === undefined) {
 			return { content: [{ type: "text", text: "No active tab found." }], isError: true };
 		}
+
+		// Re-arm the hook on tabs that predate the extension (registration only
+		// covers future navigations) — a no-op when the shim is already there.
+		await ensureConsoleShim(tab.id);
 
 		const { entries, shimSeen } = await readConsoleBuffer(tab.id);
 		const filtered = level ? entries.filter((e) => LEVEL_ORDER[e.level] >= LEVEL_ORDER[level]) : entries;
