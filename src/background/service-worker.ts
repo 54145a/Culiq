@@ -15,9 +15,11 @@ import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/pr
 import { getTools } from "./tool-registry";
 import { setSubtaskTurnModel } from "./subtask";
 import { flushConsoleBuffer, recordConsoleMessage } from "./console-buffer";
+import { registerConsoleShim } from "./console-inject";
 import type { ConsoleRuntimeMessage } from "@shared/transport/console-rpc";
 
 chrome.runtime.onSuspend.addListener(flushConsoleBuffer);
+void registerConsoleShim().catch((err) => console.warn("[culiq] console shim registration failed:", err));
 
 chrome.runtime.onInstalled.addListener(() => {
 	if (chrome.sidePanel?.setPanelBehavior) {
