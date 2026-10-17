@@ -3,6 +3,17 @@ import { runSubagent } from "@shared/agent/subagent";
 import type { AgentEventSink, AgentTool } from "@shared/agent/types";
 import { getTools } from "./tool-registry";
 
+/**
+ * The model id the current turn runs with, keyed by the turn's AbortSignal —
+ * same pattern as the sandbox per-turn context. Used when no explicit
+ * sub-agent model is configured.
+ */
+const turnModels = new WeakMap<AbortSignal, string>();
+
+export function setSubtaskTurnModel(signal: AbortSignal, modelId: string): void {
+	turnModels.set(signal, modelId);
+}
+
 export const subtaskTool: AgentTool = {
 	name: "subtask",
 	description:
@@ -31,7 +42,7 @@ export const subtaskTool: AgentTool = {
 			(tool) => !tool.custom && tool.name !== "subtask" && tool.name !== "sandbox_exec",
 		);
 		const subtaskId = `subtask-${crypto.randomUUID().slice(0, 8)}`;
-		const text = await runSubagent(task, tools, getSystemPrompt({ tools }), signal, maxTurns, subtaskId, emit);
+		const text = await runSubagent(task, tools, getSystemPrompt({ tools }), signal, maxTurns, subtaskId, emit, signal ? turnModels.get(signal) : undefined);
 		return { content: [{ type: "text", text }] };
 	},
 };

@@ -69,34 +69,6 @@ jobs:
           mkdir -p artifacts
           (cd dist-${{ matrix.target }} && zip -qr "../artifacts/culiq-${{ steps.meta.outputs.tag }}-${{ matrix.target }}.${{ matrix.ext }}" .)
 
-      # AMO credentials are optional: without them the unsigned xpi ships instead,
-      # so a release never hinges on the secrets being present. The signed xpi is
-      # copied here rather than in a later step, because continue-on-error masks
-      # the outcome (a failed sign still reports success).
-      - name: Sign Firefox build (AMO unlisted)
-        id: sign
-        if: matrix.target == 'firefox' && steps.meta.outputs.version != ''
-        continue-on-error: true
-        env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        run: |
-          if [[ -z "$AMO_JWT_ISSUER" || -z "$AMO_JWT_SECRET" ]]; then
-            echo "::warning::AMO credentials are not configured — releasing the unsigned xpi"
-            exit 0
-          fi
-          pnpm exec web-ext sign \
-            --source-dir=dist-firefox \
-            --artifacts-dir=signed \
-            --api-key="$AMO_JWT_ISSUER" \
-            --api-secret="$AMO_JWT_SECRET" \
-            --channel=unlisted
-          cp signed/*.xpi "artifacts/culiq-${{ steps.meta.outputs.tag }}-firefox.xpi"
-
-      - name: Report a failed AMO signing attempt
-        if: steps.sign.outcome == 'failure'
-        run: echo "::warning::AMO signing failed — releasing the unsigned xpi"
-
       - uses: actions/upload-artifact@v7
         with:
           name: culiq-${{ steps.meta.outputs.tag }}-${{ matrix.target }}
@@ -122,3 +94,51 @@ jobs:
           fail_on_unmatched_files: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  publish-npm:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve version from tag
+        id: meta
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Verify version matches tag
+        working-directory: packages/create-culiq
+        run: |
+          pkg_version=$(node -p "require('./package.json').version")
+          if [[ "$pkg_version" != "${{ steps.meta.outputs.version }}" ]]; then
+            echo "::error::package.json version ($pkg_version) does not match tag (${{ steps.meta.outputs.version }}) — bump the version in a commit before tagging"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        working-directory: packages/create-culiq
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version="${{ steps.meta.outputs.version }}"
+          if [[ "$version" == *-* ]]; then
+            # Prerelease: publish to a matching dist-tag (beta, rc, …)
+            # so `npm install create-culiq` still resolves to the
+            # latest stable on `latest`.
+            dist_tag="${version#*-}"
+            dist_tag="${dist_tag%%.*}"
+            pnpm publish --ignore-scripts --tag "$dist_tag"
+          else
+            pnpm publish --ignore-scripts
+          fi

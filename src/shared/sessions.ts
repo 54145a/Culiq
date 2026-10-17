@@ -10,6 +10,8 @@ export interface Session {
 	createdAt: number;
 	updatedAt: number;
 	messages: Message[];
+	/** Model selected for this session (`providerId:modelName`). */
+	modelId?: string;
 }
 
 interface SessionsStore {
@@ -105,7 +107,7 @@ export function newSession(messages: Message[] = []): Session {
 export function deriveTitle(messages: Message[]): string {
 	for (const m of messages) {
 		if (m.role !== "user") continue;
-		const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join(" ");
+		const text = typeof m.content === "string" ? m.content : m.content.filter((c) => c.type === "text").map((c) => c.text).join(" ");
 		const trimmed = text.replace(/\s+/g, " ").trim();
 		if (trimmed.length === 0) continue;
 		return trimmed.length > TITLE_MAX ? `${trimmed.slice(0, TITLE_MAX)}…` : trimmed;

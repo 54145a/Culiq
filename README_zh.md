@@ -79,12 +79,14 @@ pnpm run build         # 同时产出 dist-chrome/ 和 dist-firefox/
 
 在侧边栏 **Settings** 中配置服务商：
 
-| 服务商 | 默认模型 | base URL |
+| 服务商 | 内置模型 | base URL |
 | --- | --- | --- |
-| OpenAI | `gpt-4o-mini` | 可自定义 |
-| Anthropic | `claude-sonnet-4-5-20250929` | 可自定义 |
+| OpenAI | `gpt-4o-mini` 等 | 可自定义 |
+| Anthropic | `claude-sonnet-4-5-20250929` 等 | 可自定义 |
 
-填入 API key，按需修改 base URL 或 Model ID，Save 保存。点击服务商卡片切换激活项。可以通过修改 base URL 接入 OpenAI Chat Completions 或 Anthropic Messages 兼容端点（DeepSeek、Moonshot、本地 vLLM 等）。截图功能要求所选模型和端点支持视觉输入。API key 保存在 `chrome.storage.local`，除了请求 LLM API 不会发到其他地方。
+填入 API key，按需修改 base URL 或 Model ID，Save 保存。可以通过修改 base URL 接入 OpenAI Chat Completions 或 Anthropic Messages 兼容端点（DeepSeek、Moonshot、本地 vLLM 等）。截图功能要求所选模型和端点支持视觉输入。API key 保存在 `chrome.storage.local`，除了请求 LLM API 不会发到其他地方。
+
+**选择模型**：聊天输入框上方的 **Model** 选择器列出已启用的模型，按会话记忆。在 **Settings → Models** 中每个模型都有启用/禁用开关——通过服务商的 "Fetch models" 批量拉取的模型默认禁用，手动启用后才会出现在选择器里。子代理模型（Settings → Sub-agent）可留空跟随当前会话的模型。
 
 **Context management**：当对话接近模型的上下文窗口时，自动把最旧的轮次摘要化、保留最近的对话原文，避免长会话超出限制。在 **Settings → Context management** 中配置：
 

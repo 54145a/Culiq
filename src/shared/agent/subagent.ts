@@ -1,4 +1,4 @@
-import { loadSettings, resolveDefaultModel, resolveModelId } from "@shared/config";
+import { firstEnabledModel, loadSettings, resolveModelId } from "@shared/config";
 import { runAgentLoop } from "./agent-loop";
 import type { AgentContext, AgentEventSink, AgentTool } from "./types";
 
@@ -8,6 +8,8 @@ import type { AgentContext, AgentEventSink, AgentTool } from "./types";
  * token-efficient for quick, single-purpose goals. Lives outside background/ so
  * both the native `subtask` tool and the sandbox bridge can use it without
  * dragging tool-registry into an import cycle (tools are passed in).
+ * `turnModelId` is the model the main conversation is running with — used when
+ * no explicit sub-agent model is configured.
  */
 export async function runSubagent(
 	task: string,
@@ -17,6 +19,7 @@ export async function runSubagent(
 	maxTurns = 5,
 	subtaskId?: string,
 	emit?: AgentEventSink,
+	turnModelId?: string,
 ): Promise<string> {
 	const settings = await loadSettings();
 	const raw = settings.subAgentModel.trim();
@@ -27,17 +30,24 @@ export async function runSubagent(
 	if (raw) {
 		const resolved = resolveModelId(raw, settings);
 		if (!resolved) {
-			throw new Error(`Model "${raw}" not found. Add it in Settings → Providers.`);
+			throw new Error(`Model "${raw}" not found or disabled. Fix it in Settings → Models.`);
 		}
 		providerId = resolved.provider.id;
 		modelId = resolved.model.name;
 	} else {
-		const defaultModel = resolveDefaultModel(settings);
-		if (!defaultModel) {
-			throw new Error("No sub-agent model configured. Set Sub-agent model in Settings → Providers.");
+		const resolved = turnModelId ? resolveModelId(turnModelId, settings) : null;
+		if (resolved) {
+			providerId = resolved.provider.id;
+			modelId = resolved.model.name;
+		} else {
+			const model = firstEnabledModel(settings);
+			const provider = model && settings.providers.find((p) => p.id === model.providerId);
+			if (!model || !provider) {
+				throw new Error("No enabled model to run the sub-agent with. Enable one in Settings → Models.");
+			}
+			providerId = provider.id;
+			modelId = model.name;
 		}
-		providerId = defaultModel.provider.id;
-		modelId = defaultModel.model.name;
 	}
 
 	const context: AgentContext = {

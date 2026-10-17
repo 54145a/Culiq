@@ -1,16 +1,25 @@
 import { setupProviderRegistry } from "@shared/ai/sdk";
 import { runAgentLoop } from "@shared/agent";
 import { getSystemPrompt } from "@shared/agent/system-prompt";
-import { listEnabledSkills } from "@shared/skills";
+import { getSkill, listEnabledSkills } from "@shared/skills";
 import { closeSandbox, setSandboxContext } from "@shared/agent/tools/sandbox";
 import { ensureCustomToolsLoaded, refreshCustomTools, syncBuiltinTools } from "@shared/custom-tools";
 import { runSubagent } from "@shared/agent/subagent";
-import { CAPABILITY_INFO, loadSettings, resolveDefaultModel, type Capability } from "@shared/config";
+import { CAPABILITY_INFO, loadSettings, resolveModelId, type Capability } from "@shared/config";
 import { closeMcp, createMcpTools } from "@shared/mcp";
-import { findTargetTab, isProtectedUrl, setPanelWindow, setTargetTab } from "@shared/transport/tab-rpc";
+import { callContent, findTargetTab, isProtectedUrl, setPanelWindow, setTargetTab } from "@shared/transport/tab-rpc";
+import { captureScreenshotContent } from "@shared/agent/tools/browser/screenshot";
+import { type ImageContent, type TextContent } from "@shared/ai/types";
 import { type ChatContextMode } from "@shared/transport/protocol";
 import { type BgToPanel, PANEL_PORT, type PanelToBg } from "@shared/transport/protocol";
 import { getTools } from "./tool-registry";
+import { setSubtaskTurnModel } from "./subtask";
+import { flushConsoleBuffer, recordConsoleMessage } from "./console-buffer";
+import { registerConsoleShim } from "./console-inject";
+import type { ConsoleRuntimeMessage } from "@shared/transport/console-rpc";
+
+chrome.runtime.onSuspend.addListener(flushConsoleBuffer);
+void registerConsoleShim().catch((err) => console.warn("[culiq] console shim registration failed:", err));
 
 chrome.runtime.onInstalled.addListener(() => {
 	if (chrome.sidePanel?.setPanelBehavior) {
@@ -28,8 +37,11 @@ void syncBuiltinTools()
 	.catch((err) => console.error("[culiq] syncBuiltinTools failed:", err));
 
 // The settings UI asks the SW to re-scan OPFS after a tool is installed/removed.
-chrome.runtime.onMessage.addListener((msg: { type?: string }) => {
+chrome.runtime.onMessage.addListener((msg: { type?: string }, sender) => {
 	if (msg?.type === "reload_custom_tools") void refreshCustomTools();
+	if (msg?.type === "console_entry" && sender.tab?.id !== undefined) {
+		void recordConsoleMessage(msg as unknown as ConsoleRuntimeMessage, sender.tab.id);
+	}
 });
 
 // Firefox: clicking the toolbar action toggles the sidebar.
@@ -137,10 +149,10 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 	try {
 		const settings = await loadSettings();
 		setupProviderRegistry(settings.providers);
-		const resolved = resolveDefaultModel(settings);
+		const resolved = msg.modelId ? resolveModelId(msg.modelId, settings) : null;
 
 		if (!resolved) {
-			sendErrorEnd("No default model configured. Open Settings → Models.");
+			sendErrorEnd("No model selected (or it was disabled). Pick one above the input.");
 			return;
 		}
 
@@ -152,20 +164,24 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 		const { provider, model } = resolved;
 		const controller = new AbortController();
 		activeTurns.set(turnId, { controller, port });
+		setSubtaskTurnModel(controller.signal, model.id);
 		setTargetTab(undefined);
 
 		// Per-model capability overrides. All capabilities are enabled by default
-		// (including every sandbox-exposed tool); only the model's own disabled list
-		// (currently only `screenshot` is user-toggleable) is subtracted.
-		const disabled = settings.modelCapabilities[model.id]?.disabledCapabilities ?? [];
+		// (including every sandbox-exposed tool) except `screenshot`, which is
+		// opt-in per vision model via the model's enabled list.
+		const modelCaps = settings.modelCapabilities[model.id]?.enabledCapabilities ?? [];
 		const enabled = new Set<Capability>(Object.keys(CAPABILITY_INFO) as Capability[]);
-		for (const d of disabled) enabled.delete(d);
+		if (!modelCaps.includes("screenshot")) enabled.delete("screenshot");
 
 		try {
 			setPanelWindow(msg.windowId);
 			await ensureCustomToolsLoaded();
 			const skills = enabled.has("use_skill") ? await listEnabledSkills() : [];
-			const context = await buildSendTimeContext(msg.contextMode);
+			const lastSent = msg.messages[msg.messages.length - 1];
+			const wantsPageShare = msg.contextMode === "page+screenshot" && lastSent?.role === "user";
+			const pageShare = wantsPageShare ? await buildPageShare(controller.signal, enabled.has("screenshot")) : null;
+			const context = await buildSendTimeContext(msg.contextMode, pageShare !== null);
 			const mcpTools = await createMcpTools(controller.signal);
 			const customOverride = msg.enabledCustomTools;
 			const allTools = [
@@ -181,20 +197,40 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 			const systemPrompt = getSystemPrompt({
 				skills,
 				sandboxEnabled: enabled.has("sandbox_exec"),
-				context,
 				tools: allTools,
 			});
 
-			// Append current time so the agent knows the session timestamp.
+			// Append the send-time context (current page / open tabs), the
+			// "page + screenshot" share and the current time to the user's
+			// own message — context belongs in the message flow, not the
+			// system prompt. A second user turn would break the providers'
+			// user/assistant alternation.
 			const messages = [...msg.messages];
 			const last = messages[messages.length - 1];
 			if (last && last.role === "user") {
-				const ts = `\n\n[current time: ${new Date().toLocaleString()}]`;
-				if (typeof last.content === "string") {
-					messages[messages.length - 1] = { ...last, content: last.content + ts };
-				} else {
-					messages[messages.length - 1] = { ...last, content: [...last.content, { type: "text", text: ts }] };
+				const extra: Array<TextContent | ImageContent> = [
+					...(context ? [{ type: "text" as const, text: context }] : []),
+					...(pageShare?.blocks ?? []),
+				];
+
+				// Inject selected skills' SKILL.md content into this message.
+				if (msg.enabledSkills?.length) {
+					for (const name of msg.enabledSkills) {
+						const skill = await getSkill(name);
+						if (skill) {
+							extra.push({ type: "text", text: `[skill: ${skill.name}]\n${skill.content}` });
+						}
+					}
 				}
+
+				extra.push({ type: "text", text: `[current time: ${new Date().toLocaleString()}]` });
+				const existing: Array<TextContent | ImageContent> =
+					typeof last.content === "string"
+						? last.content
+							? [{ type: "text", text: last.content }]
+							: []
+						: last.content;
+				messages[messages.length - 1] = { ...last, content: [...existing, ...extra] };
 			}
 
 			const sandboxToolsForSubagent = allTools.filter(
@@ -204,7 +240,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				enabled,
 				subagent: (task) => {
 					const subtaskId = `subtask-${crypto.randomUUID().slice(0, 8)}`;
-					return runSubagent(task, sandboxToolsForSubagent, systemPrompt, controller.signal, 5, subtaskId, (event) => send({ type: "agent_event", turnId, event }));
+					return runSubagent(task, sandboxToolsForSubagent, systemPrompt, controller.signal, 5, subtaskId, (event) => send({ type: "agent_event", turnId, event }), model.id);
 				},
 				eventSink: (event) => send({ type: "agent_event", turnId, event }),
 			});
@@ -223,7 +259,7 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
 				},
 				(event) => send({ type: "agent_event", turnId, event }),
 				controller.signal,
-				context || undefined,
+				[context, pageShare?.summary].filter(Boolean).join("\n\n") || undefined,
 			);
 		} finally {
 			closeSandbox(controller.signal);
@@ -241,11 +277,13 @@ async function handleChat(msg: Extract<PanelToBg, { type: "chat_send" }>, send: 
  * Meta-context appended to the system prompt at send time:
  * - contextMode "tabs": all open tabs (id/title/url) so the agent can switch between them.
  * - contextMode "current": the focused tab's id/title/url.
+ * - contextMode "page+screenshot" (when the share succeeded): the page's text and
+ *   screenshot ride along in the user's message.
  * - always: if the focused page is a browser-internal page (and not our own
  *   extension page), warn the agent that DOM tools cannot touch it and it may be
  *   a fresh/blank tab, so it navigates instead of failing read_dom.
  */
-async function buildSendTimeContext(contextMode: ChatContextMode | undefined): Promise<string> {
+async function buildSendTimeContext(contextMode: ChatContextMode | undefined, pageShared: boolean): Promise<string> {
 	const blocks: string[] = [];
 	// The "current page" is the tab next to the panel (its own window's active
 	// tab), not the focused window — the user may have switched windows.
@@ -264,6 +302,11 @@ async function buildSendTimeContext(contextMode: ChatContextMode | undefined): P
 		}
 	} else if (contextMode === "current" && currentUrl && !internal && !isOurPage) {
 		blocks.push(`The current page is "${current?.title ?? ""}" (tab ${current?.id}, ${currentUrl}).`);
+	} else if (contextMode === "page+screenshot" && pageShared && currentUrl) {
+		blocks.push(
+			`The user shared the current page as context in their latest message: "${current?.title ?? ""}" (tab ${current?.id}, ${currentUrl}). ` +
+				`Work from that attached material instead of calling read_dom or screenshot. It is a snapshot from when the message was sent — re-read the page if it may have changed since.`,
+		);
 	}
 
 	if (internal) {
@@ -273,4 +316,62 @@ async function buildSendTimeContext(contextMode: ChatContextMode | undefined): P
 	}
 
 	return blocks.join("\n\n");
+}
+
+const PAGE_SHARE_MAX_CHARS = 4000;
+
+interface PageShare {
+	blocks: Array<TextContent | ImageContent>;
+	summary: string;
+}
+
+/**
+ * Context mode "page+screenshot": attach the current page's rendered text and a
+ * screenshot to the outgoing user message, so the agent starts from what the
+ * user is looking at instead of spending turns on read_dom/screenshot.
+ *
+ * One-shot by construction: the panel rebuilds the history from its own UI
+ * messages on every send, so neither the text nor the image is persisted or
+ * re-sent next turn. The two halves are attempted independently — a page the
+ * content script cannot reach still yields a screenshot, and vice versa.
+ */
+async function buildPageShare(signal: AbortSignal, withImage: boolean): Promise<PageShare | null> {
+	const tab = await findTargetTab();
+	if (!tab?.url || isProtectedUrl(tab.url)) return null;
+
+	const blocks: Array<TextContent | ImageContent> = [];
+	const notes: string[] = [];
+
+	try {
+		const dom = await callContent({ method: "read_dom", mode: "markdown", maxChars: PAGE_SHARE_MAX_CHARS });
+		if (dom.content.trim()) {
+			blocks.push({
+				type: "text",
+				text: `[Current page text — "${dom.title}", captured when this message was sent${dom.truncated ? `, first ${dom.chars} chars` : ""}]\n\n${dom.content}`,
+			});
+			notes.push(`page text (${dom.chars} chars${dom.truncated ? ", truncated" : ""})`);
+		}
+	} catch (err) {
+		console.warn("[culiq sw] page share: read_dom failed:", err);
+	}
+
+	if (withImage) {
+		try {
+			const shot = await captureScreenshotContent(signal);
+			blocks.push({
+				type: "text",
+				text: `[Attached to this message by the "current page + screenshot" context mode — a snapshot from when the message was sent]\n${shot.prompt}`,
+			});
+			blocks.push(shot.image);
+			notes.push(`screenshot (${shot.mediaType === "image/webp" ? "WebP" : "PNG"}, ${shot.bytes} bytes)`);
+		} catch (err) {
+			console.warn("[culiq sw] page share: screenshot failed:", err);
+		}
+	}
+
+	if (blocks.length === 0) return null;
+	return {
+		blocks,
+		summary: `Page shared as context: ${notes.join(" + ")}. Attached to this send only; not saved to the session.`,
+	};
 }

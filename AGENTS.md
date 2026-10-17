@@ -6,6 +6,14 @@ Do NOT run `git push` or create PRs unless the user explicitly asks. Even if the
 
 Accidental pushes can leak secrets, internal APIs, or unfinished code to public repositories. This is irreversible.
 
+## Critical: commit after every change, in small granular commits
+
+Commit locally at the end of every round of changes — do not leave a batch of unrelated work uncommitted. If something breaks, a granular history is what makes rollback possible.
+
+- One commit per logical change (one feature, one fix, one docs update) — never mix unrelated work.
+- Each commit must compile and pass `pnpm check` on its own.
+- Commit message: conventional prefix (`feat:`, `fix:`, `chore:`, `docs:`) plus a body explaining the why.
+
 ## Tooling
 
 - **Package manager:** pnpm (never npm)
@@ -34,6 +42,10 @@ Accidental pushes can leak secrets, internal APIs, or unfinished code to public 
 **`fetch_url`** composes `navigate` + `read_dom` (no direct `chrome.tabs` API from the tool itself). In standalone/popup mode, it detects this internally and handles tab switching.
 
 **Session storage:** `chrome.storage.local` key `culiq.sessions.v2`. Single blob `Record<string, Session>`. Tool result messages are stripped of non-text blocks before persisting.
+
+**Message content model:** assistant messages hold two kinds of blocks. Provider content (`text`, `thinking`, `toolCall`) is the only thing that maps to LLM messages. Display-only blocks (`context`, `usage`, `error`, `compress`, `subtask`, `bridgeCall`) render as UI cards and must never be stored as or converted into provider content — providers reject an assistant message with no content and no tool calls (HTTP 400), which poisons every subsequent send. Sandbox bridge calls (`sandbox.fetchUrl`, `sandbox.tabs.query`, ...) are display-only: `handleBridge` emits `bridge_execution_start/end` events → `agentEventToChunk` maps them to `data-bridge` parts → they persist as `bridgeCall` blocks. They are NOT LLM tool calls (their dotted names and array arguments would be rejected by the provider).
+
+**Send-time context:** the current page / open tabs are appended to the last user message (in the message flow), not injected into the system prompt.
 
 ## Key files
 

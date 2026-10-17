@@ -1,8 +1,10 @@
 # Culiq
 
+<img src="./img/README/Screenshot_20261017_083046.png" alt="Culiq" width="30%" >
+
 **English** | [中文](README_zh.md)
 
-> Fork of Curio that aims to create an extendable browser agent platform
+> Maintained Fork of Curio that aims to create an extendable browser agent platform
 
 A browser-extension browser agent that automatically operates the browser for you — opening pages, reading content, clicking buttons, filling forms, running JavaScript, and doing basic reverse engineering. Supports Chrome, Edge, and Firefox.
 
@@ -79,12 +81,14 @@ Load the unpacked extension: use `dist-chrome/` in Chrome, or `about:debugging#/
 
 Configure providers in the sidebar **Settings**:
 
-| Provider | Default model | base URL |
+| Provider | Bundled models | base URL |
 | --- | --- | --- |
-| OpenAI | `gpt-4o-mini` | custom |
-| Anthropic | `claude-sonnet-4-5-20250929` | custom |
+| OpenAI | `gpt-4o-mini` and more | custom |
+| Anthropic | `claude-sonnet-4-5-20250929` and more | custom |
 
-Fill in the API key, adjust the base URL or Model ID as needed, and Save. Click a provider card to activate it. OpenAI Chat Completions or Anthropic Messages compatible endpoints (DeepSeek, Moonshot, local vLLM, etc.) can be reached by changing the base URL. Screenshots require a model and endpoint with vision support. API keys are stored in `chrome.storage.local` and are only sent to the LLM API.
+Fill in the API key, adjust the base URL or Model ID as needed, and Save. OpenAI Chat Completions or Anthropic Messages compatible endpoints (DeepSeek, Moonshot, local vLLM, etc.) can be reached by changing the base URL. Screenshots require a model and endpoint with vision support. API keys are stored in `chrome.storage.local` and are only sent to the LLM API.
+
+**Picking a model**: the **Model** picker above the chat input lists enabled models and is remembered per session. In **Settings → Models** every model has an enable/disable switch — bulk-added models (via a provider's "Fetch models" button) start disabled until you turn them on. The sub-agent model (Settings → Sub-agent) can be left on "Use main model" to follow the conversation's model.
 
 **Context management**: when the conversation nears the model's context window, the oldest turns are summarized automatically and the recent conversation stays verbatim, avoiding overflow on long sessions. Configure in **Settings → Context management**:
 

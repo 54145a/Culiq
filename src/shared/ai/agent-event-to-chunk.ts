@@ -5,6 +5,11 @@ import type { ImageContent } from "./types";
 // API calls into one badge.
 let usageSeq = 0;
 
+// Bridge args are only known at bridge_execution_start; the end event
+// carries just the result. Buffer them so the merged data-bridge part
+// ends up with arguments and result together.
+const bridgeArgs = new Map<string, unknown[]>();
+
 /**
  * Maps an AgentEvent (from the background service worker) to a UIMessageChunk
  * that can be consumed by the AI SDK's useChat hook via processUIMessageStream.
@@ -75,6 +80,29 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 			};
 		}
 
+		case "bridge_execution_start": {
+			bridgeArgs.set(event.toolCallId, event.args);
+			return {
+				type: "data-bridge",
+				id: event.toolCallId,
+				data: { name: event.toolName, arguments: event.args },
+			};
+		}
+
+		case "bridge_execution_end": {
+			const args = bridgeArgs.get(event.toolCallId);
+			bridgeArgs.delete(event.toolCallId);
+			const text = event.result.content
+				.filter((c) => c.type === "text")
+				.map((c) => c.text)
+				.join("\n");
+			return {
+				type: "data-bridge",
+				id: event.toolCallId,
+				data: { name: event.toolName, arguments: args ?? [], result: text, isError: event.isError },
+			};
+		}
+
 		case "turn_start":
 			return { type: "start-step" };
 
@@ -102,8 +130,10 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 				data: {
 					input: event.usage.inputTokens,
 					output: event.usage.outputTokens,
+					...(event.usage.cacheReadTokens !== undefined ? { cache: event.usage.cacheReadTokens } : {}),
 					totalIn: event.cumulative.inputTokens,
 					totalOut: event.cumulative.outputTokens,
+					...(event.cumulative.cacheReadTokens !== undefined ? { totalCache: event.cumulative.cacheReadTokens } : {}),
 				},
 			};
 
@@ -117,7 +147,7 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 						: "stop";
 			if (event.stopReason === "error" && event.errorMessage) {
 				return [
-					{ type: "error", errorText: event.errorMessage },
+					{ type: "data-error", id: "error", data: event.errorMessage },
 					{ type: "finish", finishReason },
 				];
 			}

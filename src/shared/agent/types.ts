@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message, Tool, ToolResultContent, ToolResultMessage } from "../ai/types";
+import type { AssistantMessage, Message, ModelUsage, Tool, ToolResultContent, ToolResultMessage } from "../ai/types";
 import type { ContextManagementConfig } from "../config";
 
 export type ProviderId = string;
@@ -64,8 +64,16 @@ export type AgentEvent =
 			result: AgentToolDisplayResult;
 			isError: boolean;
 	  }>
+	| WithSubtaskId<{ type: "bridge_execution_start"; toolCallId: string; toolName: string; args: unknown[] }>
+	| WithSubtaskId<{
+			type: "bridge_execution_end";
+			toolCallId: string;
+			toolName: string;
+			result: AgentToolDisplayResult;
+			isError: boolean;
+	  }>
 	| WithSubtaskId<{ type: "turn_end"; assistantMessage: AssistantMessage; toolResults: ToolResultMessage[] }>
-	| WithSubtaskId<{ type: "message_usage"; usage: { inputTokens: number; outputTokens: number }; cumulative: { inputTokens: number; outputTokens: number } }>
+	| WithSubtaskId<{ type: "message_usage"; usage: ModelUsage; cumulative: ModelUsage }>
 	| WithSubtaskId<{ type: "context_compressed"; summary: string }>
 	| WithSubtaskId<{ type: "agent_end"; messages: Message[]; stopReason: "end" | "max_turns" | "error" | "aborted"; errorMessage?: string }>;
 
