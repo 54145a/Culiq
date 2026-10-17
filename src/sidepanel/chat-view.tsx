@@ -10,7 +10,7 @@ import { renderMarkdown } from "./markdown";
 import { ExtensionChatTransport } from "./extension-chat-transport";
 import { getPanelWindowId } from "./window";
 import type { BgToPanel, PanelToBg } from "@shared/transport/protocol";
-import type { ImageContent } from "@shared/ai/types";
+import type { ImageContent, ModelUsage } from "@shared/ai/types";
 import { toolOutputText, toolOutputToContent } from "@shared/ai/tool-output";
 import { listUserCustomTools } from "@shared/custom-tools/storage";
 import type { CustomToolMeta } from "@shared/custom-tools/types";
@@ -193,22 +193,32 @@ function convertSessionToUI(session: Session): UIMessage[] {
 				} else if (b.type === "subtask" && b.messages) {
 					parts.push({ type: "data-subtask" as const, id: `subtask-${b.id as string}`, data: b.messages } as never);
 				} else if (b.type === "usage") {
-					const u = b as { input?: number; output?: number; totalIn?: number; totalOut?: number };
+					const u = b as { input?: number; output?: number; cache?: number; totalIn?: number; totalOut?: number; totalCache?: number };
 					parts.push({
 						type: "data-usage" as const,
 						id: `usage-r${usageRestored++}`,
 						data: {
 							input: u.input ?? 0,
 							output: u.output ?? 0,
+							...(u.cache !== undefined ? { cache: u.cache } : {}),
 							...(u.totalIn !== undefined ? { totalIn: u.totalIn } : {}),
 							...(u.totalOut !== undefined ? { totalOut: u.totalOut } : {}),
+							...(u.totalCache !== undefined ? { totalCache: u.totalCache } : {}),
 						},
 					} as never);
 				}
 			}
-			const usage = (m as { usage?: { inputTokens: number; outputTokens: number } }).usage;
+			const usage = (m as { usage?: ModelUsage }).usage;
 			if (usage && usageRestored === 0) {
-				parts.push({ type: "data-usage" as const, id: "usage-r0", data: { input: usage.inputTokens, output: usage.outputTokens } } as never);
+				parts.push({
+					type: "data-usage" as const,
+					id: "usage-r0",
+					data: {
+						input: usage.inputTokens,
+						output: usage.outputTokens,
+						...(usage.cacheReadTokens !== undefined ? { cache: usage.cacheReadTokens } : {}),
+					},
+				} as never);
 			}
 			return { id: (m as { id?: string }).id ?? crypto.randomUUID(), role: "assistant" as const, parts };
 		})
@@ -241,10 +251,10 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 		| { type: "thinking"; thinking: string; signature?: string }
 		| { type: "compress"; summary: string }
 		| { type: "subtask"; id: string; messages: unknown }
-		| { type: "usage"; input: number; output: number; totalIn?: number; totalOut?: number }
+		| { type: "usage"; input: number; output: number; cache?: number; totalIn?: number; totalOut?: number; totalCache?: number }
 	> = [];
 	const out: Session["messages"] = [];
-	let usage: { inputTokens: number; outputTokens: number } | undefined;
+	let usage: ModelUsage | undefined;
 	for (const part of m.parts) {
 		const pt = part as { type: string; [key: string]: unknown };
 		if (pt.type === "text" && pt.text) {
@@ -319,17 +329,23 @@ function uiMessageToSessionMessage(m: UIMessage): Session["messages"] {
 			if (data) blocks.push({ type: "subtask", id, messages: data } as never);
 		} else if (pt.type === "data-usage") {
 			const data = (part as { data: unknown }).data as
-				| { input?: number; output?: number; totalIn?: number; totalOut?: number }
+				| { input?: number; output?: number; cache?: number; totalIn?: number; totalOut?: number; totalCache?: number }
 				| undefined;
 			if (data && typeof data === "object") {
 				blocks.push({
 					type: "usage",
 					input: data.input ?? 0,
 					output: data.output ?? 0,
+					...(data.cache !== undefined ? { cache: data.cache } : {}),
 					...(data.totalIn !== undefined ? { totalIn: data.totalIn } : {}),
 					...(data.totalOut !== undefined ? { totalOut: data.totalOut } : {}),
+					...(data.totalCache !== undefined ? { totalCache: data.totalCache } : {}),
 				});
-				usage = { inputTokens: data.input ?? 0, outputTokens: data.output ?? 0 };
+				usage = {
+					inputTokens: data.input ?? 0,
+					outputTokens: data.output ?? 0,
+					...(data.cache !== undefined ? { cacheReadTokens: data.cache } : {}),
+				};
 			}
 		}
 	}
@@ -440,10 +456,15 @@ function ToolCardView({ toolName, part }: { toolName: string; part: { toolCallId
 	);
 }
 
-function UsageBadge({ data }: { data: { input: number; output: number; totalIn?: number; totalOut?: number } }) {
-	const parts = [`${formatTokens(data.input)} in`, `${formatTokens(data.output)} out`];
+function UsageBadge({ data }: { data: { input: number; output: number; cache?: number; totalIn?: number; totalOut?: number; totalCache?: number } }) {
+	// `cache` is a subset of `input` (tokens the provider served from its
+	// prompt cache); shown only when > 0 so providers that don't report it
+	// stay clean.
+	const cachedIn = data.cache ? ` (${formatTokens(data.cache)} cached)` : "";
+	const parts = [`${formatTokens(data.input)} in${cachedIn}`, `${formatTokens(data.output)} out`];
 	if (data.totalIn !== undefined && data.totalOut !== undefined) {
-		parts.push(`cumulative: ${formatTokens(data.totalIn)} in · ${formatTokens(data.totalOut)} out`);
+		const cachedTotal = data.totalCache ? ` (${formatTokens(data.totalCache)} cached)` : "";
+		parts.push(`cumulative: ${formatTokens(data.totalIn)} in${cachedTotal} · ${formatTokens(data.totalOut)} out`);
 	}
 	return <span className="usage-badge">{parts.join(" · ")}</span>;
 }
@@ -452,8 +473,8 @@ interface SubtaskMessage {
 	role: "assistant" | "toolResult";
 	content: string;
 	toolName?: string;
-	usage?: { inputTokens: number; outputTokens: number };
-	cumulative?: { inputTokens: number; outputTokens: number };
+	usage?: ModelUsage;
+	cumulative?: ModelUsage;
 }
 
 function SubtaskCard({ messages }: { messages: SubtaskMessage[] }) {
@@ -485,7 +506,18 @@ function SubtaskCard({ messages }: { messages: SubtaskMessage[] }) {
 							return (
 								<div key={i} className="subtask-msg">
 									<div className="text md" dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
-									{msg.usage && <UsageBadge data={{ input: msg.usage.inputTokens, output: msg.usage.outputTokens, totalIn: msg.cumulative?.inputTokens, totalOut: msg.cumulative?.outputTokens }} />}
+									{msg.usage && (
+									<UsageBadge
+										data={{
+											input: msg.usage.inputTokens,
+											output: msg.usage.outputTokens,
+											...(msg.usage.cacheReadTokens !== undefined ? { cache: msg.usage.cacheReadTokens } : {}),
+											...(msg.cumulative?.inputTokens !== undefined ? { totalIn: msg.cumulative.inputTokens } : {}),
+											...(msg.cumulative?.outputTokens !== undefined ? { totalOut: msg.cumulative.outputTokens } : {}),
+											...(msg.cumulative?.cacheReadTokens !== undefined ? { totalCache: msg.cumulative.cacheReadTokens } : {}),
+										}}
+									/>
+								)}
 								</div>
 							);
 						}
@@ -890,7 +922,12 @@ function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);
 					textContent = "";
 				}
-				elements.push(<UsageBadge key={`ub-${i}`} data={part.data as { input: number; output: number; totalIn?: number; totalOut?: number }} />);
+				elements.push(
+					<UsageBadge
+						key={`ub-${i}`}
+						data={part.data as { input: number; output: number; cache?: number; totalIn?: number; totalOut?: number; totalCache?: number }}
+					/>,
+				);
 			} else if (part.type === "data-subtask" && Array.isArray(part.data)) {
 				if (textContent) {
 					elements.push(<div className="text md" key={`t-${i}`} dangerouslySetInnerHTML={{ __html: renderMarkdown(textContent) }} />);

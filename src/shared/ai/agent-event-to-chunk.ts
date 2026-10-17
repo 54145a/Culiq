@@ -130,8 +130,10 @@ export function agentEventToChunk(event: AgentEvent): Record<string, unknown> | 
 				data: {
 					input: event.usage.inputTokens,
 					output: event.usage.outputTokens,
+					...(event.usage.cacheReadTokens !== undefined ? { cache: event.usage.cacheReadTokens } : {}),
 					totalIn: event.cumulative.inputTokens,
 					totalOut: event.cumulative.outputTokens,
+					...(event.cumulative.cacheReadTokens !== undefined ? { totalCache: event.cumulative.cacheReadTokens } : {}),
 				},
 			};
 

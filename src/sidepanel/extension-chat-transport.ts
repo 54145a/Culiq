@@ -5,6 +5,7 @@ import type {
 	AssistantMessage,
 	ContextContent,
 	Message,
+	ModelUsage,
 	TextContent,
 	ThinkingContent,
 	ToolCallContent,
@@ -143,31 +144,34 @@ function isSubtaskTool(name: string): boolean {
  * (never from stored cumulative totals) so editing history, reloading a stored
  * session, or switching sessions stays exact without double-counting.
  */
-function sumPriorUsage(messages: UIMessage[]): { input: number; output: number } {
+function sumPriorUsage(messages: UIMessage[]): { input: number; output: number; cache: number } {
 	let input = 0;
 	let output = 0;
+	let cache = 0;
 	for (const m of messages) {
 		if (m.role !== "assistant") continue;
 		for (const part of m.parts) {
 			const pt = part as { type?: string; data?: unknown };
 			if (pt.type === "data-usage") {
-				const d = pt.data as { input?: number; output?: number } | undefined;
+				const d = pt.data as { input?: number; output?: number; cache?: number } | undefined;
 				if (d && typeof d === "object") {
 					input += d.input ?? 0;
 					output += d.output ?? 0;
+					cache += d.cache ?? 0;
 				}
 			} else if (pt.type === "data-subtask") {
-				const msgs = pt.data as Array<{ usage?: { inputTokens?: number; outputTokens?: number } }> | undefined;
+				const msgs = pt.data as Array<{ usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number } }> | undefined;
 				if (Array.isArray(msgs)) {
 					for (const sm of msgs) {
 						input += sm.usage?.inputTokens ?? 0;
 						output += sm.usage?.outputTokens ?? 0;
+						cache += sm.usage?.cacheReadTokens ?? 0;
 					}
 				}
 			}
 		}
 	}
-	return { input, output };
+	return { input, output, cache };
 }
 
 type SendFn = (msg: PanelToBg) => void;
@@ -292,7 +296,11 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					if (event.type === "message_usage") {
 						sessionTotal.input += event.usage.inputTokens;
 						sessionTotal.output += event.usage.outputTokens;
-						event = { ...event, cumulative: { inputTokens: sessionTotal.input, outputTokens: sessionTotal.output } };
+						sessionTotal.cache += event.usage.cacheReadTokens ?? 0;
+						event = {
+							...event,
+							cumulative: { inputTokens: sessionTotal.input, outputTokens: sessionTotal.output, cacheReadTokens: sessionTotal.cache },
+						};
 					}
 
 					// Subtask event routing
@@ -405,10 +413,10 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 		role: "assistant" | "toolResult";
 		content: string;
 		toolName?: string;
-		usage?: { inputTokens: number; outputTokens: number };
-		cumulative?: { inputTokens: number; outputTokens: number };
+		usage?: ModelUsage;
+		cumulative?: ModelUsage;
 	}> {
-		const messages: Array<{ role: "assistant" | "toolResult"; content: string; toolName?: string; usage?: { inputTokens: number; outputTokens: number }; cumulative?: { inputTokens: number; outputTokens: number } }> = [];
+		const messages: Array<{ role: "assistant" | "toolResult"; content: string; toolName?: string; usage?: ModelUsage; cumulative?: ModelUsage }> = [];
 		for (const event of events) {
 			if (event.type === "message_update" && event.delta.kind === "text") {
 				// Append delta to last assistant message or create new one
