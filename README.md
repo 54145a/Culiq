@@ -1,5 +1,7 @@
 # Culiq
 
+![](./img/README/Screenshot_20261017_083046.png)
+
 **English** | [中文](README_zh.md)
 
 > Fork of Curio that aims to create an extendable browser agent platform
