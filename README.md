@@ -1,6 +1,6 @@
 # Culiq
 
-![](./img/README/Screenshot_20261017_083046.png)
+<img src="./img/README/Screenshot_20261017_083046.png" alt="Culiq" width="30%" >
 
 **English** | [中文](README_zh.md)
 
