@@ -4,7 +4,7 @@
 
 **English** | [中文](README_zh.md)
 
-> Fork of Curio that aims to create an extendable browser agent platform
+> Maintained Fork of Curio that aims to create an extendable browser agent platform
 
 A browser-extension browser agent that automatically operates the browser for you — opening pages, reading content, clicking buttons, filling forms, running JavaScript, and doing basic reverse engineering. Supports Chrome, Edge, and Firefox.
 
