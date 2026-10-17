@@ -66,12 +66,21 @@ export interface UserMessage {
 	content: string | Array<TextContent | ImageContent>;
 }
 
+/** Per-message token accounting. `cacheReadTokens` counts how much of
+ *  `inputTokens` was served from the provider's prompt cache (a subset of
+ *  input, not an extra bucket); only some providers report it. */
+export interface ModelUsage {
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens?: number;
+}
+
 export interface AssistantMessage {
 	role: "assistant";
 	content: AssistantContent[];
 	stopReason: StopReason;
 	errorMessage?: string;
-	usage?: { inputTokens: number; outputTokens: number };
+	usage?: ModelUsage;
 	reasoningContent?: string;
 }
 
@@ -118,6 +127,6 @@ export type StreamEvent =
 	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
 	| { type: "toolcall_delta"; contentIndex: number; argsDelta: string; partial: AssistantMessage }
 	| { type: "toolcall_end"; contentIndex: number; partial: AssistantMessage }
-	| { type: "usage"; usage: { inputTokens: number; outputTokens: number }; partial: AssistantMessage }
+	| { type: "usage"; usage: ModelUsage; partial: AssistantMessage }
 	| { type: "done"; message: AssistantMessage }
 	| { type: "error"; error: string; message: AssistantMessage };

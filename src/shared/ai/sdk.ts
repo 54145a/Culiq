@@ -273,6 +273,9 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 							partial.usage = {
 								inputTokens: part.totalUsage.inputTokens ?? 0,
 								outputTokens: part.totalUsage.outputTokens ?? 0,
+								...(part.totalUsage.inputTokenDetails?.cacheReadTokens !== undefined
+									? { cacheReadTokens: part.totalUsage.inputTokenDetails.cacheReadTokens }
+									: {}),
 							};
 						}
 						if (partial.usage) stream.push({ type: "usage", usage: partial.usage, partial });

@@ -2,7 +2,7 @@ import { estimateTokenCount, sliceByTokens } from "tokenx";
 import { streamSimple } from "../ai";
 import { pruneOldImages } from "../ai/history";
 import { estimateImageTokens } from "../ai/image-tokens";
-import type { AssistantMessage, Message, ToolCallContent, ToolResultMessage, UserMessage } from "../ai/types";
+import type { AssistantMessage, Message, ModelUsage, ToolCallContent, ToolResultMessage, UserMessage } from "../ai/types";
 import type { AgentContext, AgentEventSink, AgentLoopConfig, AgentTool, AgentToolResult } from "./types";
 import { toolToLlmSpec } from "./types";
 
@@ -32,7 +32,7 @@ export async function runAgentLoop(
 
 	const maxTurns = config.maxTurns;
 	let turnIndex = 0;
-	const cumulative = { inputTokens: 0, outputTokens: 0 };
+	const cumulative = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
 
 	while (true) {
 		if (signal?.aborted) {
@@ -99,7 +99,7 @@ async function streamAssistantResponse(
 	config: AgentLoopConfig,
 	emit: AgentEventSink,
 	signal?: AbortSignal,
-	cumulative?: { inputTokens: number; outputTokens: number },
+	cumulative?: Required<ModelUsage>,
 ): Promise<AssistantMessage> {
 	const tools = context.tools.length > 0 ? context.tools.map(toolToLlmSpec) : undefined;
 
@@ -147,11 +147,12 @@ async function streamAssistantResponse(
 			if (cumulative) {
 				cumulative.inputTokens += event.usage.inputTokens;
 				cumulative.outputTokens += event.usage.outputTokens;
+				cumulative.cacheReadTokens += event.usage.cacheReadTokens ?? 0;
 			}
 			emit({
 				type: "message_usage",
 				usage: event.usage,
-				cumulative: cumulative ?? { inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens },
+				cumulative: cumulative ?? { inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens, cacheReadTokens: event.usage.cacheReadTokens ?? 0 },
 			});
 		} else if (event.type === "done" || event.type === "error") {
 			if (!started) emit({ type: "message_start", message: event.message });
@@ -160,6 +161,7 @@ async function streamAssistantResponse(
 			if (event.type === "done" && !usageEmitted && event.message.usage && cumulative) {
 				cumulative.inputTokens += event.message.usage.inputTokens;
 				cumulative.outputTokens += event.message.usage.outputTokens;
+				cumulative.cacheReadTokens += event.message.usage.cacheReadTokens ?? 0;
 				emit({
 					type: "message_usage",
 					usage: event.message.usage,
