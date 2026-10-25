@@ -46,11 +46,9 @@
 		"acorn": "^8.19.0",
 		"ai": "^7.0.137",
 		"defuddle": "^0.19.5",
-		"marked": "^18.1.0",
 		"preact": "^11.0.1",
 		"streamdown": "^2.7.1",
-		"tokenx": "^2.1.1",
-		"zod": "^4.6.5"
+		"tokenx": "^2.1.1"
 	},
 	"allowScripts": {
 		"esbuild@0.25.12": true,
