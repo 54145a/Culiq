@@ -5,7 +5,7 @@ import { navigateTool } from "../browser/navigate";
 import { fetchUrlTool } from "../browser/fetch-url";
 import { useSkillTool } from "../skills/use-skill";
 import { listTabsTool, switchTabTool, reloadTabTool } from "../browser/tabs";
-import { readText, listDirEntries, write, remove, createDir } from "@shared/opfs";
+import { readText, listDirEntries, write, remove, createDir, stat, readBytes, writeBytes } from "@shared/opfs";
 import { optionalOpts, optsOf, requireNumber, requireString } from "./options";
 
 /**
@@ -170,7 +170,24 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 			async ([path]) => { await remove(String(path)); }),
 		mkdir: bridge("Create a directory in OPFS.",
 			async ([path]) => { await createDir(String(path)); }),
+		stat: bridge("Get file or directory metadata from OPFS: size (bytes), lastModified (ISO string), isFile, isDirectory.",
+			async ([path]) => stat(String(path))),
+		readBytes: bridge("Read a file from OPFS as base64. Use for binary files (images, 3D models, archives). Returns null if the file does not exist.",
+			async ([path]) => {
+				const bytes = await readBytes(String(path));
+				return bytes ? bytesToBase64(bytes) : null;
+			}),
+		writeBytes: bridge("Write base64-encoded bytes to a file in OPFS. Use for binary files.",
+			async ([path, base64]) => {
+				await writeBytes(String(path), base64ToBytes(String(base64)));
+			}),
 	}),
+	dataUrl: bridge("Read a file from OPFS and return it as a data URL (data:<mime>;base64,...). The agent can fetch() this URL directly in the isolated world. Use for binary files. Do NOT print the URL directly — it can be very long.",
+		async ([path, mime]) => {
+			const bytes = await readBytes(String(path));
+			if (!bytes) return null;
+			return `data:${String(mime)};base64,${bytesToBase64(bytes)}`;
+		}),
 	tree: bridge("Recursively list all files and directories under a path, returning a formatted tree string.",
 		async ([path]) => {
 			const p = String(path || "");
@@ -195,7 +212,7 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 			return lines.join("\n") || "(empty)";
 		}),
 	// ── Fetch (bridge to extension context, CORS-free) ──────────────────────
-	fetch: bridge("Fetch a URL with CORS-free access (uses extension context). Returns a Response-like object. Call .text(), .json(), or .arrayBuffer() to read the body.",
+	fetch: bridge("Fetch a URL with CORS-free access (uses extension context). Returns a Response-like object with .ok and .status — always check .ok before reading the body. .text() reads text, .json() reads JSON (throws on non-JSON bodies), .arrayBuffer() reads binary (64MiB bridge limit; avoid for large files), .save(path) writes the body to OPFS (no size limit — use for large binary, then set_file_input to upload).",
 		async ([input, init]) => {
 			const res = await fetch(String(input), init as RequestInit);
 			const headers: Record<string, string> = {};
@@ -217,17 +234,46 @@ export const BRIDGE_SPEC: Record<string, BridgeSpecEntry> = {
 		responseStore.delete(Number(id));
 		return await res.json();
 	}),
-	"response.arrayBuffer": internalBridge("Read the response body as an ArrayBuffer.", async ([id]) => {
+	"response.arrayBuffer": internalBridge("Read the response body as an ArrayBuffer. For large binary, use .save(path) instead (no size limit).", async ([id]) => {
 		const res = responseStore.get(Number(id));
 		if (!res) throw new Error("Response not found (may have been consumed).");
 		responseStore.delete(Number(id));
 		const buf = await res.arrayBuffer();
 		return Array.from(new Uint8Array(buf));
 	}),
+	"response.save": internalBridge("Save the response body to a file in OPFS. Use for binary content (images, 3D models, archives) — no size limit, the body never crosses the bridge. Returns { path, size }.", async ([id, path]) => {
+		const res = responseStore.get(Number(id));
+		if (!res) throw new Error("Response not found (may have been consumed).");
+		responseStore.delete(Number(id));
+		const buf = await res.arrayBuffer();
+		const p = String(path);
+		await writeBytes(p, new Uint8Array(buf));
+		return { path: p, size: buf.byteLength };
+	}),
 };
 
 /** Store for response objects created by the fetch bridge. */
 const responseStore = new Map<number, Response>();
+
+/** Encode bytes as base64 so they survive the JSON-serialized bridge. */
+function bytesToBase64(bytes: Uint8Array): string {
+	let binary = "";
+	const chunk = 0x8000;
+	for (let i = 0; i < bytes.length; i += chunk) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+	}
+	return btoa(binary);
+}
+
+/** Decode base64 back to bytes. */
+function base64ToBytes(base64: string): Uint8Array {
+	const binary = atob(base64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return bytes;
+}
 
 /** Namespace → method names, derived from the spec. */
 function namespaceMap(): Map<string, string[]> {
@@ -288,6 +334,7 @@ export function generateSandboxShims(): string {
  */
 const TOP_LEVEL_SIGNATURES: Record<string, string> = {
 	tree: "tree(path?: string): Promise<string>",
+	dataUrl: "dataUrl(path: string, mime: string): Promise<string | null>",
 	fetch: "fetch(input: string, init?: unknown): Promise<SandboxResponse>",
 	evalInTab: 'evalInTab(options: { tabId: number; world?: "isolated" | "main"; code: string }): Promise<string>',
 	evalInAllFrames: 'evalInAllFrames(options: { tabId: number; world?: "isolated" | "main"; code: string }): Promise<string>',
@@ -307,7 +354,7 @@ const TOP_LEVEL_SIGNATURES: Record<string, string> = {
 /** Compact .d.ts appended to the system prompt when the sandbox is enabled. */
 export function generateSandboxDts(): string {
 	const out: string[] = [
-		"interface SandboxResponse { status: number; ok: boolean; headers: Record<string, string>; text(): Promise<string>; json(): Promise<unknown>; arrayBuffer(): Promise<ArrayBuffer>; }",
+		"interface SandboxResponse { status: number; ok: boolean; headers: Record<string, string>; text(): Promise<string>; json(): Promise<unknown>; arrayBuffer(): Promise<ArrayBuffer>; save(path: string): Promise<{ path: string; size: number }>; }",
 		'type ReadDomMode = "markdown" | "html" | "readable_html" | "outline";',
 		"declare const sandbox: {",
 		"  file(path: string): { text(): Promise<string>; remove(): Promise<void> };",

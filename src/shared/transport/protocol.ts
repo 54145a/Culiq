@@ -2,11 +2,11 @@ import type { AgentEvent } from "../agent/types";
 import type { Message } from "../ai/types";
 
 /** Extra meta-context the user opts into for a single message (one-shot). */
-export type ChatContextMode = "tabs" | "current";
+export type ChatContextMode = "tabs" | "current" | "page+screenshot";
 
 export type PanelToBg =
 	| { type: "ping"; nonce: string }
-	| { type: "chat_send"; turnId: string; messages: Message[]; contextMode?: ChatContextMode; windowId?: number; sessionId?: string; enabledCustomTools?: string[]; reasoning?: string }
+	| { type: "chat_send"; turnId: string; messages: Message[]; modelId?: string; contextMode?: ChatContextMode; windowId?: number; sessionId?: string; enabledCustomTools?: string[]; reasoning?: string; enabledSkills?: string[] }
 	| { type: "chat_abort"; turnId: string }
 	| { type: "open_window" };
 

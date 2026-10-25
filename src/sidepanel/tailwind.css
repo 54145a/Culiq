@@ -1,0 +1,35 @@
+/* Tailwind utilities, generated only for the class names Streamdown's
+ * compiled components and our own JSX use (@source; automatic content
+ * detection skips node_modules). Preflight is deliberately NOT imported —
+ * it would reset the hand-written style.css across the whole panel.
+ * Utilities stay UNLAYERED: style.css is unlayered too, and any layered
+ * rule loses to an unlayered one regardless of specificity — with a layer,
+ * even a bare `button { padding: 0 18px }` element rule would override
+ * every utility on buttons. Unlayered, normal cascade order applies. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css";
+@source "./";
+@source "../../node_modules/streamdown/dist";;
+
+/* Bridge Streamdown's shadcn-style semantic utilities (bg-background,
+ * text-muted-foreground, ...) onto the panel's theme variables. `inline`
+ * makes every generated utility reference var(--culiq-*) directly, so
+ * light/dark switching is instant with no theme recompilation. */
+@theme inline {
+	--color-background: var(--culiq-background);
+	--color-foreground: var(--culiq-foreground);
+	--color-muted: var(--culiq-muted);
+	--color-muted-foreground: var(--culiq-muted-foreground);
+	--color-border: var(--culiq-border);
+	--color-sidebar: var(--culiq-sidebar);
+	--color-primary: var(--culiq-primary);
+	--color-primary-foreground: var(--culiq-primary-foreground);
+}
+
+/* Status colors — theme-invariant, so plain tokens (no var() indirection). */
+@theme {
+	--color-danger: #c0392b;
+	--color-warning: #e2a64a;
+	--color-success: #2e9b4f;
+	--color-running: #c98f00;
+}

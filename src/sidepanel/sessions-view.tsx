@@ -68,10 +68,10 @@ export function SessionsView({ options }: { options: SessionsViewOptions }) {
 					+ New session
 				</button>
 			</div>
-			{!canSwitch && <p className="sessions-lock">Generation in progress. Switching is disabled until it finishes.</p>}
-			{loaded && sessions.length === 0 && <p className="sessions-empty">Send a message in Chat to start your first session.</p>}
+			{!canSwitch && <p className="rounded-[6px] border border-running/35 bg-running/[12%] px-[10px] py-[8px] m-0 text-[0.82rem] text-running">Generation in progress. Switching is disabled until it finishes.</p>}
+			{loaded && sessions.length === 0 && <p className="m-0 px-[10px] py-[16px] text-center text-[0.88rem] text-current/50">Send a message in Chat to start your first session.</p>}
 			{sessions.length > 0 && (
-				<ul className="sessions-list">
+				<ul className="m-0 flex list-none flex-col gap-[6px] p-0">
 					{sessions.map((session) => (
 						<SessionsRow key={session.id} session={session} currentId={currentId} canSwitch={canSwitch} options={options} />
 					))}
@@ -93,23 +93,26 @@ function SessionsRow({
 	options: SessionsViewOptions;
 }) {
 	return (
-		<li className="session-row" data-active={String(session.id === currentId)}>
+		<li
+				className={`flex items-stretch gap-[4px] overflow-hidden rounded-[8px] border transition-[border-color,box-shadow] duration-150 ${session.id === currentId ? "border-primary shadow-[inset_0_0_0_1px_#4a90e2]" : "border-current/[15%] hover:border-current/30"}`}
+				data-active={String(session.id === currentId)}
+			>
 			<button
 				type="button"
-				className="session-main"
+				className="m-0 min-w-0 flex-1 cursor-pointer flex-col items-start gap-[4px] rounded-none border-none bg-transparent px-[12px] py-[10px] text-left [font:inherit] text-inherit hover:bg-current/[6%]"
 				disabled={!canSwitch}
 				onClick={() => {
 					if (canSwitch) void options.onSwitch(session.id);
 				}}
 			>
-				<div className="session-title">{session.title}</div>
-				<div className="session-meta">
+				<div className="w-full overflow-hidden text-ellipsis whitespace-nowrap text-[0.92rem] font-medium">{session.title}</div>
+				<div className="text-[0.74rem] text-current/55">
 					{`${session.messages.length} msg${session.messages.length === 1 ? "" : "s"}  ·  ${formatRelativeTime(session.updatedAt)}`}
 				</div>
 			</button>
 			<button
 				type="button"
-				className="session-delete"
+				className="w-[36px] rounded-none border-none bg-transparent p-0 text-[1rem] leading-none text-current/45 hover:bg-danger/[18%] hover:text-danger"
 				disabled={!canSwitch}
 				title="Delete session"
 				aria-label={`Delete session ${session.title}`}

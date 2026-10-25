@@ -155,7 +155,7 @@ async function handleBridge(session: SandboxSession, id: number, path: string, a
 	const toolName = `sandbox.${path}`;
 	const sink = session.eventSink;
 	const ctx = { subagent: session.subagent };
-	if (sink) sink({ type: "tool_execution_start", toolCallId, toolName, args: args as unknown as Record<string, unknown> });
+	if (sink) sink({ type: "bridge_execution_start", toolCallId, toolName, args });
 	try {
 		if (!isPathEnabled(path, session.enabled)) {
 			throw new Error(`capability for ${path} is disabled`);
@@ -168,7 +168,7 @@ async function handleBridge(session: SandboxSession, id: number, path: string, a
 			const raw = typeof value === "string" ? value : serialized;
 			const preview = typeof raw === "string" ? raw : JSON.stringify(raw);
 			sink({
-				type: "tool_execution_end",
+				type: "bridge_execution_end",
 				toolCallId,
 				toolName,
 				result: { content: [{ type: "text", text: preview.slice(0, BRIDGE_HINT_MAX_CHARS) }] },
@@ -180,7 +180,7 @@ async function handleBridge(session: SandboxSession, id: number, path: string, a
 		const errorText = err instanceof Error ? (err.stack ?? err.message) : String(err);
 		if (sink) {
 			sink({
-				type: "tool_execution_end",
+				type: "bridge_execution_end",
 				toolCallId,
 				toolName,
 				result: { content: [{ type: "text", text: errorText.slice(0, BRIDGE_HINT_MAX_CHARS) }] },

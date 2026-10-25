@@ -8,7 +8,7 @@ export interface TextContent {
 
 export interface ImageContent {
 	type: "image";
-	mediaType: "image/png";
+	mediaType: "image/png" | "image/webp";
 	encoding: "base64";
 	data: string;
 }
@@ -28,16 +28,51 @@ export interface ToolCallContent {
 	arguments: Record<string, unknown>;
 }
 
+/**
+ * A sandbox bridge invocation (sandbox.fetchUrl, sandbox.tabs.query,
+ * ...) surfaced as a card for visibility. It is not an LLM tool call:
+ * it never maps to a provider message, so it must not be stored as a
+ * ToolCallContent.
+ */
+export interface BridgeCallContent {
+	type: "bridgeCall";
+	id: string;
+	name: string;
+	arguments: unknown;
+	result?: string;
+	isError?: boolean;
+}
+
 export interface ContextContent {
 	type: "context";
 	text: string;
 }
 
-export type AssistantContent = TextContent | ThinkingContent | ToolCallContent | ContextContent;
+export interface ErrorContent {
+	type: "error";
+	text: string;
+}
+
+export type AssistantContent =
+	| TextContent
+	| ThinkingContent
+	| ToolCallContent
+	| BridgeCallContent
+	| ContextContent
+	| ErrorContent;
 
 export interface UserMessage {
 	role: "user";
-	content: string | TextContent[];
+	content: string | Array<TextContent | ImageContent>;
+}
+
+/** Per-message token accounting. `cacheReadTokens` counts how much of
+ *  `inputTokens` was served from the provider's prompt cache (a subset of
+ *  input, not an extra bucket); only some providers report it. */
+export interface ModelUsage {
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens?: number;
 }
 
 export interface AssistantMessage {
@@ -45,7 +80,7 @@ export interface AssistantMessage {
 	content: AssistantContent[];
 	stopReason: StopReason;
 	errorMessage?: string;
-	usage?: { inputTokens: number; outputTokens: number };
+	usage?: ModelUsage;
 	reasoningContent?: string;
 }
 
@@ -92,6 +127,6 @@ export type StreamEvent =
 	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
 	| { type: "toolcall_delta"; contentIndex: number; argsDelta: string; partial: AssistantMessage }
 	| { type: "toolcall_end"; contentIndex: number; partial: AssistantMessage }
-	| { type: "usage"; usage: { inputTokens: number; outputTokens: number }; partial: AssistantMessage }
+	| { type: "usage"; usage: ModelUsage; partial: AssistantMessage }
 	| { type: "done"; message: AssistantMessage }
 	| { type: "error"; error: string; message: AssistantMessage };

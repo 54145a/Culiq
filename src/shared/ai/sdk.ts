@@ -3,19 +3,8 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createProviderRegistry, jsonSchema, streamText, tool as defineTool } from "ai";
 import type { LanguageModel, ModelMessage, ProviderRegistryProvider, ToolSet } from "ai";
 import { EventStream } from "./stream";
-import type { AssistantMessage, Context, Model, StopReason, StreamOptions, ToolCallContent, ToolResultContent } from "./types";
-
-function toSdkContent(blocks: ToolResultContent[]): Array<Record<string, unknown>> {
-	const out: Array<Record<string, unknown>> = [];
-	for (const b of blocks) {
-		if (b.type === "text") {
-			out.push({ type: "text", text: b.text });
-		} else {
-			out.push({ type: "file", mediaType: b.mediaType, data: { type: "data", data: b.data } });
-		}
-	}
-	return out;
-}
+import { toSdkContent, userContentToSdkParts } from "./sdk-content";
+import type { AssistantMessage, Context, Model, StopReason, StreamOptions, ToolCallContent } from "./types";
 
 function toAISdkMessages(messages: Context["messages"]): ModelMessage[] {
 	const out: ModelMessage[] = [];
@@ -31,8 +20,7 @@ function toAISdkMessages(messages: Context["messages"]): ModelMessage[] {
 
 	for (const m of messages) {
 		if (m.role === "user") {
-			const text = typeof m.content === "string" ? m.content : m.content.map((c) => c.text).join("");
-			out.push({ role: "user", content: text ? [{ type: "text", text }] : [] } as unknown as ModelMessage);
+			out.push({ role: "user", content: userContentToSdkParts(m.content) } as unknown as ModelMessage);
 		} else if (m.role === "assistant") {
 			const content: Array<Record<string, unknown>> = [];
 			if (m.reasoningContent) {
@@ -49,6 +37,11 @@ function toAISdkMessages(messages: Context["messages"]): ModelMessage[] {
 					content.push({ type: "tool-call", toolCallId: block.id, toolName: block.name, input: block.arguments });
 				}
 			}
+			// A failed turn can persist an assistant message whose only blocks
+			// are display-only (context card, usage, error). Providers reject
+			// an assistant message with no content and no tool calls with
+			// HTTP 400, which would poison every subsequent request — drop it.
+			if (content.length === 0) continue;
 			out.push({ role: "assistant", content } as unknown as ModelMessage);
 		} else if (m.role === "toolResult") {
 			const hasImage = m.content.some((c) => c.type === "image");
@@ -123,6 +116,27 @@ function mapFinishReason(reason: string | undefined, signal?: AbortSignal): Stop
 	}
 }
 
+/**
+ * The AI SDK nests its errors: `AI_RetryError` wraps the final attempt's
+ * `AI_APICallError`, whose own `message` is the provider's text. Unwrap to the
+ * underlying cause and append the HTTP status, so nothing surfaced to the user
+ * reads "Failed after 3 attempts. Last error: AI_APICallError: ...".
+ */
+function formatStreamError(error: unknown): string {
+	if (!(error instanceof Error)) return String(error);
+
+	const last = (error as { lastError?: unknown }).lastError;
+	if (last instanceof Error && last !== error) return formatStreamError(last);
+
+	const status = (error as { statusCode?: unknown }).statusCode;
+	const body = (error as { responseBody?: unknown }).responseBody;
+	const detail =
+		error.message?.trim() ||
+		(typeof body === "string" ? body.trim().slice(0, 300) : "") ||
+		(typeof status === "number" ? "Request failed" : error.name);
+	return typeof status === "number" ? `${detail} (HTTP ${status})` : detail;
+}
+
 export function streamSimple(model: Model, context: Context, options: StreamOptions): EventStream {
 	const stream = new EventStream();
 	const partial: AssistantMessage = { role: "assistant", content: [], stopReason: "end" };
@@ -156,6 +170,8 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 				...(options.signal ? { abortSignal: options.signal } : {}),
 				...(options.headers ? { headers: options.headers } : {}),
 				...(options.reasoning ? { reasoning: options.reasoning } : {}),
+				maxRetries: 5,
+				onError: () => {},
 			});
 
 			const indexByPartId = new Map<string, number>();
@@ -164,8 +180,10 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 			const reasoningIndexByPartId = new Map<string, number>();
 			const signatureByPartId = new Map<string, string>();
 			let reasoningCount = 0;
+			let failed = false;
 
 			for await (const part of result.fullStream) {
+				if (failed) continue;
 				switch (part.type) {
 					case "text-start": {
 						partial.content.push({ type: "text", text: "" });
@@ -255,14 +273,18 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 							partial.usage = {
 								inputTokens: part.totalUsage.inputTokens ?? 0,
 								outputTokens: part.totalUsage.outputTokens ?? 0,
+								...(part.totalUsage.inputTokenDetails?.cacheReadTokens !== undefined
+									? { cacheReadTokens: part.totalUsage.inputTokenDetails.cacheReadTokens }
+									: {}),
 							};
 						}
 						if (partial.usage) stream.push({ type: "usage", usage: partial.usage, partial });
 						break;
 					}
 					case "error": {
-						fail(part.error instanceof Error ? part.error.message : String(part.error));
-						return;
+						fail(formatStreamError(part.error));
+						failed = true;
+						break;
 					}
 				}
 			}
@@ -270,7 +292,7 @@ export function streamSimple(model: Model, context: Context, options: StreamOpti
 			stream.push({ type: "done", message: partial });
 			stream.end();
 		} catch (err) {
-			fail(err instanceof Error ? err.message : String(err));
+			fail(formatStreamError(err));
 		}
 	};
 

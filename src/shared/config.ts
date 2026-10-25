@@ -12,6 +12,7 @@ export type Capability =
 	| "switch_tab"
 	| "reload_tab"
 	| "fetch_url"
+	| "read_console"
 	| "use_skill"
 	| "sandbox_exec"
 	| "subtask"
@@ -60,6 +61,10 @@ export const CAPABILITY_INFO: Record<Capability, { description: string }> = {
 	use_skill: {
 		description:
 			"Access a skill's files (see <available_skills>): omit `file` for the skill index (truncated instructions + file listing), or pass `file` to read a specific file. Skills encode reusable workflows — browse and read files as needed.",
+	},
+	read_console: {
+		description:
+			"Read the page's console output (log/warn/error/uncaught exceptions) captured since the console hook was installed on that tab. Use it after `navigate`, `click` or `eval_js` to check what a page logged — errors and stack traces land here. `level` filters by severity, `clear` empties the buffer after reading. Entries from before the hook was installed (or from a tab opened before the extension loaded) are not captured.",
 	},
 	sandbox_exec: {
 		description:
@@ -112,18 +117,21 @@ export interface ModelConfig {
 	id: string;
 	providerId: string;
 	name: string;
+	/** Disabled models are hidden from every picker and rejected at send. */
+	enabled: boolean;
 	/** Per-model context window override in tokens. If undefined, uses DEFAULT_CONTEXT_WINDOW. */
 	contextWindow?: number;
 	/** Per-model default reasoning level. If undefined, uses provider default. */
 	reasoning?: ReasoningLevel;
 }
 
-const CULIQ_SETTINGS_VERSION = 6;
+const CULIQ_SETTINGS_VERSION = 7;
 
 /** Per-model capability overrides. Keyed by model id (e.g. `"openai:gpt-4o"`). */
 export interface ModelCapabilityConfig {
-	/** Capabilities explicitly turned OFF for this model (e.g. `["screenshot"]`). */
-	disabledCapabilities: Capability[];
+	/** Capabilities explicitly turned ON for this model. Only `screenshot` is
+	 *  user-toggleable, and it is OFF unless listed here (vision models only). */
+	enabledCapabilities: Capability[];
 }
 
 export interface CuliqSettings {
@@ -131,15 +139,18 @@ export interface CuliqSettings {
 	theme: ThemePreference;
 	providers: ProviderConfig[];
 	models: ModelConfig[];
-	/** Format: `${providerId}:${modelName}` */
-	defaultModelId: string;
-	/** Capability overrides per model. The only user-toggleable capability is `screenshot`;
-	 * everything else (including sandbox-exposed tools) is always enabled. */
+	/** Capability overrides per model. The only user-toggleable capability is `screenshot`,
+	 *  which is disabled by default and opted into per vision model; everything else
+	 *  (including sandbox-exposed tools) is always enabled. */
 	modelCapabilities: Record<string, ModelCapabilityConfig>;
 	contextManagement: ContextManagementConfig;
 	subAgentModel: string;
 	/** Names of disabled custom tools (e.g. ["bing_search"]). */
 	disabledTools: string[];
+	/** Whether assistant thinking blocks start expanded in the transcript. */
+	expandThinking: boolean;
+	/** When true, Enter inserts a newline in the composer and Ctrl/Cmd+Enter sends. */
+	enterNewline: boolean;
 }
 
 export const CONTEXT_MANAGEMENT_DEFAULTS: ContextManagementConfig = {
@@ -180,6 +191,8 @@ const DEFAULT_MODELS: Array<{ providerId: string; name: string; contextWindow?: 
 ];
 
 const STORAGE_KEY = `culiq.settings.v${CULIQ_SETTINGS_VERSION}`;
+/** Storage key for the settings blob — exported so the panel can observe changes. */
+export const SETTINGS_STORAGE_KEY = STORAGE_KEY;
 
 export function defaultSettings(): CuliqSettings {
 	const providers = PROVIDER_DEFAULTS.map((d) => ({
@@ -193,6 +206,7 @@ export function defaultSettings(): CuliqSettings {
 		id: `${m.providerId}:${m.name}`,
 		providerId: m.providerId,
 		name: m.name,
+		enabled: true,
 		...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
 	}));
 	return {
@@ -200,11 +214,12 @@ export function defaultSettings(): CuliqSettings {
 		theme: "system",
 		providers,
 		models,
-		defaultModelId: "openai:gpt-4o-mini",
 		modelCapabilities: {},
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
 		subAgentModel: "",
 		disabledTools: [],
+		expandThinking: false,
+		enterNewline: false,
 	};
 }
 
@@ -218,24 +233,44 @@ interface StoredSettings {
 	contextManagement?: Partial<ContextManagementConfig>;
 	subAgentModel?: unknown;
 	disabledTools?: unknown;
+	expandThinking?: boolean;
+	enterNewline?: boolean;
 }
 
-export async function loadSettings(): Promise<CuliqSettings> {
-	const raw = await chrome.storage.local.get(STORAGE_KEY);
-	const stored = raw[STORAGE_KEY] as StoredSettings | undefined;
-	if (!stored || stored.version !== CULIQ_SETTINGS_VERSION) return defaultSettings();
-	const base = defaultSettings();
+function normalizeSettings(stored: StoredSettings, base: CuliqSettings): CuliqSettings {
 	return {
 		version: CULIQ_SETTINGS_VERSION,
 		theme: isThemePreference(stored.theme) ? stored.theme : base.theme,
 		providers: Array.isArray(stored.providers) ? stored.providers : base.providers,
 		models: Array.isArray(stored.models) ? stored.models : base.models,
-		defaultModelId: typeof stored.defaultModelId === "string" ? stored.defaultModelId : base.defaultModelId,
 		modelCapabilities: stored.modelCapabilities ?? {},
 		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
 		subAgentModel: typeof stored.subAgentModel === "string" ? stored.subAgentModel : base.subAgentModel,
 		disabledTools: Array.isArray(stored.disabledTools) ? stored.disabledTools : [],
+		expandThinking: stored.expandThinking ?? base.expandThinking,
+		enterNewline: stored.enterNewline ?? base.enterNewline,
 	};
+}
+
+/** v6 had no enable/disable concept — every stored model was effectively enabled. */
+function migrateV6(v6: StoredSettings): CuliqSettings {
+	const models = (Array.isArray(v6.models) ? v6.models : []).map((m) => ({ ...m, enabled: true }));
+	return normalizeSettings({ ...v6, models }, defaultSettings());
+}
+
+export async function loadSettings(): Promise<CuliqSettings> {
+	const raw = await chrome.storage.local.get([STORAGE_KEY, "culiq.settings.v6"]);
+	const stored = raw[STORAGE_KEY] as StoredSettings | undefined;
+	if (stored && stored.version === CULIQ_SETTINGS_VERSION) {
+		return normalizeSettings(stored, defaultSettings());
+	}
+	const v6 = raw["culiq.settings.v6"] as StoredSettings | undefined;
+	if (v6 && v6.version === 6) {
+		const migrated = migrateV6(v6);
+		await saveSettings(migrated);
+		return migrated;
+	}
+	return defaultSettings();
 }
 
 export async function saveSettings(settings: CuliqSettings): Promise<void> {
@@ -251,26 +286,16 @@ function isThemePreference(value: unknown): value is ThemePreference {
 	return value === "system" || value === "light" || value === "dark";
 }
 
-/** Resolve a defaultModelId string into its provider and model configs. */
-export function resolveDefaultModel(settings: CuliqSettings): { provider: ProviderConfig; model: ModelConfig } | null {
-	const model = settings.models.find((m) => m.id === settings.defaultModelId);
-	if (!model) return null;
-	const provider = settings.providers.find((p) => p.id === model.providerId);
-	if (!provider) return null;
-	return { provider, model };
+/** The first enabled model in list order, if any. */
+export function firstEnabledModel(settings: CuliqSettings): ModelConfig | undefined {
+	return settings.models.find((m) => m.enabled);
 }
 
-/** Resolve a model id (bare name or `provider:model`) to its ModelConfig. */
+/** Resolve a model id (`providerId:modelName`) to its provider and model. Disabled models never resolve. */
 export function resolveModelId(modelId: string, settings: CuliqSettings): { provider: ProviderConfig; model: ModelConfig } | null {
-	if (modelId.includes(":")) {
-		const model = settings.models.find((m) => m.id === modelId);
-		if (!model) return null;
-		const provider = settings.providers.find((p) => p.id === model.providerId);
-		return provider ? { provider, model } : null;
-	}
-	// Bare model name — returns first match across all providers
-	const model = settings.models.find((m) => m.name === modelId);
-	if (!model) return null;
+	if (!modelId.includes(":")) return null;
+	const model = settings.models.find((m) => m.id === modelId);
+	if (!model || !model.enabled) return null;
 	const provider = settings.providers.find((p) => p.id === model.providerId);
 	return provider ? { provider, model } : null;
 }

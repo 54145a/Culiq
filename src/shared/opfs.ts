@@ -27,3 +27,6 @@ export const remove = api.remove;
 export const listDir = api.listDir;
 export const listDirEntries = api.listDirEntries;
 export const createDir = api.createDir;
+export const stat = api.stat;
+export const readBytes = api.readBytes;
+export const writeBytes = api.writeBytes;

@@ -16,6 +16,13 @@ export interface Skill {
 	enabled: boolean;
 	createdAt: number;
 	updatedAt: number;
+	version?: string;
+	author?: string;
+	license?: string;
+	dependsOn?: string[];
+	tools?: string[];
+	triggers?: string[];
+	keywords?: string[];
 }
 
 const SKILLS_DIR = "skills";
@@ -73,6 +80,13 @@ export async function getUserSkill(name: string): Promise<Skill | undefined> {
 		enabled: meta.enabled,
 		createdAt: meta.createdAt,
 		updatedAt: meta.updatedAt,
+		version: parsed.version,
+		author: parsed.author,
+		license: parsed.license,
+		dependsOn: parsed.dependsOn,
+		tools: parsed.tools,
+		triggers: parsed.triggers,
+		keywords: parsed.keywords,
 	};
 }
 
@@ -147,5 +161,12 @@ export function buildUserSkill(content: string, scripts: Record<string, string>)
 		enabled: true,
 		createdAt: now,
 		updatedAt: now,
+		version: parsed.version,
+		author: parsed.author,
+		license: parsed.license,
+		dependsOn: parsed.dependsOn,
+		tools: parsed.tools,
+		triggers: parsed.triggers,
+		keywords: parsed.keywords,
 	};
 }

@@ -5,6 +5,7 @@ import type {
 	AssistantMessage,
 	ContextContent,
 	Message,
+	ModelUsage,
 	TextContent,
 	ThinkingContent,
 	ToolCallContent,
@@ -12,6 +13,7 @@ import type {
 } from "@shared/ai/types";
 import type { BgToPanel, ChatContextMode, PanelToBg } from "@shared/transport/protocol";
 import { agentEventToChunk } from "@shared/ai/agent-event-to-chunk";
+import { pruneOldImages } from "@shared/ai/history";
 import { toolOutputToContent } from "@shared/ai/tool-output";
 
 /**
@@ -36,18 +38,22 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 		const content: AssistantContent[] = [];
 		const results: ToolResultMessage[] = [];
 		let reasoningContent = "";
+	let hasProviderContent = false;
 		for (const part of m.parts) {
 			const type = (part as { type?: string }).type;
 			if (type === "text" && (part as { text?: string }).text) {
 				content.push({ type: "text", text: (part as { text: string }).text } as TextContent);
+				hasProviderContent = true;
 			} else if (type === "reasoning") {
 				const rp = part as { text?: string; signature?: string; providerMetadata?: { anthropic?: { signature?: string } } };
 				const text = rp.text ?? "";
 				const signature = rp.signature ?? rp.providerMetadata?.anthropic?.signature;
 				if (signature) {
 					content.push({ type: "thinking", thinking: text, signature } as ThinkingContent);
+					hasProviderContent = true;
 				} else if (text) {
 					reasoningContent = reasoningContent ? `${reasoningContent}\n${text}` : text;
+					hasProviderContent = true;
 				}
 			} else if (type === "data-context") {
 				const data = (part as { data?: unknown }).data;
@@ -63,6 +69,7 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 					name: tp.toolName,
 					arguments: (tp.input ?? {}) as Record<string, unknown>,
 				} as ToolCallContent);
+				hasProviderContent = true;
 				if (tp.output != null) {
 					results.push(toolResult(tp.toolCallId, tp.output));
 				} else if (tp.errorText) {
@@ -78,6 +85,7 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 					name: type.slice(5),
 					arguments: (tp.input ?? {}) as Record<string, unknown>,
 				} as ToolCallContent);
+				hasProviderContent = true;
 				if (tp.output != null) {
 					results.push(toolResult(tp.toolCallId, tp.output));
 				} else if (tp.errorText) {
@@ -89,10 +97,15 @@ function uiMessagesToAgentMessages(messages: UIMessage[]): Message[] {
 		}
 		const assistantMessage: AssistantMessage = { role: "assistant", content, stopReason: "end" };
 		if (reasoningContent) assistantMessage.reasoningContent = reasoningContent;
-		out.push(assistantMessage);
+		// A failed turn can leave an assistant message with only
+		// display-only parts (context card, usage). Providers reject
+		// an assistant message with no content and no tool calls
+		// (HTTP 400), so it must never reach the model. Tool calls
+		// always set hasProviderContent, so tool results stay paired.
+		if (hasProviderContent) out.push(assistantMessage);
 		out.push(...results);
 	}
-	return out;
+	return pruneOldImages(out);
 }
 
 function toolResult(toolCallId: string, output: unknown): ToolResultMessage {
@@ -131,31 +144,34 @@ function isSubtaskTool(name: string): boolean {
  * (never from stored cumulative totals) so editing history, reloading a stored
  * session, or switching sessions stays exact without double-counting.
  */
-function sumPriorUsage(messages: UIMessage[]): { input: number; output: number } {
+function sumPriorUsage(messages: UIMessage[]): { input: number; output: number; cache: number } {
 	let input = 0;
 	let output = 0;
+	let cache = 0;
 	for (const m of messages) {
 		if (m.role !== "assistant") continue;
 		for (const part of m.parts) {
 			const pt = part as { type?: string; data?: unknown };
 			if (pt.type === "data-usage") {
-				const d = pt.data as { input?: number; output?: number } | undefined;
+				const d = pt.data as { input?: number; output?: number; cache?: number } | undefined;
 				if (d && typeof d === "object") {
 					input += d.input ?? 0;
 					output += d.output ?? 0;
+					cache += d.cache ?? 0;
 				}
 			} else if (pt.type === "data-subtask") {
-				const msgs = pt.data as Array<{ usage?: { inputTokens?: number; outputTokens?: number } }> | undefined;
+				const msgs = pt.data as Array<{ usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number } }> | undefined;
 				if (Array.isArray(msgs)) {
 					for (const sm of msgs) {
 						input += sm.usage?.inputTokens ?? 0;
 						output += sm.usage?.outputTokens ?? 0;
+						cache += sm.usage?.cacheReadTokens ?? 0;
 					}
 				}
 			}
 		}
 	}
-	return { input, output };
+	return { input, output, cache };
 }
 
 type SendFn = (msg: PanelToBg) => void;
@@ -171,6 +187,8 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 	private windowId?: number;
 	private enabledCustomTools?: string[];
 	private reasoning?: string;
+	private enabledSkills?: string[];
+	private modelId?: string;
 	private handlers = new Map<string, (event: AgentEvent) => void>();
 
 	constructor(sendFn: SendFn, onMessageFn: OnMessageFn) {
@@ -199,6 +217,14 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 		this.reasoning = level;
 	}
 
+	setEnabledSkills(names: string[] | undefined): void {
+		this.enabledSkills = names;
+	}
+
+	setModel(id: string | undefined): void {
+		this.modelId = id;
+	}
+
 	async sendMessages(options: {
 		trigger: "submit-message" | "regenerate-message";
 		chatId: string;
@@ -214,11 +240,13 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 			type: "chat_send",
 			turnId,
 			messages: panelMessages as never,
+			...(this.modelId ? { modelId: this.modelId } : {}),
 			...(this.contextMode ? { contextMode: this.contextMode } : {}),
 			...(this.windowId !== undefined ? { windowId: this.windowId } : {}),
 			...(options.chatId ? { sessionId: options.chatId } : {}),
 			...(this.enabledCustomTools ? { enabledCustomTools: this.enabledCustomTools } : {}),
 			...(this.reasoning ? { reasoning: this.reasoning } : {}),
+			...(this.enabledSkills?.length ? { enabledSkills: this.enabledSkills } : {}),
 		};
 
 		return new ReadableStream<UIMessageChunk>({
@@ -243,7 +271,12 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					this.handlers.delete(turnId);
 					if (!closed) {
 						closed = true;
-						controller.close();
+						try {
+							controller.close();
+						} catch {
+							// The stream may already be errored or closed
+							// (e.g. the AI SDK errored it on an error chunk).
+						}
 					}
 				};
 
@@ -263,7 +296,11 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 					if (event.type === "message_usage") {
 						sessionTotal.input += event.usage.inputTokens;
 						sessionTotal.output += event.usage.outputTokens;
-						event = { ...event, cumulative: { inputTokens: sessionTotal.input, outputTokens: sessionTotal.output } };
+						sessionTotal.cache += event.usage.cacheReadTokens ?? 0;
+						event = {
+							...event,
+							cumulative: { inputTokens: sessionTotal.input, outputTokens: sessionTotal.output, cacheReadTokens: sessionTotal.cache },
+						};
 					}
 
 					// Subtask event routing
@@ -376,10 +413,10 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 		role: "assistant" | "toolResult";
 		content: string;
 		toolName?: string;
-		usage?: { inputTokens: number; outputTokens: number };
-		cumulative?: { inputTokens: number; outputTokens: number };
+		usage?: ModelUsage;
+		cumulative?: ModelUsage;
 	}> {
-		const messages: Array<{ role: "assistant" | "toolResult"; content: string; toolName?: string; usage?: { inputTokens: number; outputTokens: number }; cumulative?: { inputTokens: number; outputTokens: number } }> = [];
+		const messages: Array<{ role: "assistant" | "toolResult"; content: string; toolName?: string; usage?: ModelUsage; cumulative?: ModelUsage }> = [];
 		for (const event of events) {
 			if (event.type === "message_update" && event.delta.kind === "text") {
 				// Append delta to last assistant message or create new one
@@ -389,9 +426,9 @@ export class ExtensionChatTransport implements ChatTransport<UIMessage> {
 				} else {
 					messages.push({ role: "assistant", content: event.delta.text });
 				}
-			} else if (event.type === "tool_execution_start") {
+			} else if (event.type === "tool_execution_start" || event.type === "bridge_execution_start") {
 				messages.push({ role: "toolResult", content: `[${event.toolName}]`, toolName: event.toolName });
-			} else if (event.type === "tool_execution_end") {
+			} else if (event.type === "tool_execution_end" || event.type === "bridge_execution_end") {
 				const last = messages[messages.length - 1];
 				if (last?.role === "toolResult" && !last.content.includes(": ")) {
 					const resultText = event.result.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");

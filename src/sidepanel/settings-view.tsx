@@ -9,6 +9,7 @@ import {
 	type ProviderConfig,
 	saveSettings,
 } from "@shared/config";
+import { listModels } from "@shared/ai/list-models";
 import { buildUserSkill, deleteUserSkill, listSkills, saveUserSkill, setSkillEnabled, type Skill } from "@shared/skills";
 import {
 	loadMcpServers,
@@ -20,6 +21,31 @@ import {
 import { listUserCustomTools, saveCustomToolPackage, deleteUserCustomTool, extractMetaFromArtifact } from "@shared/custom-tools/storage";
 import { syncBuiltinTools } from "@shared/custom-tools";
 import type { CustomToolMeta } from "@shared/custom-tools";
+
+// Shared settings-form utilities (px arbitrary values: the panel root is
+// 15px, rem utilities would shift metrics). Keep visual parity with the
+// style.css rules they replaced.
+const LABEL = "flex flex-col gap-[4px] text-[0.78rem] text-current/60";
+const CONTROL = "text-[0.92rem] text-inherit";
+const GROUP = "flex flex-col gap-[10px]";
+// Sticky group header: layout + header typography + the panel-background
+// veil that hides rows scrolling underneath.
+const SUMMARY =
+	"sticky top-0 z-[1] m-0 flex cursor-pointer items-center justify-between gap-[8px] bg-background py-[6px] text-[0.78rem] font-semibold tracking-[0.06em] uppercase text-current/60 select-none list-none [&::-webkit-details-marker]:hidden";
+const HINT = "-mt-[8px] mb-0 text-[0.85rem] text-current/55 [overflow-wrap:anywhere]";
+const ACTIONS = "flex items-center justify-end gap-[10px] pt-[4px]";
+const LIST = "grid gap-[6px]";
+const DESC = "min-w-0 flex-1 flex-auto [overflow-wrap:break-word]";
+const CHECK = "flex items-start gap-[8px] min-w-0 text-[0.85rem]";
+const CHECKBOX = "mt-[2px] h-[16px] w-[16px] flex-none p-0 accent-primary";
+const STATUS = "min-w-0 flex-1 text-[0.82rem] text-current/60 [overflow-wrap:anywhere]";
+const DELETE_BTN =
+	"ml-auto rounded-[6px] border border-danger/40 bg-none px-[8px] py-[1px] text-[0.72rem] text-danger cursor-pointer";
+const PROVIDER_CARD = "flex flex-col gap-[10px] rounded-[8px] border border-current/[18%] px-[14px] py-[12px]";
+const MODEL_ROW = "flex flex-col gap-[6px] rounded-[6px] border border-current/[15%] px-[10px] py-[8px]";
+const MODEL_HEADER = "flex items-center gap-[8px] text-[0.85rem]";
+const MODEL_CONTROLS = "flex flex-col gap-[4px] pl-[4px]";
+const CONTROL_LABEL = "flex flex-col gap-[3px] text-[0.78rem] text-current/60";
 
 function Field({
 	label,
@@ -35,15 +61,15 @@ function Field({
 	onInput: (value: string) => void;
 }) {
 	return (
-		<label>
+		<label className={LABEL}>
 			<span>{label}</span>
-			<input
-				type={type}
-				value={value}
-				placeholder={placeholder}
-				onInput={(e) => onInput((e.target as HTMLInputElement).value)}
-				onClick={(e) => e.stopPropagation()}
-			/>
+			{type === "password" ? (
+				<input className={CONTROL} type="password" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
+			) : type === "number" ? (
+				<input className={`${CONTROL} w-full`} type="number" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
+			) : (
+				<input className={CONTROL} type="text" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
+			)}
 		</label>
 	);
 }
@@ -51,6 +77,32 @@ function Field({
 // A checkbox row with a <code> name and an optional ": " description. Used for
 // every capability / skill / MCP-server list so the code + text spacing and the
 // markup stay consistent (DRY). Extra controls (buttons) go in `children`.
+interface OpStatus {
+	state: "ok" | "err";
+	text: string;
+}
+
+/** Shared ok/err status plumbing for settings groups — Skills, MCP servers
+ *  and Custom tools all reported async op results the same way, triply
+ *  duplicated before this hook existed. */
+function useOpStatus() {
+	const [status, setStatus] = useState<OpStatus | null>(null);
+	return {
+		status,
+		ok: (text: string) => setStatus({ state: "ok", text }),
+		fail: (text: string) => setStatus({ state: "err", text }),
+		failErr: (err: unknown) => setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) }),
+	};
+}
+
+function StatusLine({ status }: { status: OpStatus | null }) {
+	return (
+		<span className={`${STATUS} ${status?.state === "err" ? "text-danger" : status?.state === "ok" ? "text-success" : ""}`}>
+			{status?.text ?? ""}
+		</span>
+	);
+}
+
 function CheckRow({
 	code,
 	checked,
@@ -67,15 +119,16 @@ function CheckRow({
 	children?: ComponentChildren;
 }) {
 	return (
-		<label className="capability">
+		<label className={CHECK}>
 			<input
+				className={CHECKBOX}
 				type="checkbox"
 				checked={checked}
 				disabled={disabled}
 				onChange={(e) => onToggle?.((e.target as HTMLInputElement).checked)}
 			/>
 			<code>{code}</code>
-			{desc && <span className="capability-desc">: {desc}</span>}
+			{desc && <span className={DESC}>: {desc}</span>}
 			{children}
 		</label>
 	);
@@ -83,24 +136,53 @@ function CheckRow({
 
 function ProviderCard({
 	provider,
+	settings,
 	remove,
 	dirty,
 }: {
 	provider: ProviderConfig;
+	settings: CuliqSettings;
 	remove: () => void;
 	dirty: () => void;
 }) {
 	const def = PROVIDER_DEFAULTS.find((d) => d.id === provider.id);
+	const [fetching, setFetching] = useState(false);
+	const [fetchError, setFetchError] = useState("");
+
+	const fetchModels = async () => {
+		setFetching(true);
+		setFetchError("");
+		try {
+			const remote = await listModels(provider);
+			for (const info of remote) {
+				const id = `${provider.id}:${info.id}`;
+				if (settings.models.some((m) => m.id === id)) continue;
+				settings.models.push({
+					id,
+					providerId: provider.id,
+					name: info.id,
+					enabled: false,
+					...(info.contextLength ? { contextWindow: info.contextLength } : {}),
+				});
+			}
+			dirty();
+		} catch (err) {
+			setFetchError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setFetching(false);
+		}
+	};
 
 	return (
-		<div className="provider-card">
-			<header>
-				<h3>{provider.name || provider.id}</h3>
+		<div className={PROVIDER_CARD}>
+			<header className="flex items-center justify-between">
+				<h3 className="m-0 text-[1rem] font-semibold">{provider.name || provider.id}</h3>
 			</header>
 			<Field label="Name" type="text" value={provider.name} placeholder={provider.id} onInput={(v) => { provider.name = v; dirty(); }} />
-			<label>
+			<label className={LABEL}>
 				<span>Type</span>
 				<select
+					className={CONTROL}
 					value={provider.type}
 					onClick={(e) => e.stopPropagation()}
 					onChange={(e) => { provider.type = (e.target as HTMLSelectElement).value as "openai" | "anthropic"; dirty(); }}
@@ -111,7 +193,11 @@ function ProviderCard({
 			</label>
 			<Field label="API key" type="password" value={provider.apiKey} placeholder="sk-..." onInput={(v) => { provider.apiKey = v; dirty(); }} />
 			<Field label="Base URL" type="text" value={provider.baseUrl} placeholder={def?.baseUrl ?? ""} onInput={(v) => { provider.baseUrl = v; dirty(); }} />
-			<button type="button" className="provider-delete" onClick={(e) => { e.stopPropagation(); remove(); }}>Delete</button>
+			<div className={ACTIONS}>
+				<button type="button" disabled={fetching || !provider.apiKey} onClick={() => { void fetchModels(); }}>{fetching ? "Fetching models…" : "Fetch models"}</button>
+				<button type="button" className="provider-delete" onClick={(e) => { e.stopPropagation(); remove(); }}>Delete</button>
+			</div>
+			{fetchError && <p className={HINT}>Fetch failed: {fetchError}</p>}
 		</div>
 	);
 }
@@ -120,9 +206,6 @@ function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: (
 	const removeProvider = (id: string) => {
 		settings.providers = settings.providers.filter((p) => p.id !== id);
 		settings.models = settings.models.filter((m) => m.providerId !== id);
-		if (settings.models.length > 0 && !settings.models.find((m) => m.id === settings.defaultModelId)) {
-			settings.defaultModelId = settings.models[0].id;
-		}
 		dirty();
 	};
 	const addProvider = () => {
@@ -132,17 +215,17 @@ function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: (
 	};
 
 	return (
-		<details className="settings-group" open>
-			<summary className="settings-header">Providers</summary>
-			<p className="settings-hint">
+		<details className={GROUP} open>
+			<summary className={SUMMARY}>Providers</summary>
+			<p className={HINT}>
 				Configure API credentials. Each provider holds a name, type, key, and base URL.
 			</p>
-			<div className="capability-list">
+			<div className={LIST}>
 				{settings.providers.map((p) => (
-					<ProviderCard key={p.id} provider={p} remove={() => removeProvider(p.id)} dirty={dirty} />
+					<ProviderCard key={p.id} provider={p} settings={settings} remove={() => removeProvider(p.id)} dirty={dirty} />
 				))}
 			</div>
-			<div className="settings-actions">
+			<div className={ACTIONS}>
 				<button type="button" onClick={addProvider}>Add provider</button>
 			</div>
 		</details>
@@ -158,71 +241,63 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 		if (!name || !newModelProvider) return;
 		const id = `${newModelProvider}:${name}`;
 		if (settings.models.some((m) => m.id === id)) return;
-		settings.models.push({ id, providerId: newModelProvider, name });
-		if (!settings.defaultModelId) settings.defaultModelId = id;
+		settings.models.push({ id, providerId: newModelProvider, name, enabled: true });
 		setNewModelName("");
 		dirty();
 	};
 
 	const onDelete = (id: string) => {
 		settings.models = settings.models.filter((m) => m.id !== id);
-		if (settings.defaultModelId === id && settings.models.length > 0) {
-			settings.defaultModelId = settings.models[0].id;
-		}
+		if (settings.subAgentModel === id) settings.subAgentModel = "";
 		dirty();
 	};
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Models</summary>
-			<p className="settings-hint">
-				All available models across providers. Toggle screenshot capability per model
-				(useful for text-only models). Set the context window size for context compression.
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Models</summary>
+			<p className={HINT}>
+				Enabled models appear in the model picker above the chat input. Bulk-fetched
+				models start disabled. Screenshot is off by default — opt in per vision model.
+				Set the context window size for context compression.
 			</p>
-			<label className="settings-default-model">
-				<span>Default model</span>
-				<select
-					value={settings.defaultModelId}
-					onClick={(e) => e.stopPropagation()}
-					onChange={(e) => { settings.defaultModelId = (e.target as HTMLSelectElement).value; dirty(); }}
-				>
-					{settings.models.map((m) => (
-						<option key={m.id} value={m.id}>{m.name} ({settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId})</option>
-					))}
-				</select>
-			</label>
-			<div className="capability-list">
+			<div className={LIST}>
 				{settings.models.map((m) => {
 					const capKey = m.id;
-					const disabled = settings.modelCapabilities[capKey]?.disabledCapabilities ?? [];
-					const screenshotOn = !disabled.includes("screenshot");
+					const screenshotOn = settings.modelCapabilities[capKey]?.enabledCapabilities.includes("screenshot") ?? false;
 					const setScreenshot = (on: boolean) => {
-						const entry = settings.modelCapabilities[capKey] ?? { disabledCapabilities: [] };
-						entry.disabledCapabilities = on
-							? entry.disabledCapabilities.filter((c) => c !== "screenshot")
-							: entry.disabledCapabilities.includes("screenshot")
-								? entry.disabledCapabilities
-								: [...entry.disabledCapabilities, "screenshot"];
-						if (entry.disabledCapabilities.length === 0) delete settings.modelCapabilities[capKey];
+						const entry = settings.modelCapabilities[capKey] ?? { enabledCapabilities: [] };
+						entry.enabledCapabilities = on
+							? entry.enabledCapabilities.includes("screenshot")
+								? entry.enabledCapabilities
+								: [...entry.enabledCapabilities, "screenshot"]
+							: entry.enabledCapabilities.filter((c) => c !== "screenshot");
+						if (entry.enabledCapabilities.length === 0) delete settings.modelCapabilities[capKey];
 						else settings.modelCapabilities[capKey] = entry;
 						dirty();
 					};
 					return (
-						<div className="model-row" key={m.id}>
-							<div className="model-row-header">
+						<div className={`${MODEL_ROW} ${m.enabled ? "" : "opacity-55"}`} key={m.id}>
+							<div className={MODEL_HEADER}>
+								<label className="flex items-center" title={m.enabled ? "Disable model" : "Enable model"}>
+									<input
+										type="checkbox"
+										checked={m.enabled}
+										onClick={(e) => e.stopPropagation()}
+										onChange={(e) => { m.enabled = (e.target as HTMLInputElement).checked; dirty(); }}
+									/>
+								</label>
 								<code>{m.name}</code>
-								<span className="capability-desc">{settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId}</span>
-								{settings.defaultModelId === m.id && <span className="active-badge">default</span>}
+								<span className={DESC}>{settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId}</span>
 								<button
 									type="button"
-									className="skill-delete"
+									className={DELETE_BTN}
 									title="Delete model"
 									onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(m.id); }}
 								>
 									delete
 								</button>
 							</div>
-							<div className="model-row-controls">
+							<div className={`${MODEL_CONTROLS} ${m.enabled ? "" : "pointer-events-none"}`}>
 								<CheckRow
 									code="screenshot"
 									checked={screenshotOn}
@@ -236,9 +311,10 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 									placeholder="Default: 64000"
 									onInput={(v) => { m.contextWindow = v ? Number(v) : undefined; dirty(); }}
 								/>
-								<label>
+								<label className={CONTROL_LABEL}>
 									<span>Thinking</span>
 									<select
+										className={`${CONTROL} w-full`}
 										value={m.reasoning ?? ""}
 										onClick={(e) => e.stopPropagation()}
 										onChange={(e) => { m.reasoning = (e.target as HTMLSelectElement).value as any || undefined; dirty(); }}
@@ -253,11 +329,12 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 					);
 				})}
 			</div>
-			<div className="settings-actions add-model-row">
-				<div className="add-model-fields">
-					<label>
+			<div className={`${ACTIONS} flex-wrap`}>
+				<div className="flex min-w-0 flex-1 flex-col gap-[6px]">
+					<label className={LABEL}>
 						<span>Add model</span>
 						<input
+							className={CONTROL}
 							type="text"
 							value={newModelName}
 							placeholder="model-name"
@@ -265,9 +342,10 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 							onClick={(e) => e.stopPropagation()}
 						/>
 					</label>
-					<label>
+					<label className={LABEL}>
 						<span>Provider</span>
 						<select
+							className={CONTROL}
 							value={newModelProvider}
 							onClick={(e) => e.stopPropagation()}
 							onChange={(e) => setNewModelProvider((e.target as HTMLSelectElement).value)}
@@ -288,9 +366,9 @@ function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () 
 	const cm = settings.contextManagement;
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Context management</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Context management</summary>
+			<p className={HINT}>
 				Summarize old turns when the conversation nears the model's context window. The context window size is set per-model in the Models section.
 			</p>
 			<CheckRow
@@ -327,13 +405,13 @@ function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () 
 
 function SkillsGroup() {
 	const [skills, setSkills] = useState<Skill[] | null>(null);
-	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
+	const { status, ok, fail, failErr } = useOpStatus();
 
 	const refresh = async () => {
 		try {
 			setSkills(await listSkills());
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -344,7 +422,7 @@ function SkillsGroup() {
 	const onImport = async () => {
 		const picker = (window as unknown as { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
 		if (!picker) {
-			setStatus({ state: "err", text: "Directory picker is not supported in this browser." });
+			fail("Directory picker is not supported in this browser.");
 			return;
 		}
 		try {
@@ -364,17 +442,17 @@ function SkillsGroup() {
 			if (!skillMd) throw new Error("The selected folder has no SKILL.md.");
 			const skill = buildUserSkill(await skillMd.text(), scripts);
 			await saveUserSkill(skill);
-			setStatus({ state: "ok", text: `imported ${skill.name}` });
+			ok(`imported ${skill.name}`);
 			await refresh();
 		} catch (err) {
 			if (err instanceof DOMException && err.name === "AbortError") return;
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
 	const onClawhub = async () => {
 		if (!chrome.downloads?.download) {
-			setStatus({ state: "err", text: "Downloads API is not available." });
+			fail("Downloads API is not available.");
 			return;
 		}
 		let tabUrl: string | undefined;
@@ -382,16 +460,16 @@ function SkillsGroup() {
 			const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
 			tabUrl = tab?.url;
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 			return;
 		}
 		if (!tabUrl) {
-			setStatus({ state: "err", text: "Could not read the active tab URL." });
+			fail("Could not read the active tab URL.");
 			return;
 		}
 		const slug = parseClawHubSlug(tabUrl);
 		if (!slug) {
-			setStatus({ state: "err", text: "Not a ClawHub skill page (expected clawhub.ai/<owner>/skills/<slug>)." });
+			fail("Not a ClawHub skill page (expected clawhub.ai/<owner>/skills/<slug>).");
 			return;
 		}
 		try {
@@ -400,9 +478,9 @@ function SkillsGroup() {
 				filename: `${slug}.zip`,
 				conflictAction: "uniquify",
 			});
-			setStatus({ state: "ok", text: `downloading ${slug}.zip (#${downloadId})` });
+			ok(`downloading ${slug}.zip (#${downloadId})`);
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -417,9 +495,9 @@ function SkillsGroup() {
 	};
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Skills</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Skills</summary>
+			<p className={HINT}>
 				Skills bundle reusable instructions and optional script files (AgentSkills format: a folder with SKILL.md whose
 				frontmatter has `name` and `description`). Scripts may be in any language and are imported for reference only — they
 				are not executed. Import a folder, or download a skill's zip from a ClawHub skill page (then unzip and import it).
@@ -429,10 +507,8 @@ function SkillsGroup() {
 				Skills are reference-only. For executable, typed, distributable capabilities, use <strong>Custom tools</strong> (built
 				with <code>@culiq/sandbox</code>, installed from npm or a folder) — see the Custom tools section above.
 			</p>
-			<div className="settings-actions">
-				<span className="status" data-state={status?.state}>
-					{status?.text ?? ""}
-				</span>
+			<div className={ACTIONS}>
+				<StatusLine status={status} />
 				<button type="button" onClick={() => void onImport()}>
 					Import skill folder…
 				</button>
@@ -444,7 +520,7 @@ function SkillsGroup() {
 					Download skill from current tab
 				</button>
 			</div>
-			<div className="capability-list">
+			<div className={LIST}>
 				{skills === null ? null : skills.length === 0 ? (
 					<p>No skills installed yet.</p>
 				) : (
@@ -456,12 +532,12 @@ function SkillsGroup() {
 							disabled={skill.source === "builtin"}
 							onToggle={(v) => void onToggle(skill.name, v)}
 						>
-							<span className="capability-desc">: {skill.source === "builtin" ? "builtin" : "user"}</span>
-							<span className="capability-desc"> {skill.description}</span>
+							<span className={DESC}>: {skill.source === "builtin" ? "builtin" : "user"}</span>
+							<span className={DESC}> {skill.description}</span>
 							{skill.source === "user" && (
 								<button
 									type="button"
-									className="skill-delete"
+									className={DELETE_BTN}
 									onClick={(e) => {
 										e.preventDefault();
 										e.stopPropagation();
@@ -502,13 +578,13 @@ function McpServersGroup() {
 	const [name, setName] = useState("");
 	const [url, setUrl] = useState("");
 	const [transport, setTransport] = useState<McpTransport>("http");
-	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
+	const { status, ok, fail, failErr } = useOpStatus();
 
 	const refresh = async () => {
 		try {
 			setServers(await loadMcpServers());
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -525,17 +601,17 @@ function McpServersGroup() {
 		const trimmedName = name.trim();
 		const trimmedUrl = url.trim();
 		if (!trimmedName || !trimmedUrl) {
-			setStatus({ state: "err", text: "Enter a name and URL." });
+			fail("Enter a name and URL.");
 			return;
 		}
 		if (servers?.some((s) => s.name === trimmedName)) {
-			setStatus({ state: "err", text: `A server named "${trimmedName}" already exists.` });
+			fail(`A server named "${trimmedName}" already exists.`);
 			return;
 		}
 		await persist([...(servers ?? []), { name: trimmedName, url: trimmedUrl, enabled: false, transport }]);
 		setName("");
 		setUrl("");
-		setStatus({ state: "ok", text: `added ${trimmedName}` });
+		ok(`added ${trimmedName}`);
 	};
 
 	const onToggle = async (server: McpServerConfig, enabled: boolean) => {
@@ -549,34 +625,33 @@ function McpServersGroup() {
 	};
 
 	const onTest = async (server: McpServerConfig) => {
-		setStatus({ state: "ok", text: `testing ${server.name}…` });
+		ok(`testing ${server.name}…`);
 		const result = await testMcpConnection(server.url, server.transport);
 		if (result.ok) {
-			setStatus({ state: "ok", text: `${server.name}: connected (${result.serverName}), ${result.toolCount} tools` });
+			ok(`${server.name}: connected (${result.serverName}), ${result.toolCount} tools`);
 		} else {
-			setStatus({ state: "err", text: `${server.name}: ${result.error}` });
+			fail(`${server.name}: ${result.error}`);
 		}
 	};
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">MCP servers</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>MCP servers</summary>
+			<p className={HINT}>
 				Connect to Model Context Protocol servers. Their tools are exposed to the agent as <code>server-tool</code> and toggle
 				per server. Streamable HTTP is the modern transport; SSE is legacy. The URL must include the server's endpoint path
 				(e.g. <code>…/mcp</code> for streamable HTTP, <code>…/sse</code> for SSE) — a bare hostname won't work. Treat MCP
 				servers as untrusted third-party code with external side effects; only enable servers you trust.
 			</p>
-			<div className="settings-actions">
-				<span className="status" data-state={status?.state}>
-					{status?.text ?? ""}
-				</span>
+			<div className={ACTIONS}>
+				<StatusLine status={status} />
 			</div>
 			<Field label="Name" type="text" value={name} placeholder="github" onInput={setName} />
 			<Field label="URL" type="text" value={url} placeholder="https://localhost:3001/mcp" onInput={setUrl} />
-			<label>
+			<label className={LABEL}>
 				<span>Transport</span>
 				<select
+					className={CONTROL}
 					value={transport}
 					onChange={(e) => setTransport((e.target as HTMLSelectElement).value as McpTransport)}
 					onClick={(e) => e.stopPropagation()}
@@ -585,12 +660,12 @@ function McpServersGroup() {
 					<option value="sse">SSE (legacy)</option>
 				</select>
 			</label>
-			<div className="settings-actions">
+			<div className={ACTIONS}>
 				<button type="button" onClick={() => void onAdd()}>
 					Add server
 				</button>
 			</div>
-			<div className="capability-list">
+			<div className={LIST}>
 				{servers === null ? null : servers.length === 0 ? (
 					<p>No MCP servers configured yet.</p>
 				) : (
@@ -601,11 +676,11 @@ function McpServersGroup() {
 							checked={server.enabled}
 							onToggle={(v) => void onToggle(server, v)}
 						>
-							<span className="capability-desc">: {server.transport}</span>
-							<span className="capability-desc"> {server.url}</span>
+							<span className={DESC}>: {server.transport}</span>
+							<span className={DESC}> {server.url}</span>
 							<button
 								type="button"
-								className="skill-delete"
+								className={DELETE_BTN}
 								title="Test connection"
 								onClick={(e) => {
 									e.preventDefault();
@@ -617,7 +692,7 @@ function McpServersGroup() {
 							</button>
 							<button
 								type="button"
-								className="skill-delete"
+								className={DELETE_BTN}
 								title="Delete server"
 								onClick={(e) => {
 									e.preventDefault();
@@ -637,14 +712,14 @@ function McpServersGroup() {
 
 function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const [tools, setTools] = useState<CustomToolMeta[] | null>(null);
-	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
+	const { status, ok, fail, failErr } = useOpStatus();
 
 	const refresh = async () => {
 		try {
 			await syncBuiltinTools();
 			setTools(await listUserCustomTools());
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -678,17 +753,17 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 			await saveCustomToolPackage(pkgName, artifact, tools);
 			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
 			const count = metas.length;
-			setStatus({ state: "ok", text: `imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})` });
+			ok(`imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})`);
 			await refresh();
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
 	const onImport = async () => {
 		const picker = (window as unknown as { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
 		if (!picker) {
-			setStatus({ state: "err", text: "Directory picker is not supported in this browser." });
+			fail("Directory picker is not supported in this browser.");
 			return;
 		}
 		try {
@@ -715,11 +790,11 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 			await saveCustomToolPackage(pkgName, js, tools);
 			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
 			const count = metas.length;
-			setStatus({ state: "ok", text: `imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})` });
+			ok(`imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})`);
 			await refresh();
 		} catch (err) {
 			if (err instanceof DOMException && err.name === "AbortError") return;
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -730,17 +805,15 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 	};
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Custom tools</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Custom tools</summary>
+			<p className={HINT}>
 				Executable, typed tools built with <code>@culiq/sandbox</code>. On an npm package page, click
 				"Load from npm page" to install it; or import a folder containing <code>culiq-tool.js</code>.
 				These settings control the default state. Use the "Tools" button in the chat input to toggle tools per message (does not change these settings).
 			</p>
-			<div className="settings-actions">
-				<span className="status" data-state={status?.state}>
-					{status?.text ?? ""}
-				</span>
+			<div className={ACTIONS}>
+				<StatusLine status={status} />
 				<button type="button" onClick={() => void onNpmPage()}>
 					Load from npm page (current tab)
 				</button>
@@ -748,19 +821,19 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 					Import folder…
 				</button>
 			</div>
-			<div className="capability-list">
+			<div className={LIST}>
 				{tools === null ? null : tools.length === 0 ? (
 					<p>No custom tools installed yet.</p>
 				) : (
 				tools.map((t) => (
 						<div className="capability" key={t.toolName}>
 							<code>{t.toolName}</code>
-							{t.name !== t.toolName && <span className="capability-desc"> ({t.name})</span>}
-							<span className="capability-desc"> {t.description}</span>
-							<div className="capability-actions">
+							{t.name !== t.toolName && <span className={DESC}> ({t.name})</span>}
+							<span className={DESC}> {t.description}</span>
+							<div className="flex flex-col gap-[2px] flex-shrink-0">
 								<button
 									type="button"
-									className="skill-delete"
+									className={DELETE_BTN}
 									onClick={(e) => {
 										e.preventDefault();
 										const disabled = settings.disabledTools;
@@ -775,7 +848,7 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 								{t.source === "user" ? (
 									<button
 										type="button"
-										className="skill-delete"
+										className={DELETE_BTN}
 										onClick={(e) => {
 											e.preventDefault();
 											e.stopPropagation();
@@ -785,7 +858,7 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 										delete
 									</button>
 								) : (
-									<span className="capability-desc">(builtin)</span>
+									<span className={DESC}>(builtin)</span>
 								)}
 							</div>
 						</div>
@@ -798,26 +871,53 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 
 function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Sub-agent</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Sub-agent</summary>
+			<p className={HINT}>
 				Optional model for the `subtask` sub-agent. Leave empty to use the main model.
 			</p>
-			<label>
+			<label className={LABEL}>
 				<span>Sub-agent model</span>
 				<select
+					className={CONTROL}
 					value={settings.subAgentModel}
 					onClick={(e) => e.stopPropagation()}
 					onChange={(e) => { settings.subAgentModel = (e.target as HTMLSelectElement).value; dirty(); }}
 				>
 					<option value="">Use main model</option>
-					{settings.models.map((m) => (
+					{settings.models.filter((m) => m.enabled).map((m) => (
 						<option key={m.id} value={m.id}>
 							{settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId}: {m.name}
 						</option>
 					))}
 				</select>
 			</label>
+		</details>
+	);
+}
+
+function InterfaceGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
+	return (
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Interface</summary>
+			<CheckRow
+				code="expand-thinking"
+				checked={settings.expandThinking}
+				onToggle={(v) => {
+					settings.expandThinking = v;
+					dirty();
+				}}
+				desc="show agent thinking content expanded by default"
+			/>
+			<CheckRow
+				code="enter-newline"
+				checked={settings.enterNewline}
+				onToggle={(v) => {
+					settings.enterNewline = v;
+					dirty();
+				}}
+				desc="Enter inserts a newline; send with the button or Ctrl/Cmd+Enter"
+			/>
 		</details>
 	);
 }
@@ -856,12 +956,13 @@ export function SettingsView() {
 		<ProvidersGroup settings={settings} dirty={dirty} />
 		<ModelsGroup settings={settings} dirty={dirty} />
 		<ContextGroup settings={settings} dirty={dirty} />
+		<InterfaceGroup settings={settings} dirty={dirty} />
 			<SearchAndSubAgentGroup settings={settings} dirty={dirty} />
 			<LocalToolsGroup settings={settings} dirty={dirty} />
 			<SkillsGroup />
 			<McpServersGroup />
-			<div className="settings-actions settings-save-bar">
-				<span className="status" data-state={saveState === "ok" ? "ok" : saveState === "err" ? "err" : undefined}>
+			<div className={ACTIONS}>
+				<span className={`${STATUS} ${saveState === "err" ? "text-danger" : saveState === "ok" ? "text-success" : ""}`}>
 					{saveMsg}
 				</span>
 				<button type="button" disabled={saveState === "saving"} onClick={() => void onSave()}>
