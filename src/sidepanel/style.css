@@ -267,21 +267,24 @@ form {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	flex-wrap: wrap;
-}
-
-/* In a narrow panel the model select shrinks first (its names are the
- * longest); the send button never leaves the row's right edge. */
-.composer-actions .context-field {
 	min-width: 0;
 }
 
-.composer-actions .context-field:first-of-type {
-	flex: 1 1 auto;
+/* One row, no wrapping: both selects split the spare space equally and
+ * shrink with the panel; the send button keeps its size at the right. */
+.composer-actions .context-field {
+	flex: 1 1 0;
+	min-width: 0;
 }
 
-.composer-actions .context-field:first-of-type select {
+.composer-actions .context-field select {
 	width: 100%;
+	max-width: none;
+}
+
+.composer-actions button[type="submit"] {
+	margin-left: auto;
+	flex-shrink: 0;
 }
 
 .composer-actions button[type="submit"] {
