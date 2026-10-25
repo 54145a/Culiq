@@ -1,9 +1,13 @@
 /* Tailwind utilities, generated only for the class names Streamdown's
- * compiled components use (its dist is the sole @source; automatic content
+ * compiled components and our own JSX use (@source; automatic content
  * detection skips node_modules). Preflight is deliberately NOT imported —
- * it would reset the hand-written style.css across the whole panel. */
+ * it would reset the hand-written style.css across the whole panel.
+ * Utilities stay UNLAYERED: style.css is unlayered too, and any layered
+ * rule loses to an unlayered one regardless of specificity — with a layer,
+ * even a bare `button { padding: 0 18px }` element rule would override
+ * every utility on buttons. Unlayered, normal cascade order applies. */
 @import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss/utilities.css";
 @source "./";
 @source "../../node_modules/streamdown/dist";;
 
