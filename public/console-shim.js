@@ -72,6 +72,11 @@
 		// Methods that print nothing on this call (groupEnd, countReset(),
 		// time() start) would format as empty text — not worth a buffer slot.
 		if (text.length === 0) return;
+		// A page-side message listener that logs what it receives would echo
+		// our own broadcasts back into the console, and capturing that echo
+		// would broadcast it again — an infinite feedback loop. Any text
+		// mentioning the magic marker is such an echo: drop it.
+		if (text.indexOf(MAGIC) !== -1) return;
 		post({ t: Date.now(), level: level, text: text });
 	};
 
