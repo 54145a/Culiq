@@ -27,6 +27,25 @@ const MSG_BASE = "max-w-full rounded-[8px] px-[14px] py-[10px] whitespace-pre-wr
 const USER_MSG = `${MSG_BASE} group relative self-end border`;
 const ASSISTANT_MSG = `${MSG_BASE} self-start border border-current/[12%] bg-current/[6%]`;
 
+// Tool call cards — border and status color follow the run state.
+const TOOL_CARD = "self-stretch rounded-[8px] border bg-current/[3%] px-[10px] py-[8px] font-mono text-[0.82rem]";
+const TOOL_BORDER = {
+	running: "border-running/50",
+	ok: "border-success/50",
+	error: "border-danger/50",
+} as const;
+const TOOL_STATUS_COLOR = {
+	running: "text-running",
+	ok: "text-success",
+	error: "text-danger",
+} as const;
+const TOOL_HEAD =
+	"flex cursor-pointer items-center gap-[8px] select-none focus-visible:rounded-[4px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+const TOOL_CHEVRON =
+	"inline-block w-[10px] text-[0.78rem] leading-none text-current/50 transition-transform duration-150";
+const TOOL_BODY =
+	"mt-[6px] max-h-[240px] overflow-auto whitespace-pre-wrap break-words rounded-[4px] bg-current/[5%] px-[8px] py-[6px] text-current/85";
+
 /** Grow the composer textarea to fit its content, up to the CSS max-height. */
 function autosizeInput(el: HTMLTextAreaElement): void {
 	el.style.height = "auto";
@@ -392,9 +411,9 @@ let noticeId = 0;
 function ContextCard({ text, label = "sent" }: { text: string; label?: string }) {
 	const [expanded, setExpanded] = useState(false);
 		return (
-		<li className="tool-card" data-status="ok" data-expanded={String(expanded)}>
+		<li className={`${TOOL_CARD} ${TOOL_BORDER.ok}`}>
 			<div
-				className="tool-head"
+				className={TOOL_HEAD}
 				role="button"
 				tabIndex={0}
 				aria-expanded={expanded}
@@ -407,24 +426,24 @@ function ContextCard({ text, label = "sent" }: { text: string; label?: string })
 					}
 				}}
 			>
-				<span className="tool-chevron" aria-hidden="true">▸</span>
-				<code>context</code>
-				<span className="tool-status">{label}</span>
+				<span className={`${TOOL_CHEVRON} ${expanded ? "rotate-90" : ""}`} aria-hidden="true">▸</span>
+				<code className="flex-1 font-semibold text-primary">context</code>
+				<span className={`text-[0.7rem] tracking-[0.04em] uppercase ${TOOL_STATUS_COLOR.ok}`}>{label}</span>
 			</div>
-			<pre className="tool-body">{text}</pre>
+			{expanded && <pre className={TOOL_BODY}>{text}</pre>}
 		</li>
 	);
 }
 
 function ErrorCard({ text }: { text: string }) {
 	return (
-		<li className="tool-card" data-status="error" data-expanded="true">
-			<div className="tool-head">
-				<span className="tool-chevron" aria-hidden="true">▸</span>
-				<code>error</code>
-				<span className="tool-status">error</span>
+		<li className={`${TOOL_CARD} ${TOOL_BORDER.error}`}>
+			<div className={TOOL_HEAD}>
+				<span className={`${TOOL_CHEVRON} rotate-90`} aria-hidden="true">▸</span>
+				<code className="flex-1 font-semibold text-primary">error</code>
+				<span className={`text-[0.7rem] tracking-[0.04em] uppercase ${TOOL_STATUS_COLOR.error}`}>error</span>
 			</div>
-			<pre className="tool-body">{text}</pre>
+			<pre className={TOOL_BODY}>{text}</pre>
 		</li>
 	);
 }
@@ -438,9 +457,9 @@ function ToolCardView({ toolName, part }: { toolName: string; part: { toolCallId
 		? (part.output as { images: Array<{ mediaType: string; data: string }> }).images
 		: [];
 	return (
-		<li className="tool-card" data-status={status} data-expanded={String(expanded)}>
+		<li className={`${TOOL_CARD} ${TOOL_BORDER[status]}`}>
 			<div
-				className="tool-head"
+				className={TOOL_HEAD}
 				role="button"
 				tabIndex={0}
 				aria-expanded={expanded}
@@ -453,17 +472,21 @@ function ToolCardView({ toolName, part }: { toolName: string; part: { toolCallId
 					}
 				}}
 			>
-				<span className="tool-chevron" aria-hidden="true">▸</span>
-				<code>{toolName}</code>
-				<span className="tool-status">{status === "running" ? "running…" : status}</span>
+				<span className={`${TOOL_CHEVRON} ${expanded ? "rotate-90" : ""}`} aria-hidden="true">▸</span>
+				<code className="flex-1 font-semibold text-primary">{toolName}</code>
+				<span className={`text-[0.7rem] tracking-[0.04em] uppercase ${TOOL_STATUS_COLOR[status]}`}>
+					{status === "running" ? "running…" : status}
+				</span>
 			</div>
-			<pre className="tool-args">{formatJSON(part.input)}</pre>
-			<div className="tool-body">
-				{images.length > 0 && images.map((img, i) => (
-					<img key={i} src={`data:${img.mediaType};base64,${img.data}`} className="tool-screenshot" alt={`Screenshot ${i + 1}`} />
-				))}
-				{result && <span>{result}</span>}
-			</div>
+			{expanded && <pre className={TOOL_BODY}>{formatJSON(part.input)}</pre>}
+			{expanded && (images.length > 0 || result) && (
+				<div className={TOOL_BODY}>
+					{images.length > 0 && images.map((img, i) => (
+						<img key={i} src={`data:${img.mediaType};base64,${img.data}`} className="my-[4px] max-w-full rounded-[4px]" alt={`Screenshot ${i + 1}`} />
+					))}
+					{result && <span>{result}</span>}
+				</div>
+			)}
 		</li>
 	);
 }
@@ -492,9 +515,9 @@ interface SubtaskMessage {
 function SubtaskCard({ messages }: { messages: SubtaskMessage[] }) {
 	const [expanded, setExpanded] = useState(true);
 	return (
-		<li className="tool-card subtask-card" data-status="ok" data-expanded={String(expanded)}>
+		<li className={`${TOOL_CARD} ${TOOL_BORDER.ok}`}>
 			<div
-				className="tool-head"
+				className={TOOL_HEAD}
 				role="button"
 				tabIndex={0}
 				aria-expanded={expanded}
@@ -507,16 +530,16 @@ function SubtaskCard({ messages }: { messages: SubtaskMessage[] }) {
 					}
 				}}
 			>
-				<span className="tool-chevron" aria-hidden="true">▸</span>
-				<code>subtask</code>
-				<span className="tool-status">{messages.length} messages</span>
+				<span className={`${TOOL_CHEVRON} ${expanded ? "rotate-90" : ""}`} aria-hidden="true">▸</span>
+				<code className="flex-1 font-semibold text-primary">subtask</code>
+				<span className={`text-[0.7rem] tracking-[0.04em] uppercase ${TOOL_STATUS_COLOR.ok}`}>{messages.length} messages</span>
 			</div>
 			{expanded && (
-				<div className="subtask-body">
+				<div className="border-t border-current/10 px-[8px] py-[6px]">
 					{messages.map((msg, i) => {
 						if (msg.role === "assistant") {
 							return (
-								<div key={i} className="subtask-msg">
+								<div key={i} className="mb-[6px]">
 									<div className="text whitespace-normal"><Markdown>{msg.content}</Markdown></div>
 									{msg.usage && (
 									<UsageBadge
@@ -534,9 +557,9 @@ function SubtaskCard({ messages }: { messages: SubtaskMessage[] }) {
 							);
 						}
 						return (
-							<div key={i} className="subtask-tool">
-								<code>{msg.toolName ?? "tool"}</code>
-								<span className="subtask-tool-content">{msg.content}</span>
+							<div key={i} className="border-b border-current/[6%] py-[3px] text-[0.78rem]">
+								<code className="mr-[6px] text-current/60">{msg.toolName ?? "tool"}</code>
+								<span className="text-current/70">{msg.content}</span>
 							</div>
 						);
 					})}

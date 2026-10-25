@@ -243,30 +243,6 @@ body[data-popup-active="true"] #view-popup-hint {
 	flex: 1;
 }
 
-.subtask-card .subtask-body {
-	padding: 6px 8px;
-	border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
-}
-
-.subtask-msg {
-	margin-bottom: 6px;
-}
-
-.subtask-tool {
-	font-size: 0.78rem;
-	padding: 3px 0;
-	border-bottom: 1px solid color-mix(in srgb, currentColor 6%, transparent);
-}
-
-.subtask-tool code {
-	color: color-mix(in srgb, currentColor 60%, transparent);
-	margin-right: 6px;
-}
-
-.subtask-tool-content {
-	color: color-mix(in srgb, currentColor 70%, transparent);
-}
-
 .skill-delete {
 	margin-left: auto;
 	padding: 1px 8px;
@@ -276,113 +252,6 @@ body[data-popup-active="true"] #view-popup-hint {
 	color: #c0392b;
 	border-radius: 6px;
 	cursor: pointer;
-}
-
-/* tool call cards */
-
-#log li.tool-card {
-	list-style: none;
-	align-self: stretch;
-	border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
-	border-radius: 8px;
-	padding: 8px 10px;
-	font-size: 0.82rem;
-	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-	background: color-mix(in srgb, currentColor 3%, transparent);
-}
-
-#log li.tool-card[data-status="running"] {
-	border-color: color-mix(in srgb, #c98f00 50%, transparent);
-}
-
-#log li.tool-card[data-status="ok"] {
-	border-color: color-mix(in srgb, #2e9b4f 50%, transparent);
-}
-
-#log li.tool-card[data-status="error"] {
-	border-color: color-mix(in srgb, #c0392b 50%, transparent);
-}
-
-#log .tool-head {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	cursor: pointer;
-	user-select: none;
-	margin-bottom: 0;
-}
-
-#log .tool-head:focus-visible {
-	outline: 2px solid #4a90e2;
-	outline-offset: 2px;
-	border-radius: 4px;
-}
-
-#log .tool-chevron {
-	display: inline-block;
-	width: 10px;
-	color: color-mix(in srgb, currentColor 50%, transparent);
-	transition: transform 0.15s ease;
-	font-size: 0.78rem;
-	line-height: 1;
-}
-
-#log li.tool-card[data-expanded="true"] .tool-chevron {
-	transform: rotate(90deg);
-}
-
-#log .tool-head code {
-	flex: 1;
-	font-weight: 600;
-	color: #4a90e2;
-}
-
-#log .tool-status {
-	font-size: 0.7rem;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-	color: color-mix(in srgb, currentColor 60%, transparent);
-}
-
-#log li.tool-card[data-status="running"] .tool-status {
-	color: #c98f00;
-}
-
-#log li.tool-card[data-status="ok"] .tool-status {
-	color: #2e9b4f;
-}
-
-#log li.tool-card[data-status="error"] .tool-status {
-	color: #c0392b;
-}
-
-#log .tool-args,
-#log .tool-body {
-	display: none;
-	margin: 6px 0 0;
-	padding: 6px 8px;
-	border-radius: 4px;
-	background: color-mix(in srgb, currentColor 5%, transparent);
-	color: color-mix(in srgb, currentColor 85%, transparent);
-	white-space: pre-wrap;
-	word-break: break-word;
-	max-height: 240px;
-	overflow: auto;
-}
-
-#log li.tool-card[data-expanded="true"] .tool-args,
-#log .tool-card[data-expanded="true"] .tool-args {
-	display: block;
-}
-
-#log li.tool-card[data-expanded="true"] .tool-body,
-#log .tool-card[data-expanded="true"] .tool-body {
-	display: block;
-}
-
-#log li.tool-card[data-expanded="true"] .tool-body:empty,
-#log .tool-card[data-expanded="true"] .tool-body:empty {
-	display: none;
 }
 
 form {
@@ -686,12 +555,6 @@ button.danger:hover {
 	flex-direction: column;
 	gap: 2px;
 	flex-shrink: 0;
-}
-
-.tool-screenshot {
-	max-width: 100%;
-	border-radius: 4px;
-	margin: 4px 0;
 }
 
 .capability input {
