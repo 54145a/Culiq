@@ -10,7 +10,7 @@
 	"scripts": {
 		"dev": "TARGET=chrome vite",
 		"dev:firefox": "TARGET=firefox vite",
-		"build": "pnpm run build:chrome && pnpm run build:firefox",
+		"build": "pnpm run build:chrome && pnpm run build:firefox && node scripts/check-streamdown-classes.mjs",
 		"build:chrome": "TARGET=chrome vite build",
 		"build:firefox": "TARGET=firefox vite build",
 		"mcp:server": "pnpx --yes @modelcontextprotocol/server-everything streamableHttp",
