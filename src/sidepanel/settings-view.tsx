@@ -844,6 +844,23 @@ function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; 
 	);
 }
 
+function InterfaceGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
+	return (
+		<details className="settings-group">
+			<summary className="settings-header">Interface</summary>
+			<CheckRow
+				code="expand-thinking"
+				checked={settings.expandThinking}
+				onToggle={(v) => {
+					settings.expandThinking = v;
+					dirty();
+				}}
+				desc="show agent thinking content expanded by default"
+			/>
+		</details>
+	);
+}
+
 export function SettingsView() {
 	const [settings, setSettings] = useState<CuliqSettings | null>(null);
 	const [saveState, setSaveState] = useState<"idle" | "saving" | "ok" | "err">("idle");
@@ -878,6 +895,7 @@ export function SettingsView() {
 		<ProvidersGroup settings={settings} dirty={dirty} />
 		<ModelsGroup settings={settings} dirty={dirty} />
 		<ContextGroup settings={settings} dirty={dirty} />
+		<InterfaceGroup settings={settings} dirty={dirty} />
 			<SearchAndSubAgentGroup settings={settings} dirty={dirty} />
 			<LocalToolsGroup settings={settings} dirty={dirty} />
 			<SkillsGroup />

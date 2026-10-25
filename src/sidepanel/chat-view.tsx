@@ -550,6 +550,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	const [enabledModels, setEnabledModels] = useState<ModelConfig[]>([]);
 	const [modelProviders, setModelProviders] = useState<CuliqSettings["providers"]>([]);
 	const [modelId, setModelId] = useState("");
+	const [thinkingExpanded, setThinkingExpanded] = useState(false);
 	const logRef = useRef<HTMLUListElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -597,6 +598,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 			const enabled = s.models.filter((m) => m.enabled);
 			setEnabledModels(enabled);
 			setModelProviders(s.providers);
+			setThinkingExpanded(s.expandThinking);
 			setModelId((prev) => {
 				if (prev && enabled.some((m) => m.id === prev)) return prev;
 				const saved = currentSession.modelId;
@@ -719,6 +721,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 					<MessageView
 						key={msg.id ?? i}
 						msg={msg}
+						thinkingExpanded={thinkingExpanded}
 						isEditing={msg.id === editingId}
 						onEdit={startEdit}
 						onCancelEdit={cancelEdit}
@@ -854,8 +857,8 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 // Message rendering
 // ---------------------------------------------------------------------------
 
-function ThinkingBlock({ text }: { text: string }) {
-	const [open, setOpen] = useState(false);
+function ThinkingBlock({ text, defaultOpen }: { text: string; defaultOpen: boolean }) {
+	const [open, setOpen] = useState(defaultOpen);
 	return (
 		<div className="thinking-block">
 			<button type="button" className="thinking-toggle" onClick={() => setOpen((v) => !v)}>
@@ -866,8 +869,9 @@ function ThinkingBlock({ text }: { text: string }) {
 	);
 }
 
-function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
+function MessageView({ msg, thinkingExpanded, isEditing, onEdit, onCancelEdit }: {
 	msg: UIMessage;
+	thinkingExpanded: boolean;
 	isEditing?: boolean;
 	onEdit?: (id: string) => void;
 	onCancelEdit?: () => void;
@@ -903,7 +907,7 @@ function MessageView({ msg, isEditing, onEdit, onCancelEdit }: {
 					textContent = "";
 				}
 				if (part.text) {
-					elements.push(<ThinkingBlock key={`th-${i}`} text={part.text as string} />);
+					elements.push(<ThinkingBlock key={`th-${i}`} text={part.text as string} defaultOpen={thinkingExpanded} />);
 				}
 			} else if (part.type === "data-context" && typeof part.data === "string") {
 				if (textContent) {

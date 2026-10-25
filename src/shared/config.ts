@@ -147,6 +147,8 @@ export interface CuliqSettings {
 	subAgentModel: string;
 	/** Names of disabled custom tools (e.g. ["bing_search"]). */
 	disabledTools: string[];
+	/** Whether assistant thinking blocks start expanded in the transcript. */
+	expandThinking: boolean;
 }
 
 export const CONTEXT_MANAGEMENT_DEFAULTS: ContextManagementConfig = {
@@ -214,6 +216,7 @@ export function defaultSettings(): CuliqSettings {
 		contextManagement: { ...CONTEXT_MANAGEMENT_DEFAULTS },
 		subAgentModel: "",
 		disabledTools: [],
+		expandThinking: false,
 	};
 }
 
@@ -227,6 +230,7 @@ interface StoredSettings {
 	contextManagement?: Partial<ContextManagementConfig>;
 	subAgentModel?: unknown;
 	disabledTools?: unknown;
+	expandThinking?: boolean;
 }
 
 function normalizeSettings(stored: StoredSettings, base: CuliqSettings): CuliqSettings {
@@ -239,6 +243,7 @@ function normalizeSettings(stored: StoredSettings, base: CuliqSettings): CuliqSe
 		contextManagement: { ...base.contextManagement, ...stored.contextManagement },
 		subAgentModel: typeof stored.subAgentModel === "string" ? stored.subAgentModel : base.subAgentModel,
 		disabledTools: Array.isArray(stored.disabledTools) ? stored.disabledTools : [],
+		expandThinking: stored.expandThinking ?? base.expandThinking,
 	};
 }
 
