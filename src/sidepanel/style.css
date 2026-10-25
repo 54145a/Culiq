@@ -265,7 +265,12 @@ form {
 
 .composer-actions {
 	display: flex;
-	justify-content: flex-end;
+	align-items: center;
+	gap: 8px;
+}
+
+.composer-actions button[type="submit"] {
+	margin-left: auto;
 }
 
 .context-row {
@@ -293,6 +298,10 @@ form {
 .context-field select {
 	padding: 2px 6px;
 	font-size: 0.78rem;
+	/* Long model names must not stretch the narrow panel — cap and clip. */
+	max-width: 150px;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .context-field-multi select {

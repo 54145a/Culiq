@@ -778,40 +778,6 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 			</ul>
 			<div className="context-row">
 				<label className="context-field">
-					<span>Model</span>
-					<select
-						value={modelId}
-						onChange={(e) => {
-							const id = (e.target as HTMLSelectElement).value;
-							setModelId(id);
-							currentSession.modelId = id;
-							if (currentSession.messages.length > 0) void persistCurrent();
-						}}
-					>
-						{enabledModels.length === 0 && <option value="">No enabled models</option>}
-						{enabledModels.map((m) => (
-							<option key={m.id} value={m.id}>
-								{m.name} ({modelProviders.find((p) => p.id === m.providerId)?.name ?? m.providerId})
-							</option>
-						))}
-					</select>
-				</label>
-				<label className="context-field">
-					<span>Thinking</span>
-					<select
-						value={reasoning}
-						onChange={(e) => setReasoning((e.target as HTMLSelectElement).value)}
-					>
-						<option value="">Default</option>
-						<option value="none">Off</option>
-						<option value="minimal">Minimal</option>
-						<option value="low">Low</option>
-						<option value="medium">Medium</option>
-						<option value="high">High</option>
-						<option value="xhigh">Maximum</option>
-					</select>
-				</label>
-				<label className="context-field">
 					<span>Context</span>
 					<select
 						value={contextMode}
@@ -893,6 +859,40 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 					}}
 				/>
 				<div className="composer-actions">
+					<label className="context-field">
+						<span>Model</span>
+						<select
+							value={modelId}
+							onChange={(e) => {
+								const id = (e.target as HTMLSelectElement).value;
+								setModelId(id);
+								currentSession.modelId = id;
+								if (currentSession.messages.length > 0) void persistCurrent();
+							}}
+						>
+							{enabledModels.length === 0 && <option value="">No enabled models</option>}
+							{enabledModels.map((m) => (
+								<option key={m.id} value={m.id}>
+									{m.name} ({modelProviders.find((p) => p.id === m.providerId)?.name ?? m.providerId})
+								</option>
+							))}
+						</select>
+					</label>
+					<label className="context-field">
+						<span>Thinking</span>
+						<select
+							value={reasoning}
+							onChange={(e) => setReasoning((e.target as HTMLSelectElement).value)}
+						>
+							<option value="">Default</option>
+							<option value="none">Off</option>
+							<option value="minimal">Minimal</option>
+							<option value="low">Low</option>
+							<option value="medium">Medium</option>
+							<option value="high">High</option>
+							<option value="xhigh">Maximum</option>
+						</select>
+					</label>
 					<button type="submit" className={busy ? "danger" : undefined}>
 						{busy ? "stop" : "send"}
 					</button>
