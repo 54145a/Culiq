@@ -77,6 +77,32 @@ function Field({
 // A checkbox row with a <code> name and an optional ": " description. Used for
 // every capability / skill / MCP-server list so the code + text spacing and the
 // markup stay consistent (DRY). Extra controls (buttons) go in `children`.
+interface OpStatus {
+	state: "ok" | "err";
+	text: string;
+}
+
+/** Shared ok/err status plumbing for settings groups — Skills, MCP servers
+ *  and Custom tools all reported async op results the same way, triply
+ *  duplicated before this hook existed. */
+function useOpStatus() {
+	const [status, setStatus] = useState<OpStatus | null>(null);
+	return {
+		status,
+		ok: (text: string) => setStatus({ state: "ok", text }),
+		fail: (text: string) => setStatus({ state: "err", text }),
+		failErr: (err: unknown) => setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) }),
+	};
+}
+
+function StatusLine({ status }: { status: OpStatus | null }) {
+	return (
+		<span className={`${STATUS} ${status?.state === "err" ? "text-danger" : status?.state === "ok" ? "text-success" : ""}`}>
+			{status?.text ?? ""}
+		</span>
+	);
+}
+
 function CheckRow({
 	code,
 	checked,
@@ -379,13 +405,13 @@ function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () 
 
 function SkillsGroup() {
 	const [skills, setSkills] = useState<Skill[] | null>(null);
-	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
+	const { status, ok, fail, failErr } = useOpStatus();
 
 	const refresh = async () => {
 		try {
 			setSkills(await listSkills());
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -396,7 +422,7 @@ function SkillsGroup() {
 	const onImport = async () => {
 		const picker = (window as unknown as { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
 		if (!picker) {
-			setStatus({ state: "err", text: "Directory picker is not supported in this browser." });
+			fail("Directory picker is not supported in this browser.");
 			return;
 		}
 		try {
@@ -416,17 +442,17 @@ function SkillsGroup() {
 			if (!skillMd) throw new Error("The selected folder has no SKILL.md.");
 			const skill = buildUserSkill(await skillMd.text(), scripts);
 			await saveUserSkill(skill);
-			setStatus({ state: "ok", text: `imported ${skill.name}` });
+			ok(`imported ${skill.name}`);
 			await refresh();
 		} catch (err) {
 			if (err instanceof DOMException && err.name === "AbortError") return;
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
 	const onClawhub = async () => {
 		if (!chrome.downloads?.download) {
-			setStatus({ state: "err", text: "Downloads API is not available." });
+			fail("Downloads API is not available.");
 			return;
 		}
 		let tabUrl: string | undefined;
@@ -434,16 +460,16 @@ function SkillsGroup() {
 			const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
 			tabUrl = tab?.url;
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 			return;
 		}
 		if (!tabUrl) {
-			setStatus({ state: "err", text: "Could not read the active tab URL." });
+			fail("Could not read the active tab URL.");
 			return;
 		}
 		const slug = parseClawHubSlug(tabUrl);
 		if (!slug) {
-			setStatus({ state: "err", text: "Not a ClawHub skill page (expected clawhub.ai/<owner>/skills/<slug>)." });
+			fail("Not a ClawHub skill page (expected clawhub.ai/<owner>/skills/<slug>).");
 			return;
 		}
 		try {
@@ -452,9 +478,9 @@ function SkillsGroup() {
 				filename: `${slug}.zip`,
 				conflictAction: "uniquify",
 			});
-			setStatus({ state: "ok", text: `downloading ${slug}.zip (#${downloadId})` });
+			ok(`downloading ${slug}.zip (#${downloadId})`);
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -482,9 +508,7 @@ function SkillsGroup() {
 				with <code>@culiq/sandbox</code>, installed from npm or a folder) — see the Custom tools section above.
 			</p>
 			<div className={ACTIONS}>
-				<span className={`${STATUS} ${status?.state === "err" ? "text-danger" : status?.state === "ok" ? "text-success" : ""}`}>
-					{status?.text ?? ""}
-				</span>
+				<StatusLine status={status} />
 				<button type="button" onClick={() => void onImport()}>
 					Import skill folder…
 				</button>
@@ -554,13 +578,13 @@ function McpServersGroup() {
 	const [name, setName] = useState("");
 	const [url, setUrl] = useState("");
 	const [transport, setTransport] = useState<McpTransport>("http");
-	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
+	const { status, ok, fail, failErr } = useOpStatus();
 
 	const refresh = async () => {
 		try {
 			setServers(await loadMcpServers());
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -577,17 +601,17 @@ function McpServersGroup() {
 		const trimmedName = name.trim();
 		const trimmedUrl = url.trim();
 		if (!trimmedName || !trimmedUrl) {
-			setStatus({ state: "err", text: "Enter a name and URL." });
+			fail("Enter a name and URL.");
 			return;
 		}
 		if (servers?.some((s) => s.name === trimmedName)) {
-			setStatus({ state: "err", text: `A server named "${trimmedName}" already exists.` });
+			fail(`A server named "${trimmedName}" already exists.`);
 			return;
 		}
 		await persist([...(servers ?? []), { name: trimmedName, url: trimmedUrl, enabled: false, transport }]);
 		setName("");
 		setUrl("");
-		setStatus({ state: "ok", text: `added ${trimmedName}` });
+		ok(`added ${trimmedName}`);
 	};
 
 	const onToggle = async (server: McpServerConfig, enabled: boolean) => {
@@ -601,12 +625,12 @@ function McpServersGroup() {
 	};
 
 	const onTest = async (server: McpServerConfig) => {
-		setStatus({ state: "ok", text: `testing ${server.name}…` });
+		ok(`testing ${server.name}…`);
 		const result = await testMcpConnection(server.url, server.transport);
 		if (result.ok) {
-			setStatus({ state: "ok", text: `${server.name}: connected (${result.serverName}), ${result.toolCount} tools` });
+			ok(`${server.name}: connected (${result.serverName}), ${result.toolCount} tools`);
 		} else {
-			setStatus({ state: "err", text: `${server.name}: ${result.error}` });
+			fail(`${server.name}: ${result.error}`);
 		}
 	};
 
@@ -620,9 +644,7 @@ function McpServersGroup() {
 				servers as untrusted third-party code with external side effects; only enable servers you trust.
 			</p>
 			<div className={ACTIONS}>
-				<span className={`${STATUS} ${status?.state === "err" ? "text-danger" : status?.state === "ok" ? "text-success" : ""}`}>
-					{status?.text ?? ""}
-				</span>
+				<StatusLine status={status} />
 			</div>
 			<Field label="Name" type="text" value={name} placeholder="github" onInput={setName} />
 			<Field label="URL" type="text" value={url} placeholder="https://localhost:3001/mcp" onInput={setUrl} />
@@ -690,14 +712,14 @@ function McpServersGroup() {
 
 function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	const [tools, setTools] = useState<CustomToolMeta[] | null>(null);
-	const [status, setStatus] = useState<{ state: "ok" | "err"; text: string } | null>(null);
+	const { status, ok, fail, failErr } = useOpStatus();
 
 	const refresh = async () => {
 		try {
 			await syncBuiltinTools();
 			setTools(await listUserCustomTools());
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -731,17 +753,17 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 			await saveCustomToolPackage(pkgName, artifact, tools);
 			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
 			const count = metas.length;
-			setStatus({ state: "ok", text: `imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})` });
+			ok(`imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})`);
 			await refresh();
 		} catch (err) {
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
 	const onImport = async () => {
 		const picker = (window as unknown as { showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
 		if (!picker) {
-			setStatus({ state: "err", text: "Directory picker is not supported in this browser." });
+			fail("Directory picker is not supported in this browser.");
 			return;
 		}
 		try {
@@ -768,11 +790,11 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 			await saveCustomToolPackage(pkgName, js, tools);
 			chrome.runtime.sendMessage({ type: "reload_custom_tools" }).catch(() => {});
 			const count = metas.length;
-			setStatus({ state: "ok", text: `imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})` });
+			ok(`imported ${pkgName} (${count} tool${count > 1 ? "s" : ""})`);
 			await refresh();
 		} catch (err) {
 			if (err instanceof DOMException && err.name === "AbortError") return;
-			setStatus({ state: "err", text: err instanceof Error ? err.message : String(err) });
+			failErr(err);
 		}
 	};
 
@@ -791,9 +813,7 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 				These settings control the default state. Use the "Tools" button in the chat input to toggle tools per message (does not change these settings).
 			</p>
 			<div className={ACTIONS}>
-				<span className={`${STATUS} ${status?.state === "err" ? "text-danger" : status?.state === "ok" ? "text-success" : ""}`}>
-					{status?.text ?? ""}
-				</span>
+				<StatusLine status={status} />
 				<button type="button" onClick={() => void onNpmPage()}>
 					Load from npm page (current tab)
 				</button>
