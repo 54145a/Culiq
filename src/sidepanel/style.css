@@ -316,14 +316,6 @@ body[data-popup-active="true"] #view-popup-hint {
 	border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
 }
 
-.usage-badge {
-	display: block;
-	font-size: 0.72rem;
-	color: color-mix(in srgb, currentColor 50%, transparent);
-	padding: 2px 0;
-	margin-top: 2px;
-}
-
 .subtask-card .subtask-body {
 	padding: 6px 8px;
 	border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
@@ -346,38 +338,6 @@ body[data-popup-active="true"] #view-popup-hint {
 
 .subtask-tool-content {
 	color: color-mix(in srgb, currentColor 70%, transparent);
-}
-
-.thinking-block {
-	margin-bottom: 4px;
-}
-
-.thinking-toggle {
-	font-size: 0.75rem;
-	padding: 2px 6px;
-	border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-	border-radius: 4px;
-	background: none;
-	color: color-mix(in srgb, currentColor 60%, transparent);
-	cursor: pointer;
-}
-
-.thinking-toggle:hover {
-	color: inherit;
-	background: color-mix(in srgb, currentColor 6%, transparent);
-}
-
-.thinking-content {
-	margin: 4px 0 0;
-	padding: 6px 8px;
-	font-size: 0.78rem;
-	white-space: pre-wrap;
-	word-break: break-word;
-	background: color-mix(in srgb, currentColor 4%, transparent);
-	border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
-	border-radius: 4px;
-	max-height: 300px;
-	overflow-y: auto;
 }
 
 #log li.msg.assistant .text.md {

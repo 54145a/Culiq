@@ -4,7 +4,8 @@
  * it would reset the hand-written style.css across the whole panel. */
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
-@source "../../node_modules/streamdown/dist";
+@source "./";
+@source "../../node_modules/streamdown/dist";;
 
 /* Bridge Streamdown's shadcn-style semantic utilities (bg-background,
  * text-muted-foreground, ...) onto the panel's theme variables. `inline`

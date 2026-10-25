@@ -466,7 +466,7 @@ function UsageBadge({ data }: { data: { input: number; output: number; cache?: n
 		const cachedTotal = data.totalCache ? ` (${formatTokens(data.totalCache)} cached)` : "";
 		parts.push(`cumulative: ${formatTokens(data.totalIn)} in${cachedTotal} · ${formatTokens(data.totalOut)} out`);
 	}
-	return <span className="usage-badge">{parts.join(" · ")}</span>;
+	return <span className="mt-[2px] block py-[2px] text-[0.72rem] text-current/50">{parts.join(" · ")}</span>;
 }
 
 interface SubtaskMessage {
@@ -860,11 +860,19 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 function ThinkingBlock({ text, defaultOpen }: { text: string; defaultOpen: boolean }) {
 	const [open, setOpen] = useState(defaultOpen);
 	return (
-		<div className="thinking-block">
-			<button type="button" className="thinking-toggle" onClick={() => setOpen((v) => !v)}>
+		<div className="mb-[4px]">
+			<button
+				type="button"
+				className="cursor-pointer rounded-[4px] border border-current/20 bg-none px-[6px] py-[2px] text-[0.75rem] text-current/60 hover:bg-current/[6%] hover:text-inherit"
+				onClick={() => setOpen((v) => !v)}
+			>
 				{open ? "hide thinking" : "show thinking"}
 			</button>
-			{open && <pre className="thinking-content">{text}</pre>}
+			{open && (
+				<pre className="m-0 mt-[4px] max-h-[300px] overflow-y-auto whitespace-pre-wrap rounded-[4px] border border-current/10 bg-current/[4%] px-[8px] py-[6px] text-[0.78rem] break-words">
+					{text}
+				</pre>
+			)}
 		</div>
 	);
 }
