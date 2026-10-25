@@ -21,9 +21,15 @@ export interface ChatTransport {
 	onMessage(handler: (msg: BgToPanel) => void): () => void;
 }
 
+// Shared bubble utilities — px arbitrary values everywhere: the panel root is
+// 15px, so rem-based utilities would shift metrics off the old pixel values.
+const MSG_BASE = "max-w-full rounded-[8px] px-[14px] py-[10px] whitespace-pre-wrap break-words";
+const USER_MSG = `${MSG_BASE} group relative self-end border`;
+const ASSISTANT_MSG = `${MSG_BASE} self-start border border-current/[12%] bg-current/[6%]`;
+
 interface Notice {
 	id: number;
-	className: string;
+	variant: "err" | "notice";
 	text: string;
 }
 
@@ -554,8 +560,8 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	const logRef = useRef<HTMLUListElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-	const addNotice = useCallback((className: string, text: string) => {
-		setNotices((prev) => [...prev, { id: noticeId++, className, text }].slice(-5));
+	const addNotice = useCallback((variant: "err" | "notice", text: string) => {
+		setNotices((prev) => [...prev, { id: noticeId++, variant, text }].slice(-5));
 	}, []);
 
 	const { messages, status, sendMessage, stop, setMessages } = useChat({
@@ -566,14 +572,14 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		messages: convertSessionToUI(currentSession),
 		transport: chatTransport,
 		onError: (error) => {
-			addNotice("msg err", error.message);
+			addNotice("err", error.message);
 		},
 	});
 
 	useEffect(() => {
 		return transport.onMessage((msg) => {
 			if (msg.type === "log" && msg.level === "error") {
-				addNotice("msg err", `[bg] ${msg.text}`);
+				addNotice("err", `[bg] ${msg.text}`);
 			}
 		});
 	}, [transport, chatTransport, addNotice]);
@@ -638,7 +644,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 
 	const handleSubmit = useCallback((text: string) => {
 		if (!modelId) {
-			addNotice("msg err", "No model enabled. Enable one in Settings → Models.");
+			addNotice("err", "No model enabled. Enable one in Settings → Models.");
 			return;
 		}
 		chatTransport.setModel(modelId);
@@ -675,7 +681,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 			link.click();
 			setTimeout(() => URL.revokeObjectURL(url), 1000);
 		} catch (err) {
-			addNotice("msg err", `export failed: ${err instanceof Error ? err.message : String(err)}`);
+			addNotice("err", `export failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}, [messages, addNotice]);
 
@@ -728,7 +734,16 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 					/>
 				))}
 				{notices.map((n) => (
-					<li className={n.className} key={n.id}>{n.text}</li>
+					<li
+						className={
+							n.variant === "err"
+								? `${MSG_BASE} border-danger/35 text-danger`
+								: `${MSG_BASE} border border-dashed border-current/25 text-[0.78rem] text-current/55`
+						}
+						key={n.id}
+					>
+						{n.text}
+					</li>
 				))}
 			</ul>
 			<div className="context-row">
@@ -888,15 +903,34 @@ function MessageView({ msg, thinkingExpanded, isEditing, onEdit, onCancelEdit }:
 		const textParts = msg.parts.filter((p): p is { type: "text"; text: string } => p.type === "text");
 		const text = textParts.map((p) => p.text).join("");
 		return (
-			<li className={`msg user ${isEditing ? "editing" : ""}`}>
-				<span className="msg-text">{text}</span>
+			<li
+				className={
+					isEditing
+						? `${USER_MSG} bg-warning/[18%] border-warning/40`
+						: `${USER_MSG} bg-primary/[18%] border-primary/35`
+				}
+			>
+				<span>{text}</span>
 				{isEditing ? (
-					<span className="msg-editing">
-						<span className="msg-editing-label">editing</span>
-						<button type="button" className="msg-cancel" onClick={() => onCancelEdit?.()}>cancel</button>
+					<span className="mt-[4px] flex items-center gap-[6px]">
+						<span className="text-[0.7rem] italic text-warning/80">editing</span>
+						<button
+							type="button"
+							className="cursor-pointer rounded-[3px] border border-current/25 bg-none px-[4px] py-0 text-[0.7rem]"
+							onClick={() => onCancelEdit?.()}
+						>
+							cancel
+						</button>
 					</span>
 				) : (
-					<button type="button" className="msg-edit" title="Edit message" onClick={() => onEdit?.(msg.id)}>edit</button>
+					<button
+						type="button"
+						className="absolute top-[2px] right-[2px] cursor-pointer rounded-[3px] border-none bg-current/10 px-[4px] py-0 text-[0.7rem] opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+						title="Edit message"
+						onClick={() => onEdit?.(msg.id)}
+					>
+						edit
+					</button>
 				)}
 			</li>
 		);
@@ -990,7 +1024,7 @@ function MessageView({ msg, thinkingExpanded, isEditing, onEdit, onCancelEdit }:
 		const isCard = (el: JSX.Element) =>
 			el.type === ToolCardView || el.type === ContextCard || el.type === UsageBadge || el.type === SubtaskCard || el.type === ErrorCard;
 		if (elements.every((el) => !isCard(el))) {
-			return <li className="msg assistant">{elements}</li>;
+			return <li className={ASSISTANT_MSG}>{elements}</li>;
 		}
 		// Consecutive in-flow elements share one bubble — thinking sits directly
 		// above its answer instead of occupying a mostly-empty bubble of its own,
@@ -1004,7 +1038,7 @@ function MessageView({ msg, thinkingExpanded, isEditing, onEdit, onCancelEdit }:
 		return (
 			<>
 				{groups.map((group, i) =>
-					isCard(group[0]) ? group[0] : <li className="msg assistant" key={`a-${i}`}>{group}</li>,
+					isCard(group[0]) ? group[0] : <li className={ASSISTANT_MSG} key={`a-${i}`}>{group}</li>,
 				)}
 			</>
 		);

@@ -243,79 +243,6 @@ body[data-popup-active="true"] #view-popup-hint {
 	flex: 1;
 }
 
-#log li.msg {
-	padding: 10px 14px;
-	border-radius: 8px;
-	white-space: pre-wrap;
-	word-break: break-word;
-	max-width: 100%;
-}
-
-#log li.msg.user {
-	align-self: flex-end;
-	background: color-mix(in srgb, #4a90e2 18%, transparent);
-	border: 1px solid color-mix(in srgb, #4a90e2 35%, transparent);
-	position: relative;
-}
-
-#log li.msg.user .msg-text {
-	white-space: pre-wrap;
-	word-break: break-word;
-}
-
-#log li.msg.user .msg-edit {
-	opacity: 0;
-	position: absolute;
-	top: 2px;
-	right: 2px;
-	padding: 0 4px;
-	font-size: 0.7rem;
-	border: none;
-	border-radius: 3px;
-	background: color-mix(in srgb, currentColor 10%, transparent);
-	color: inherit;
-	cursor: pointer;
-	transition: opacity 0.15s;
-}
-
-#log li.msg.user:hover .msg-edit {
-	opacity: 1;
-}
-
-#log li.msg.user.editing {
-	background: color-mix(in srgb, #e2a64a 18%, transparent);
-	border-color: color-mix(in srgb, #e2a64a 40%, transparent);
-}
-
-#log li.msg.user .msg-editing {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	margin-top: 4px;
-}
-
-#log li.msg.user .msg-editing-label {
-	font-size: 0.7rem;
-	color: color-mix(in srgb, #e2a64a 80%, transparent);
-	font-style: italic;
-}
-
-#log li.msg.user .msg-cancel {
-	padding: 0 4px;
-	font-size: 0.7rem;
-	border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-	border-radius: 3px;
-	background: none;
-	color: inherit;
-	cursor: pointer;
-}
-
-#log li.msg.assistant {
-	align-self: flex-start;
-	background: color-mix(in srgb, currentColor 6%, transparent);
-	border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-}
-
 .subtask-card .subtask-body {
 	padding: 6px 8px;
 	border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
@@ -479,29 +406,6 @@ body[data-popup-active="true"] #view-popup-hint {
 #log .md th {
 	background: color-mix(in srgb, currentColor 6%, transparent);
 	font-weight: 600;
-}
-
-#log li.msg.assistant[data-tool-name]::after {
-	content: "tool: " attr(data-tool-name);
-	display: block;
-	margin-top: 6px;
-	padding-top: 6px;
-	border-top: 1px dashed color-mix(in srgb, currentColor 20%, transparent);
-	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 0.78rem;
-	color: color-mix(in srgb, currentColor 60%, transparent);
-}
-
-#log li.msg.err {
-	color: #c0392b;
-	border-color: color-mix(in srgb, #c0392b 35%, transparent);
-}
-
-#log li.msg.notice {
-	font-size: 0.78rem;
-	color: color-mix(in srgb, currentColor 55%, transparent);
-	border-style: dashed;
-	border-color: color-mix(in srgb, currentColor 25%, transparent);
 }
 
 .skill-delete {

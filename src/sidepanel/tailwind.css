@@ -21,3 +21,10 @@
 	--color-primary: var(--culiq-primary);
 	--color-primary-foreground: var(--culiq-primary-foreground);
 }
+
+/* Status colors — theme-invariant, so plain tokens (no var() indirection). */
+@theme {
+	--color-danger: #c0392b;
+	--color-warning: #e2a64a;
+	--color-success: #2e9b4f;
+}
