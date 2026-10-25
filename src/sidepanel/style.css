@@ -456,12 +456,15 @@ button.danger:hover {
 	user-select: none;
 	list-style: none;
 	/* Stay visible while the group's content scrolls under it. Opaque
-	 * panel background so passing rows don't bleed through. */
+	 * panel background so passing rows don't bleed through. The view's
+	 * 14px top padding would leave a see-through strip above a top:0
+	 * header, so stick into the padding and compensate with extra
+	 * header padding of the same size. */
 	position: sticky;
-	top: 0;
+	top: -14px;
 	z-index: 1;
 	background: var(--culiq-background);
-	padding: 6px 0;
+	padding: 20px 0 6px;
 }
 
 .settings-group > summary.settings-header::-webkit-details-marker {
