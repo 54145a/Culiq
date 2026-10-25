@@ -27,6 +27,12 @@ const MSG_BASE = "max-w-full rounded-[8px] px-[14px] py-[10px] whitespace-pre-wr
 const USER_MSG = `${MSG_BASE} group relative self-end border`;
 const ASSISTANT_MSG = `${MSG_BASE} self-start border border-current/[12%] bg-current/[6%]`;
 
+/** Grow the composer textarea to fit its content, up to the CSS max-height. */
+function autosizeInput(el: HTMLTextAreaElement): void {
+	el.style.height = "auto";
+	el.style.height = `${el.scrollHeight}px`;
+}
+
 interface Notice {
 	id: number;
 	variant: "err" | "notice";
@@ -692,6 +698,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 		setEditingId(id);
 		if (inputRef.current) {
 			inputRef.current.value = text;
+			autosizeInput(inputRef.current);
 			inputRef.current.focus();
 		}
 	}, [messages]);
@@ -767,6 +774,21 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 					</select>
 				</label>
 				<label className="context-field">
+					<span>Thinking</span>
+					<select
+						value={reasoning}
+						onChange={(e) => setReasoning((e.target as HTMLSelectElement).value)}
+					>
+						<option value="">Default</option>
+						<option value="none">Off</option>
+						<option value="minimal">Minimal</option>
+						<option value="low">Low</option>
+						<option value="medium">Medium</option>
+						<option value="high">High</option>
+						<option value="xhigh">Maximum</option>
+					</select>
+				</label>
+				<label className="context-field">
 					<span>Context</span>
 					<select
 						value={contextMode}
@@ -816,21 +838,6 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 						</select>
 					</label>
 				)}
-				<label className="context-field">
-					<span>Thinking</span>
-					<select
-						value={reasoning}
-						onChange={(e) => setReasoning((e.target as HTMLSelectElement).value)}
-					>
-						<option value="">Default</option>
-						<option value="none">Off</option>
-						<option value="minimal">Minimal</option>
-						<option value="low">Low</option>
-						<option value="medium">Medium</option>
-						<option value="high">High</option>
-						<option value="xhigh">Maximum</option>
-					</select>
-				</label>
 			</div>
 			<form id="form" onSubmit={(e) => {
 				e.preventDefault();
@@ -841,6 +848,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 				if (!text) return;
 				handleSubmit(text);
 				input.value = "";
+				autosizeInput(input);
 			}}>
 				<textarea
 					id="input"
@@ -848,6 +856,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 					rows={1}
 					disabled={busy}
 					placeholder="ask the agent…  (Shift+Enter for newline)"
+					onInput={(e) => autosizeInput(e.currentTarget)}
 					onKeyDown={(e) => {
 						if (e.key === "Escape" && editingId) {
 							e.preventDefault();
@@ -860,9 +869,11 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 						}
 					}}
 				/>
-				<button type="submit" className={busy ? "danger" : undefined}>
-					{busy ? "stop" : "send"}
-				</button>
+				<div className="composer-actions">
+					<button type="submit" className={busy ? "danger" : undefined}>
+						{busy ? "stop" : "send"}
+					</button>
+				</div>
 			</form>
 		</>
 	);
