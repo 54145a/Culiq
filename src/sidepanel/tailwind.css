@@ -5,3 +5,18 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../../node_modules/streamdown/dist";
+
+/* Bridge Streamdown's shadcn-style semantic utilities (bg-background,
+ * text-muted-foreground, ...) onto the panel's theme variables. `inline`
+ * makes every generated utility reference var(--culiq-*) directly, so
+ * light/dark switching is instant with no theme recompilation. */
+@theme inline {
+	--color-background: var(--culiq-background);
+	--color-foreground: var(--culiq-foreground);
+	--color-muted: var(--culiq-muted);
+	--color-muted-foreground: var(--culiq-muted-foreground);
+	--color-border: var(--culiq-border);
+	--color-sidebar: var(--culiq-sidebar);
+	--color-primary: var(--culiq-primary);
+	--color-primary-foreground: var(--culiq-primary-foreground);
+}

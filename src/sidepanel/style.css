@@ -2,18 +2,37 @@
 	color-scheme: dark light;
 	font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 	font-size: 15px;
+	/* Semantic theme tokens — single source of color truth, consumed both by
+	 * hand-written rules below and (via @theme inline in tailwind.css) by
+	 * Streamdown's Tailwind utilities. */
+	--culiq-background: #ffffff;
+	--culiq-foreground: #202124;
+	--culiq-muted: #f1f3f4;
+	--culiq-muted-foreground: #5f6368;
+	--culiq-border: #dadce0;
+	--culiq-sidebar: #f8f9fa;
+	--culiq-primary: #4a90e2;
+	--culiq-primary-foreground: #ffffff;
 }
 
 :root[data-theme="light"] {
 	color-scheme: light;
-	color: #202124;
-	background: #fff;
+	color: var(--culiq-foreground);
+	background: var(--culiq-background);
 }
 
 :root[data-theme="dark"] {
 	color-scheme: dark;
-	color: #e8eaed;
-	background: #202124;
+	--culiq-background: #202124;
+	--culiq-foreground: #e8eaed;
+	--culiq-muted: #2d2e31;
+	--culiq-muted-foreground: #9aa0a6;
+	--culiq-border: #3c4043;
+	--culiq-sidebar: #171717;
+	--culiq-primary: #4a90e2;
+	--culiq-primary-foreground: #202124;
+	color: var(--culiq-foreground);
+	background: var(--culiq-background);
 }
 
 * {
