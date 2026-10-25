@@ -511,7 +511,7 @@ function SubtaskCard({ messages }: { messages: SubtaskMessage[] }) {
 						if (msg.role === "assistant") {
 							return (
 								<div key={i} className="subtask-msg">
-									<div className="text md"><Markdown>{msg.content}</Markdown></div>
+									<div className="text whitespace-normal"><Markdown>{msg.content}</Markdown></div>
 									{msg.usage && (
 									<UsageBadge
 										data={{
@@ -945,7 +945,7 @@ function MessageView({ msg, thinkingExpanded, isEditing, onEdit, onCancelEdit }:
 				textContent += part.text as string;
 			} else if (part.type === "reasoning") {
 				if (textContent) {
-					elements.push(<div className="text md" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
+					elements.push(<div className="text whitespace-normal" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
 					textContent = "";
 				}
 				if (part.text) {
@@ -953,19 +953,19 @@ function MessageView({ msg, thinkingExpanded, isEditing, onEdit, onCancelEdit }:
 				}
 			} else if (part.type === "data-context" && typeof part.data === "string") {
 				if (textContent) {
-					elements.push(<div className="text md" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
+					elements.push(<div className="text whitespace-normal" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
 					textContent = "";
 				}
 				elements.push(<ContextCard key={`ctx-${i}`} text={part.data as string} />);
 			} else if (part.type === "data-compress" && typeof part.data === "string") {
 				if (textContent) {
-					elements.push(<div className="text md" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
+					elements.push(<div className="text whitespace-normal" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
 					textContent = "";
 				}
 				elements.push(<ContextCard key={`cmp-${i}`} text={part.data} label="compressed" />);
 			} else if (part.type === "data-usage" && typeof part.data === "object") {
 				if (textContent) {
-					elements.push(<div className="text md" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
+					elements.push(<div className="text whitespace-normal" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
 					textContent = "";
 				}
 				elements.push(
@@ -976,19 +976,19 @@ function MessageView({ msg, thinkingExpanded, isEditing, onEdit, onCancelEdit }:
 				);
 			} else if (part.type === "data-subtask" && Array.isArray(part.data)) {
 				if (textContent) {
-					elements.push(<div className="text md" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
+					elements.push(<div className="text whitespace-normal" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
 					textContent = "";
 				}
 				elements.push(<SubtaskCard key={`st-${i}`} messages={part.data as SubtaskMessage[]} />);
 			} else if (part.type === "data-error" && typeof part.data === "string") {
 				if (textContent) {
-					elements.push(<div className="text md" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
+					elements.push(<div className="text whitespace-normal" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
 					textContent = "";
 				}
 				elements.push(<ErrorCard key={`err-${i}`} text={part.data} />);
 			} else if (part.type === "data-bridge" && typeof part.data === "object") {
 				if (textContent) {
-					elements.push(<div className="text md" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
+					elements.push(<div className="text whitespace-normal" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
 					textContent = "";
 				}
 				const d = part.data as { name: string; arguments: unknown; result?: string; isError?: boolean };
@@ -1002,14 +1002,14 @@ function MessageView({ msg, thinkingExpanded, isEditing, onEdit, onCancelEdit }:
 				elements.push(<ToolCardView key={`br-${part.id as string}`} toolName={d.name} part={bridgePart} />);
 			} else if (part.type === "tool-invocation") {
 				if (textContent) {
-					elements.push(<div className="text md" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
+					elements.push(<div className="text whitespace-normal" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
 					textContent = "";
 				}
 				const tp = part as unknown as { toolCallId: string; toolName: string; input: unknown; state: string; output?: unknown; errorText?: string };
 				elements.push(<ToolCardView key={tp.toolCallId ?? i} toolName={tp.toolName} part={tp} />);
 			} else if (part.type.startsWith("tool-")) {
 				if (textContent) {
-					elements.push(<div className="text md" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
+					elements.push(<div className="text whitespace-normal" key={`t-${i}`}><Markdown>{textContent}</Markdown></div>);
 					textContent = "";
 				}
 				const toolName = part.type.slice(5);
@@ -1018,7 +1018,7 @@ function MessageView({ msg, thinkingExpanded, isEditing, onEdit, onCancelEdit }:
 			}
 		}
 		if (textContent) {
-			elements.push(<div className="text md" key="t-end"><Markdown>{textContent}</Markdown></div>);
+			elements.push(<div className="text whitespace-normal" key="t-end"><Markdown>{textContent}</Markdown></div>);
 		}
 		if (elements.length === 0) return null;
 		const isCard = (el: JSX.Element) =>
