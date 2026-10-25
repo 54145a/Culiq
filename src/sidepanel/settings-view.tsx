@@ -22,6 +22,31 @@ import { listUserCustomTools, saveCustomToolPackage, deleteUserCustomTool, extra
 import { syncBuiltinTools } from "@shared/custom-tools";
 import type { CustomToolMeta } from "@shared/custom-tools";
 
+// Shared settings-form utilities (px arbitrary values: the panel root is
+// 15px, rem utilities would shift metrics). Keep visual parity with the
+// style.css rules they replaced.
+const LABEL = "flex flex-col gap-[4px] text-[0.78rem] text-current/60";
+const CONTROL = "text-[0.92rem] text-inherit";
+const GROUP = "flex flex-col gap-[10px]";
+// Sticky group header: layout + header typography + the panel-background
+// veil that hides rows scrolling underneath.
+const SUMMARY =
+	"sticky top-0 z-[1] m-0 flex cursor-pointer items-center justify-between gap-[8px] bg-background py-[6px] text-[0.78rem] font-semibold tracking-[0.06em] uppercase text-current/60 select-none list-none [&::-webkit-details-marker]:hidden";
+const HINT = "-mt-[8px] mb-0 text-[0.85rem] text-current/55 [overflow-wrap:anywhere]";
+const ACTIONS = "flex items-center justify-end gap-[10px] pt-[4px]";
+const LIST = "grid gap-[6px]";
+const DESC = "min-w-0 flex-1 flex-auto [overflow-wrap:break-word]";
+const CHECK = "flex items-start gap-[8px] min-w-0 text-[0.85rem]";
+const CHECKBOX = "mt-[2px] h-[16px] w-[16px] flex-none p-0 accent-primary";
+const STATUS = "min-w-0 flex-1 text-[0.82rem] text-current/60 [overflow-wrap:anywhere]";
+const DELETE_BTN =
+	"ml-auto rounded-[6px] border border-danger/40 bg-none px-[8px] py-[1px] text-[0.72rem] text-danger cursor-pointer";
+const PROVIDER_CARD = "flex flex-col gap-[10px] rounded-[8px] border border-current/[18%] px-[14px] py-[12px]";
+const MODEL_ROW = "flex flex-col gap-[6px] rounded-[6px] border border-current/[15%] px-[10px] py-[8px]";
+const MODEL_HEADER = "flex items-center gap-[8px] text-[0.85rem]";
+const MODEL_CONTROLS = "flex flex-col gap-[4px] pl-[4px]";
+const CONTROL_LABEL = "flex flex-col gap-[3px] text-[0.78rem] text-current/60";
+
 function Field({
 	label,
 	type,
@@ -36,14 +61,14 @@ function Field({
 	onInput: (value: string) => void;
 }) {
 	return (
-		<label>
+		<label className={LABEL}>
 			<span>{label}</span>
 			{type === "password" ? (
-				<input type="password" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
+				<input className={CONTROL} type="password" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
 			) : type === "number" ? (
-				<input type="number" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
+				<input className={`${CONTROL} w-full`} type="number" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
 			) : (
-				<input type="text" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
+				<input className={CONTROL} type="text" value={value} placeholder={placeholder} onInput={(e) => onInput((e.target as HTMLInputElement).value)} onClick={(e) => e.stopPropagation()} />
 			)}
 		</label>
 	);
@@ -68,15 +93,16 @@ function CheckRow({
 	children?: ComponentChildren;
 }) {
 	return (
-		<label className="capability">
+		<label className={CHECK}>
 			<input
+				className={CHECKBOX}
 				type="checkbox"
 				checked={checked}
 				disabled={disabled}
 				onChange={(e) => onToggle?.((e.target as HTMLInputElement).checked)}
 			/>
 			<code>{code}</code>
-			{desc && <span className="capability-desc">: {desc}</span>}
+			{desc && <span className={DESC}>: {desc}</span>}
 			{children}
 		</label>
 	);
@@ -122,14 +148,15 @@ function ProviderCard({
 	};
 
 	return (
-		<div className="provider-card">
-			<header>
-				<h3>{provider.name || provider.id}</h3>
+		<div className={PROVIDER_CARD}>
+			<header className="flex items-center justify-between">
+				<h3 className="m-0 text-[1rem] font-semibold">{provider.name || provider.id}</h3>
 			</header>
 			<Field label="Name" type="text" value={provider.name} placeholder={provider.id} onInput={(v) => { provider.name = v; dirty(); }} />
-			<label>
+			<label className={LABEL}>
 				<span>Type</span>
 				<select
+					className={CONTROL}
 					value={provider.type}
 					onClick={(e) => e.stopPropagation()}
 					onChange={(e) => { provider.type = (e.target as HTMLSelectElement).value as "openai" | "anthropic"; dirty(); }}
@@ -140,11 +167,11 @@ function ProviderCard({
 			</label>
 			<Field label="API key" type="password" value={provider.apiKey} placeholder="sk-..." onInput={(v) => { provider.apiKey = v; dirty(); }} />
 			<Field label="Base URL" type="text" value={provider.baseUrl} placeholder={def?.baseUrl ?? ""} onInput={(v) => { provider.baseUrl = v; dirty(); }} />
-			<div className="settings-actions">
+			<div className={ACTIONS}>
 				<button type="button" disabled={fetching || !provider.apiKey} onClick={() => { void fetchModels(); }}>{fetching ? "Fetching models…" : "Fetch models"}</button>
 				<button type="button" className="provider-delete" onClick={(e) => { e.stopPropagation(); remove(); }}>Delete</button>
 			</div>
-			{fetchError && <p className="settings-hint">Fetch failed: {fetchError}</p>}
+			{fetchError && <p className={HINT}>Fetch failed: {fetchError}</p>}
 		</div>
 	);
 }
@@ -162,17 +189,17 @@ function ProvidersGroup({ settings, dirty }: { settings: CuliqSettings; dirty: (
 	};
 
 	return (
-		<details className="settings-group" open>
-			<summary className="settings-header">Providers</summary>
-			<p className="settings-hint">
+		<details className={GROUP} open>
+			<summary className={SUMMARY}>Providers</summary>
+			<p className={HINT}>
 				Configure API credentials. Each provider holds a name, type, key, and base URL.
 			</p>
-			<div className="capability-list">
+			<div className={LIST}>
 				{settings.providers.map((p) => (
 					<ProviderCard key={p.id} provider={p} settings={settings} remove={() => removeProvider(p.id)} dirty={dirty} />
 				))}
 			</div>
-			<div className="settings-actions">
+			<div className={ACTIONS}>
 				<button type="button" onClick={addProvider}>Add provider</button>
 			</div>
 		</details>
@@ -200,14 +227,14 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 	};
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Models</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Models</summary>
+			<p className={HINT}>
 				Enabled models appear in the model picker above the chat input. Bulk-fetched
 				models start disabled. Screenshot is off by default — opt in per vision model.
 				Set the context window size for context compression.
 			</p>
-			<div className="capability-list">
+			<div className={LIST}>
 				{settings.models.map((m) => {
 					const capKey = m.id;
 					const screenshotOn = settings.modelCapabilities[capKey]?.enabledCapabilities.includes("screenshot") ?? false;
@@ -223,9 +250,9 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 						dirty();
 					};
 					return (
-						<div className={`model-row${m.enabled ? "" : " model-row-disabled"}`} key={m.id}>
-							<div className="model-row-header">
-								<label className="model-enable" title={m.enabled ? "Disable model" : "Enable model"}>
+						<div className={`${MODEL_ROW} ${m.enabled ? "" : "opacity-55"}`} key={m.id}>
+							<div className={MODEL_HEADER}>
+								<label className="flex items-center" title={m.enabled ? "Disable model" : "Enable model"}>
 									<input
 										type="checkbox"
 										checked={m.enabled}
@@ -234,17 +261,17 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 									/>
 								</label>
 								<code>{m.name}</code>
-								<span className="capability-desc">{settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId}</span>
+								<span className={DESC}>{settings.providers.find((p) => p.id === m.providerId)?.name ?? m.providerId}</span>
 								<button
 									type="button"
-									className="skill-delete"
+									className={DELETE_BTN}
 									title="Delete model"
 									onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(m.id); }}
 								>
 									delete
 								</button>
 							</div>
-							<div className="model-row-controls">
+							<div className={`${MODEL_CONTROLS} ${m.enabled ? "" : "pointer-events-none"}`}>
 								<CheckRow
 									code="screenshot"
 									checked={screenshotOn}
@@ -258,9 +285,10 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 									placeholder="Default: 64000"
 									onInput={(v) => { m.contextWindow = v ? Number(v) : undefined; dirty(); }}
 								/>
-								<label>
+								<label className={CONTROL_LABEL}>
 									<span>Thinking</span>
 									<select
+										className={`${CONTROL} w-full`}
 										value={m.reasoning ?? ""}
 										onClick={(e) => e.stopPropagation()}
 										onChange={(e) => { m.reasoning = (e.target as HTMLSelectElement).value as any || undefined; dirty(); }}
@@ -275,11 +303,12 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 					);
 				})}
 			</div>
-			<div className="settings-actions add-model-row">
-				<div className="add-model-fields">
-					<label>
+			<div className={`${ACTIONS} flex-wrap`}>
+				<div className="flex min-w-0 flex-1 flex-col gap-[6px]">
+					<label className={LABEL}>
 						<span>Add model</span>
 						<input
+							className={CONTROL}
 							type="text"
 							value={newModelName}
 							placeholder="model-name"
@@ -287,9 +316,10 @@ function ModelsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () =
 							onClick={(e) => e.stopPropagation()}
 						/>
 					</label>
-					<label>
+					<label className={LABEL}>
 						<span>Provider</span>
 						<select
+							className={CONTROL}
 							value={newModelProvider}
 							onClick={(e) => e.stopPropagation()}
 							onChange={(e) => setNewModelProvider((e.target as HTMLSelectElement).value)}
@@ -310,9 +340,9 @@ function ContextGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () 
 	const cm = settings.contextManagement;
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Context management</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Context management</summary>
+			<p className={HINT}>
 				Summarize old turns when the conversation nears the model's context window. The context window size is set per-model in the Models section.
 			</p>
 			<CheckRow
@@ -439,9 +469,9 @@ function SkillsGroup() {
 	};
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Skills</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Skills</summary>
+			<p className={HINT}>
 				Skills bundle reusable instructions and optional script files (AgentSkills format: a folder with SKILL.md whose
 				frontmatter has `name` and `description`). Scripts may be in any language and are imported for reference only — they
 				are not executed. Import a folder, or download a skill's zip from a ClawHub skill page (then unzip and import it).
@@ -451,8 +481,8 @@ function SkillsGroup() {
 				Skills are reference-only. For executable, typed, distributable capabilities, use <strong>Custom tools</strong> (built
 				with <code>@culiq/sandbox</code>, installed from npm or a folder) — see the Custom tools section above.
 			</p>
-			<div className="settings-actions">
-				<span className="status" data-state={status?.state}>
+			<div className={ACTIONS}>
+				<span className={`${STATUS} ${status?.state === "err" ? "text-danger" : status?.state === "ok" ? "text-success" : ""}`}>
 					{status?.text ?? ""}
 				</span>
 				<button type="button" onClick={() => void onImport()}>
@@ -466,7 +496,7 @@ function SkillsGroup() {
 					Download skill from current tab
 				</button>
 			</div>
-			<div className="capability-list">
+			<div className={LIST}>
 				{skills === null ? null : skills.length === 0 ? (
 					<p>No skills installed yet.</p>
 				) : (
@@ -478,12 +508,12 @@ function SkillsGroup() {
 							disabled={skill.source === "builtin"}
 							onToggle={(v) => void onToggle(skill.name, v)}
 						>
-							<span className="capability-desc">: {skill.source === "builtin" ? "builtin" : "user"}</span>
-							<span className="capability-desc"> {skill.description}</span>
+							<span className={DESC}>: {skill.source === "builtin" ? "builtin" : "user"}</span>
+							<span className={DESC}> {skill.description}</span>
 							{skill.source === "user" && (
 								<button
 									type="button"
-									className="skill-delete"
+									className={DELETE_BTN}
 									onClick={(e) => {
 										e.preventDefault();
 										e.stopPropagation();
@@ -581,24 +611,25 @@ function McpServersGroup() {
 	};
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">MCP servers</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>MCP servers</summary>
+			<p className={HINT}>
 				Connect to Model Context Protocol servers. Their tools are exposed to the agent as <code>server-tool</code> and toggle
 				per server. Streamable HTTP is the modern transport; SSE is legacy. The URL must include the server's endpoint path
 				(e.g. <code>…/mcp</code> for streamable HTTP, <code>…/sse</code> for SSE) — a bare hostname won't work. Treat MCP
 				servers as untrusted third-party code with external side effects; only enable servers you trust.
 			</p>
-			<div className="settings-actions">
-				<span className="status" data-state={status?.state}>
+			<div className={ACTIONS}>
+				<span className={`${STATUS} ${status?.state === "err" ? "text-danger" : status?.state === "ok" ? "text-success" : ""}`}>
 					{status?.text ?? ""}
 				</span>
 			</div>
 			<Field label="Name" type="text" value={name} placeholder="github" onInput={setName} />
 			<Field label="URL" type="text" value={url} placeholder="https://localhost:3001/mcp" onInput={setUrl} />
-			<label>
+			<label className={LABEL}>
 				<span>Transport</span>
 				<select
+					className={CONTROL}
 					value={transport}
 					onChange={(e) => setTransport((e.target as HTMLSelectElement).value as McpTransport)}
 					onClick={(e) => e.stopPropagation()}
@@ -607,12 +638,12 @@ function McpServersGroup() {
 					<option value="sse">SSE (legacy)</option>
 				</select>
 			</label>
-			<div className="settings-actions">
+			<div className={ACTIONS}>
 				<button type="button" onClick={() => void onAdd()}>
 					Add server
 				</button>
 			</div>
-			<div className="capability-list">
+			<div className={LIST}>
 				{servers === null ? null : servers.length === 0 ? (
 					<p>No MCP servers configured yet.</p>
 				) : (
@@ -623,11 +654,11 @@ function McpServersGroup() {
 							checked={server.enabled}
 							onToggle={(v) => void onToggle(server, v)}
 						>
-							<span className="capability-desc">: {server.transport}</span>
-							<span className="capability-desc"> {server.url}</span>
+							<span className={DESC}>: {server.transport}</span>
+							<span className={DESC}> {server.url}</span>
 							<button
 								type="button"
-								className="skill-delete"
+								className={DELETE_BTN}
 								title="Test connection"
 								onClick={(e) => {
 									e.preventDefault();
@@ -639,7 +670,7 @@ function McpServersGroup() {
 							</button>
 							<button
 								type="button"
-								className="skill-delete"
+								className={DELETE_BTN}
 								title="Delete server"
 								onClick={(e) => {
 									e.preventDefault();
@@ -752,15 +783,15 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 	};
 
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Custom tools</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Custom tools</summary>
+			<p className={HINT}>
 				Executable, typed tools built with <code>@culiq/sandbox</code>. On an npm package page, click
 				"Load from npm page" to install it; or import a folder containing <code>culiq-tool.js</code>.
 				These settings control the default state. Use the "Tools" button in the chat input to toggle tools per message (does not change these settings).
 			</p>
-			<div className="settings-actions">
-				<span className="status" data-state={status?.state}>
+			<div className={ACTIONS}>
+				<span className={`${STATUS} ${status?.state === "err" ? "text-danger" : status?.state === "ok" ? "text-success" : ""}`}>
 					{status?.text ?? ""}
 				</span>
 				<button type="button" onClick={() => void onNpmPage()}>
@@ -770,19 +801,19 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 					Import folder…
 				</button>
 			</div>
-			<div className="capability-list">
+			<div className={LIST}>
 				{tools === null ? null : tools.length === 0 ? (
 					<p>No custom tools installed yet.</p>
 				) : (
 				tools.map((t) => (
 						<div className="capability" key={t.toolName}>
 							<code>{t.toolName}</code>
-							{t.name !== t.toolName && <span className="capability-desc"> ({t.name})</span>}
-							<span className="capability-desc"> {t.description}</span>
-							<div className="capability-actions">
+							{t.name !== t.toolName && <span className={DESC}> ({t.name})</span>}
+							<span className={DESC}> {t.description}</span>
+							<div className="flex flex-col gap-[2px] flex-shrink-0">
 								<button
 									type="button"
-									className="skill-delete"
+									className={DELETE_BTN}
 									onClick={(e) => {
 										e.preventDefault();
 										const disabled = settings.disabledTools;
@@ -797,7 +828,7 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 								{t.source === "user" ? (
 									<button
 										type="button"
-										className="skill-delete"
+										className={DELETE_BTN}
 										onClick={(e) => {
 											e.preventDefault();
 											e.stopPropagation();
@@ -807,7 +838,7 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 										delete
 									</button>
 								) : (
-									<span className="capability-desc">(builtin)</span>
+									<span className={DESC}>(builtin)</span>
 								)}
 							</div>
 						</div>
@@ -820,14 +851,15 @@ function LocalToolsGroup({ settings, dirty }: { settings: CuliqSettings; dirty: 
 
 function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Sub-agent</summary>
-			<p className="settings-hint">
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Sub-agent</summary>
+			<p className={HINT}>
 				Optional model for the `subtask` sub-agent. Leave empty to use the main model.
 			</p>
-			<label>
+			<label className={LABEL}>
 				<span>Sub-agent model</span>
 				<select
+					className={CONTROL}
 					value={settings.subAgentModel}
 					onClick={(e) => e.stopPropagation()}
 					onChange={(e) => { settings.subAgentModel = (e.target as HTMLSelectElement).value; dirty(); }}
@@ -846,8 +878,8 @@ function SearchAndSubAgentGroup({ settings, dirty }: { settings: CuliqSettings; 
 
 function InterfaceGroup({ settings, dirty }: { settings: CuliqSettings; dirty: () => void }) {
 	return (
-		<details className="settings-group">
-			<summary className="settings-header">Interface</summary>
+		<details className={GROUP}>
+			<summary className={SUMMARY}>Interface</summary>
 			<CheckRow
 				code="expand-thinking"
 				checked={settings.expandThinking}
@@ -909,8 +941,8 @@ export function SettingsView() {
 			<LocalToolsGroup settings={settings} dirty={dirty} />
 			<SkillsGroup />
 			<McpServersGroup />
-			<div className="settings-actions settings-save-bar">
-				<span className="status" data-state={saveState === "ok" ? "ok" : saveState === "err" ? "err" : undefined}>
+			<div className={ACTIONS}>
+				<span className={`${STATUS} ${saveState === "err" ? "text-danger" : saveState === "ok" ? "text-success" : ""}`}>
 					{saveMsg}
 				</span>
 				<button type="button" disabled={saveState === "saving"} onClick={() => void onSave()}>
