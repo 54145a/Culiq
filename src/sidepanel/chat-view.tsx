@@ -586,6 +586,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 	const [modelProviders, setModelProviders] = useState<CuliqSettings["providers"]>([]);
 	const [modelId, setModelId] = useState("");
 	const [thinkingExpanded, setThinkingExpanded] = useState(false);
+	const [enterNewline, setEnterNewline] = useState(false);
 	const logRef = useRef<HTMLUListElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -634,6 +635,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 			setEnabledModels(enabled);
 			setModelProviders(s.providers);
 			setThinkingExpanded(s.expandThinking);
+			setEnterNewline(s.enterNewline);
 			setModelId((prev) => {
 				if (prev && enabled.some((m) => m.id === prev)) return prev;
 				const saved = currentSession.modelId;
@@ -844,7 +846,7 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 					ref={inputRef}
 					rows={1}
 					disabled={busy}
-					placeholder="ask the agent…  (Shift+Enter for newline)"
+					placeholder={`ask the agent…  (${enterNewline ? "Ctrl+Enter to send" : "Shift+Enter for newline"})`}
 					onInput={(e) => autosizeInput(e.currentTarget)}
 					onKeyDown={(e) => {
 						if (e.key === "Escape" && editingId) {
@@ -852,7 +854,11 @@ export function ChatView({ transport, chatTransport }: { transport: ChatTranspor
 							cancelEdit();
 							return;
 						}
-						if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+						if (e.key !== "Enter" || e.isComposing) return;
+						// Default: Enter sends, Shift+Enter breaks the line. With
+						// enter-newline on, Enter breaks the line and Ctrl/Cmd+Enter sends.
+						const shouldSend = enterNewline ? e.ctrlKey || e.metaKey : !e.shiftKey;
+						if (shouldSend) {
 							e.preventDefault();
 							(e.target as HTMLTextAreaElement).closest("form")?.requestSubmit();
 						}

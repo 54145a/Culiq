@@ -149,6 +149,8 @@ export interface CuliqSettings {
 	disabledTools: string[];
 	/** Whether assistant thinking blocks start expanded in the transcript. */
 	expandThinking: boolean;
+	/** When true, Enter inserts a newline in the composer and Ctrl/Cmd+Enter sends. */
+	enterNewline: boolean;
 }
 
 export const CONTEXT_MANAGEMENT_DEFAULTS: ContextManagementConfig = {
@@ -217,6 +219,7 @@ export function defaultSettings(): CuliqSettings {
 		subAgentModel: "",
 		disabledTools: [],
 		expandThinking: false,
+		enterNewline: false,
 	};
 }
 
@@ -231,6 +234,7 @@ interface StoredSettings {
 	subAgentModel?: unknown;
 	disabledTools?: unknown;
 	expandThinking?: boolean;
+	enterNewline?: boolean;
 }
 
 function normalizeSettings(stored: StoredSettings, base: CuliqSettings): CuliqSettings {
@@ -244,6 +248,7 @@ function normalizeSettings(stored: StoredSettings, base: CuliqSettings): CuliqSe
 		subAgentModel: typeof stored.subAgentModel === "string" ? stored.subAgentModel : base.subAgentModel,
 		disabledTools: Array.isArray(stored.disabledTools) ? stored.disabledTools : [],
 		expandThinking: stored.expandThinking ?? base.expandThinking,
+		enterNewline: stored.enterNewline ?? base.enterNewline,
 	};
 }
 

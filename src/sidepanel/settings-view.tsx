@@ -857,6 +857,15 @@ function InterfaceGroup({ settings, dirty }: { settings: CuliqSettings; dirty: (
 				}}
 				desc="show agent thinking content expanded by default"
 			/>
+			<CheckRow
+				code="enter-newline"
+				checked={settings.enterNewline}
+				onToggle={(v) => {
+					settings.enterNewline = v;
+					dirty();
+				}}
+				desc="Enter inserts a newline; send with the button or Ctrl/Cmd+Enter"
+			/>
 		</details>
 	);
 }
