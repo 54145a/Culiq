@@ -412,11 +412,17 @@ button.danger:hover {
 
 /* settings view */
 
+/* No top padding: it would leave a see-through strip above sticky
+ * headers. The first group carries the top spacing as margin instead. */
 #view-settings {
-	padding: 14px;
+	padding: 0 14px 14px;
 	overflow-y: auto;
 	overflow-x: hidden;
 	gap: 14px;
+}
+
+#view-settings > .settings-group:first-child {
+	margin-top: 14px;
 }
 
 #view-settings label {
@@ -456,15 +462,12 @@ button.danger:hover {
 	user-select: none;
 	list-style: none;
 	/* Stay visible while the group's content scrolls under it. Opaque
-	 * panel background so passing rows don't bleed through. The view's
-	 * 14px top padding would leave a see-through strip above a top:0
-	 * header, so stick into the padding and compensate with extra
-	 * header padding of the same size. */
+	 * panel background so passing rows don't bleed through. */
 	position: sticky;
-	top: -14px;
+	top: 0;
 	z-index: 1;
 	background: var(--culiq-background);
-	padding: 20px 0 6px;
+	padding: 6px 0;
 }
 
 .settings-group > summary.settings-header::-webkit-details-marker {
