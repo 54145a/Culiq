@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { crx, type ManifestV3Export } from "@crxjs/vite-plugin";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 type Target = "chrome" | "firefox";
@@ -29,7 +30,10 @@ if (versionOverride) {
 }
 
 export default defineConfig({
-	plugins: [crx({ manifest: manifest as unknown as ManifestV3Export, browser: target })],
+	plugins: [
+		tailwindcss(),
+		crx({ manifest: manifest as unknown as ManifestV3Export, browser: target }),
+	],
 	resolve: {
 		alias: {
 			"@shared": resolve(__dirname, "src/shared"),

@@ -1,0 +1,7 @@
+/* Tailwind utilities, generated only for the class names Streamdown's
+ * compiled components use (its dist is the sole @source; automatic content
+ * detection skips node_modules). Preflight is deliberately NOT imported —
+ * it would reset the hand-written style.css across the whole panel. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "../../node_modules/streamdown/dist";
